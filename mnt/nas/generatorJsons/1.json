@@ -223,13 +223,6 @@
         "properties": "LinkProperties as JSON",
         "capacity_indirect": "matrix hash"
       },
-      "DE/DEkf": {
-        "ui": "LinkUi class as JSON",
-        "capacity_direct": "matrix hash",
-        "parameters": "matrix hash",
-        "properties": "LinkProperties as JSON",
-        "capacity_indirect": "matrix hash"
-      },
       "DE/DKe": {
         "ui": "LinkUi class as JSON",
         "capacity_direct": "matrix hash",
