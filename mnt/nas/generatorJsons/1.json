@@ -1,0 +1,321 @@
+{
+  "PEGASE_CRAFT_TEST": {
+    "areas": {
+      "AT": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "BE": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "CH": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "CZ": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "DE": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "DEkf": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "DKe": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "DKkf": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "DKw": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "ES": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "FR": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "IE": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "ITca": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "ITcn": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "ITn": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "Nos": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      },
+      "NL": {
+        "hydro": {
+          "every matrices name inside HydroMatrixName enum": "matrix hash",
+          "properties": "HydroProperties as JSON"
+        },
+        "ui": "AreaUI class as JSON",
+        "properties": "AreaProperties as JSON"
+      }
+    },
+    "links": {
+      "AT/CH": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "AT/CZ": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "AT/DE": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "AT/ITn": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "BE/DE": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "BE/FR": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "BE/NL": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "CH/DE": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "CH/FR": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "CH/ITn": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "CZ/DE": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DE/DKw": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DE/DEkf": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DE/DKe": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DE/FR": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DE/NL": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DE/Nos": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DKw/NL": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DKw/Nos": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DEkf/DKkf": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DKe/DKkf": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "DKe/DKw": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "ES/FR": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "FR/IE": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      },
+      "FR/ITn": {
+        "ui": "LinkUi class as JSON",
+        "capacity_direct": "matrix hash",
+        "parameters": "matrix hash",
+        "properties": "LinkProperties as JSON",
+        "capacity_indirect": "matrix hash"
+      }
+    },
+    "settings": "will be refactored so we'll put nothing for the moment",
+    "version": "880"
+  }
+}
