@@ -10,3 +10,15 @@
 #
 # This file is part of the Antares project.
 
+from antares.env_variables import EnvVariableType
+
+
+class APIGeneratorConfig:
+    def __init__(self) -> None:
+        env_vars = EnvVariableType()
+        self.host = env_vars.get_env_variable("AW_API_HOST")
+        self.token = env_vars.get_env_variable("AW_API_TOKEN")
+        self.verify_ssl = False
+
+
+api_config = APIGeneratorConfig()
