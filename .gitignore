@@ -17,7 +17,6 @@ coverage.xml
 .tox/
 
 # Environments
-.env
 .venv
 env/
 venv/
