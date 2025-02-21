@@ -10,15 +10,20 @@
 #
 # This file is part of the Antares project.
 
-from antares.env_variables import EnvVariableType
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
-class APIGeneratorConfig:
+class EnvVariableType:
     def __init__(self) -> None:
-        env_vars = EnvVariableType()
-        self.host = env_vars.get_env_variable("AW_API_HOST")
-        self.token = env_vars.get_env_variable("AW_API_TOKEN")
-        self.verify_ssl = False
+        self.NAS_PATH = os.getenv("NAS_PATH")
+        self.AW_API_HOST = os.getenv("AW_API_HOST")
+        self.AW_API_TOKEN = os.getenv("AW_API_TOKEN")
 
+    def get_env_variable(self, key: str) -> str:
+        value = getattr(self, key, None)
 
-api_config = APIGeneratorConfig()
+        return str(value) if value else ""
