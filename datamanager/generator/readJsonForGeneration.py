@@ -18,12 +18,14 @@ from pathlib import Path
 import pandas as pd
 
 from antares import craft
-from antares.APIGeneratorConfig.config import APIGeneratorConfig
-from antares.craft.api_conf.api_conf import APIconf
+from antares.craft import APIconf
 from antares.craft.model.area import AreaUi
-from antares.env_variables import EnvVariableType
-from antares.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
-from antares.utils.areaUi import generate_random_color, generate_random_coordinate
+
+from datamanager.APIGeneratorConfig.config import APIGeneratorConfig
+
+from datamanager.env_variables import EnvVariableType
+from datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
+from datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
 
 
 def generate_study(study_id: str) -> dict[str, str]:
