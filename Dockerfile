@@ -17,5 +17,5 @@ ENV PYTHONPATH="/code"
 EXPOSE 8094
 
 # Run the FastAPI application
-CMD ["uvicorn", "src.antares.main:app", "--host", "0.0.0.0", "--port", "8094"]
+CMD ["uvicorn", "antares.main:app", "--host", "0.0.0.0", "--port", "8094"]
 
