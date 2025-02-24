@@ -9,6 +9,8 @@ COPY ./requirements.txt ./conf/* /conf/
 
 RUN pip3 install --no-cache-dir --upgrade pip && pip3 install --no-cache-dir -r /conf/requirements.txt
 
+WORKDIR /code
+
 # Copy the application source code
 COPY ./datamanager /code/datamanager
 
