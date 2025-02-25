@@ -18,7 +18,7 @@ RUN echo "[global]" >> /etc/pip.conf &&\
 RUN pip3 install --no-cache-dir --upgrade pip && pip3 install --no-cache-dir -r /conf/requirements.txt
 
 # Copy the application source code
-COPY ./datamanager/ /code/datamanager
+COPY ./datamanager/* /code/datamanager/
 
 ENV PYTHONPATH="/code"
 
