@@ -5,7 +5,7 @@ FROM inca.rte-france.com/antares/python3.11-rte:1.1
 # Add the `ls` alias to simplify debugging
 RUN echo "alias ll='/bin/ls -l --color=auto'" >> /root/.bashrc
 
-WORKDIR /code
+WORKDIR /code/datamanager
 
 COPY ./requirements.txt ./conf/* /conf/
 
@@ -26,4 +26,4 @@ EXPOSE 8094
 
 # Run the FastAPI application
 #CMD ["uvicorn", "--app-dir", "/code", "datamanager.main:app", "--host", "0.0.0.0", "--port", "8094"]
-CMD ["python3", "datamanager/main.py"]
+CMD ["python3", "main.py"]
