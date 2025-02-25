@@ -1,4 +1,4 @@
-FROM python:3.11
+FROM inca.rte-france.com/antares/python3.11-rte:1.1
 
 # RUN apt update && apt install -y procps gdb
 
