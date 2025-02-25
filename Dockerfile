@@ -5,11 +5,11 @@ FROM inca.rte-france.com/antares/python3.11-rte:1.1
 # Add the `ls` alias to simplify debugging
 RUN echo "alias ll='/bin/ls -l --color=auto'" >> /root/.bashrc
 
+WORKDIR /code
+
 COPY ./requirements.txt ./conf/* /conf/
 
 RUN pip3 install --no-cache-dir --upgrade pip && pip3 install --no-cache-dir -r /conf/requirements.txt
-
-WORKDIR /code
 
 # Copy the application source code
 COPY ./datamanager/* /code
