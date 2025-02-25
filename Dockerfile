@@ -12,7 +12,7 @@ RUN pip3 install --no-cache-dir --upgrade pip && pip3 install --no-cache-dir -r 
 WORKDIR /code
 
 # Copy the application source code
-COPY . /code
+COPY ./datamanager/* /code
 
 ENV PYTHONPATH="/code"
 
