@@ -12,11 +12,12 @@ COPY ./requirements.txt ./conf/* /conf/
 RUN pip3 install --no-cache-dir --upgrade pip && pip3 install --no-cache-dir -r /conf/requirements.txt
 
 # Copy the application source code
-COPY ./datamanager/* /code/
+COPY ./datamanager/ /code/datamanager
 
 ENV PYTHONPATH="/code"
 
 EXPOSE 8094
 
 # Run the FastAPI application
-CMD ["uvicorn", "datamanager.main:app", "--host", "0.0.0.0", "--port", "8094"]
+#CMD ["uvicorn", "datamanager.main:app", "--host", "0.0.0.0", "--port", "8094"]
+CMD ["uvicorn", "--app-dir", "/code", "datamanager.main:app", "--host", "0.0.0.0", "--port", "8094"]
