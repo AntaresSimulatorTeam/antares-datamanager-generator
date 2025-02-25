@@ -26,4 +26,4 @@ def create_study(study_id: str) -> dict[str, str]:
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8094, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8094, reload=True)

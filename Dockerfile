@@ -25,4 +25,5 @@ ENV PYTHONPATH="/code"
 EXPOSE 8094
 
 # Run the FastAPI application
-CMD ["uvicorn", "--app-dir", "/code", "datamanager.main:app", "--host", "0.0.0.0", "--port", "8094"]
+#CMD ["uvicorn", "--app-dir", "/code", "datamanager.main:app", "--host", "0.0.0.0", "--port", "8094"]
+CMD ["python3", "datamanager/main.py"]
