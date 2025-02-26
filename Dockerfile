@@ -8,7 +8,7 @@ RUN echo "alias ll='/bin/ls -l --color=auto'" >> /root/.bashrc
 WORKDIR /code/datamanager
 
 COPY ./requirements.txt ./conf/* /conf/
-
+COPY ./datamanager /code/datamanager
 # Configure Python RTE mirrors
 RUN echo "[global]" >> /etc/pip.conf &&\
     echo "   index = https://devin-depot.rte-france.com/repository/pypi-all" >> /etc/pip.conf &&\
@@ -17,8 +17,6 @@ RUN echo "[global]" >> /etc/pip.conf &&\
 
 RUN pip3 install --no-cache-dir --upgrade pip && pip3 install --no-cache-dir -r /conf/requirements.txt
 
-# Copy the application source code
-COPY ./datamanager/ /code/datamanager/
 
 ENV PYTHONPATH="/code"
 
