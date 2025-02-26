@@ -12,11 +12,11 @@
 
 import uvicorn
 
-from antares.generator.readJsonForGeneration import generate_study
+from datamanager.generator.readJsonForGeneration import generate_study
 from fastapi import FastAPI
 
 app = FastAPI(
-    title="antares-datamanager-generator", description="API to launch antares study generation", version="0.0.1"
+    title="datamanager-datamanager-generator", description="API to launch datamanager study generation", version="0.0.1"
 )
 
 
@@ -26,4 +26,4 @@ def create_study(study_id: str) -> dict[str, str]:
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8094, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8094, reload=True)

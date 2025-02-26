@@ -10,7 +10,7 @@
 #
 # This file is part of the Antares project.
 
-from antares.env_variables import EnvVariableType
+from datamanager.env_variables import EnvVariableType
 
 
 class APIGeneratorConfig:
