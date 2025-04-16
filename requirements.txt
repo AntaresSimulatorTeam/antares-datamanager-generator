@@ -3,11 +3,10 @@ configparser~=5.0.2
 numpy~=1.26.4
 pandas~=2.2.2
 pandas-stubs~=2.2.2
-pydantic~=2.7.1
 pytest~=7.2.1
 python-dateutil~=2.9.0
 fastapi==0.115.8
 uvicorn[standard]==0.34.0
-antares_craft~=0.2.0
+antares_craft~=0.2.6
 dotenv~=0.9.9
 python-dotenv~=1.0.1

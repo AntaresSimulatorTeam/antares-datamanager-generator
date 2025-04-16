@@ -5,10 +5,10 @@ FROM inca.rte-france.com/antares/python3.11-rte:1.1
 # Add the `ls` alias to simplify debugging
 RUN echo "alias ll='/bin/ls -l --color=auto'" >> /root/.bashrc
 
-WORKDIR /code/datamanager
+WORKDIR /code/antares/datamanager
 
 COPY ./requirements.txt ./conf/* /conf/
-COPY ./datamanager /code/datamanager
+COPY ./src/antares/datamanager /code/antares/datamanager
 # Configure Python RTE mirrors
 RUN echo "[global]" >> /etc/pip.conf &&\
     echo "   index = https://devin-depot.rte-france.com/repository/pypi-all" >> /etc/pip.conf &&\
