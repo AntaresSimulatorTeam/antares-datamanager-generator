@@ -12,7 +12,7 @@
 
 import uvicorn
 
-from datamanager.generator.readJsonForGeneration import generate_study
+from antares.datamanager.generator.generate_study_process import generate_study
 from fastapi import FastAPI
 
 app = FastAPI(
