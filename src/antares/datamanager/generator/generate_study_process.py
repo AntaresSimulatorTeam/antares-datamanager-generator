@@ -25,10 +25,11 @@ def generate_study(study_id: str) -> dict[str, str]:
 
 def load_study_data(study_id: str) -> tuple[str, list[str], Dict[str, Dict[str, int]]]:
     env_vars = EnvVariableType()
-    path_to_json = Path(env_vars.get_env_variable("NAS_PATH"))
-    nas_path = path_to_json / f"{study_id}.json"
+    path_to_nas_directory = Path(env_vars.get_env_variable("NAS_PATH"))
+    path_to_json_directory = Path(env_vars.get_env_variable("PEGASE_LOAD_OUTPUT_DIRECTORY"))
+    json_path = path_to_nas_directory / path_to_json_directory / f"{study_id}.json"
 
-    with open(nas_path, "r", encoding="utf-8") as file:
+    with open(json_path, "r", encoding="utf-8") as file:
         data = json.load(file)
 
     study_name = list(data.keys())[0]
