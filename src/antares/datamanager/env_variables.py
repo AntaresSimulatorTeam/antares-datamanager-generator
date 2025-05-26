@@ -20,6 +20,7 @@ load_dotenv()
 class EnvVariableType:
     def __init__(self) -> None:
         self.NAS_PATH = os.getenv("NAS_PATH")
+        self.PEGASE_LOAD_OUTPUT_DIRECTORY = os.getenv("PEGASE_LOAD_OUTPUT_DIRECTORY")
         self.AW_API_HOST = os.getenv("AW_API_HOST")
         self.AW_API_TOKEN = os.getenv("AW_API_TOKEN")
 
