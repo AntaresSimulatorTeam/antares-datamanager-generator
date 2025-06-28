@@ -4,6 +4,8 @@ import json
 
 from unittest.mock import MagicMock, mock_open, patch
 
+from pathlib import Path
+
 from antares.datamanager.generator.generate_study_process import add_areas_to_study, add_links_to_study, load_study_data
 
 
@@ -19,6 +21,9 @@ def mock_json_data():
                     },
                     "ui": "AreaUI class as JSON",
                     "properties": "AreaProperties as JSON",
+                    "loads":[
+                        "load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"
+                    ]
                 },
                 "area2": {
                     "hydro": {
@@ -27,6 +32,9 @@ def mock_json_data():
                     },
                     "ui": "AreaUI class as JSON",
                     "properties": "AreaProperties as JSON",
+                    "loads":[
+                        "load_area2_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"
+                    ],
                 },
             },
             "links": {"area1/area2": {}},
@@ -43,10 +51,14 @@ def test_load_study_data(mock_env_class, mock_open_file, mock_json_data):
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
-    study_name, areas, links = load_study_data("test_study")
+    study_name, areas, links, area_loads  = load_study_data("test_study")
 
     assert study_name == "test_study"
     assert areas == ["area1", "area2"]
+    assert area_loads == {
+        "area1": ["load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
+        "area2": ["load_area2_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
+    }
     assert "area1/area2" in links
 
 
@@ -54,14 +66,33 @@ def test_add_areas_to_study_with_fixed_seed():
     mock_study = MagicMock()
 
     areas = ["area1", "area2"]
+    area_loads = {}  # Ajout d’un mock pour le paramètre manquant
 
-    add_areas_to_study(mock_study, areas)
-
+    add_areas_to_study(mock_study, areas, area_loads)
     assert mock_study.create_area.call_count == 2
 
 
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+@patch("antares.datamanager.generator.generate_study_process.pd.read_feather")
+def test_add_areas_to_study_calls_create_area_and_set_load(mock_read_feather, mock_generator_load_directory):
+    mock_study = MagicMock()
+    mock_area_obj = MagicMock()
+    mock_study.create_area.return_value = mock_area_obj
+    mock_generator_load_directory.return_value = "/fake/path"
+    mock_read_feather.return_value = "fake_df"
+
+    areas = ["A", "B"]
+    area_loads = {"A": ["loadA.feather"], "B": ["loadB.feather", "loadB2.feather"]}
+
+    add_areas_to_study(mock_study, areas, area_loads)
+
+    assert mock_study.create_area.call_count == 2
+    assert mock_area_obj.set_load.call_count == 3
+    mock_read_feather.assert_any_call(Path("/fake/path/loadA.feather"))
+    mock_read_feather.assert_any_call(Path("/fake/path/loadB.feather"))
+    mock_read_feather.assert_any_call(Path("/fake/path/loadB2.feather"))
+
 def test_add_links_to_study_calls_create_link():
-    # Given
     mock_study = MagicMock()
     mock_link = MagicMock()
     mock_study.create_link.return_value = mock_link
