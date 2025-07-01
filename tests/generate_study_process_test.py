@@ -1,10 +1,21 @@
+# Copyright (c) 2024, RTE (https://www.rte-france.com)
+#
+# See AUTHORS.txt
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+#
+# This file is part of the Antares project.
+
 import pytest
 
 import json
 
-from unittest.mock import MagicMock, mock_open, patch
-
 from pathlib import Path
+from unittest.mock import MagicMock, mock_open, patch
 
 from antares.datamanager.generator.generate_study_process import add_areas_to_study, add_links_to_study, load_study_data
 
@@ -21,9 +32,7 @@ def mock_json_data():
                     },
                     "ui": "AreaUI class as JSON",
                     "properties": "AreaProperties as JSON",
-                    "loads":[
-                        "load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"
-                    ]
+                    "loads": ["load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
                 },
                 "area2": {
                     "hydro": {
@@ -32,9 +41,7 @@ def mock_json_data():
                     },
                     "ui": "AreaUI class as JSON",
                     "properties": "AreaProperties as JSON",
-                    "loads":[
-                        "load_area2_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"
-                    ],
+                    "loads": ["load_area2_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
                 },
             },
             "links": {"area1/area2": {}},
@@ -51,7 +58,7 @@ def test_load_study_data(mock_env_class, mock_open_file, mock_json_data):
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
-    study_name, areas, links, area_loads  = load_study_data("test_study")
+    study_name, areas, links, area_loads = load_study_data("test_study")
 
     assert study_name == "test_study"
     assert areas == ["area1", "area2"]
@@ -91,6 +98,7 @@ def test_add_areas_to_study_calls_create_area_and_set_load(mock_read_feather, mo
     mock_read_feather.assert_any_call(Path("/fake/path/loadA.feather"))
     mock_read_feather.assert_any_call(Path("/fake/path/loadB.feather"))
     mock_read_feather.assert_any_call(Path("/fake/path/loadB2.feather"))
+
 
 def test_add_links_to_study_calls_create_link():
     mock_study = MagicMock()

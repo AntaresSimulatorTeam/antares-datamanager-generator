@@ -1,8 +1,21 @@
+# Copyright (c) 2024, RTE (https://www.rte-france.com)
+#
+# See AUTHORS.txt
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+#
+# This file is part of the Antares project.
+
 import json
 
-import pandas as pd
 from pathlib import Path
 from typing import Dict
+
+import pandas as pd
 
 from antares.craft.api_conf.api_conf import APIconf
 from antares.craft.model.area import AreaUi
@@ -49,7 +62,7 @@ def load_study_data(study_id: str) -> tuple[str, list[str], Dict[str, Dict[str, 
     return study_name, area_names, links_dict, area_loads
 
 
-def generator_load_directory():
+def generator_load_directory() -> Path:
     env_vars = EnvVariableType()
     path_to_nas = env_vars.get_env_variable("NAS_PATH")
     path_to_load_directory = env_vars.get_env_variable("PEGASE_LOAD_OUTPUT_DIRECTORY")
