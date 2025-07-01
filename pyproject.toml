@@ -9,9 +9,8 @@ description = """Antares study generator under construction"""
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
-    {name="Sylvain Leclerc"},
     {name="Tatiana Vargas"},
-    {name="Martin Belthle"}
+    {name="Moaud El-Azaar"}
 ]
 requires-python = ">=3.10"
 dependencies = [
