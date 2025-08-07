@@ -74,8 +74,9 @@ def test_add_areas_to_study_with_fixed_seed():
 
     areas = ["area1", "area2"]
     area_loads = {}  # Ajout d’un mock pour le paramètre manquant
+    area_thermals = {}
 
-    add_areas_to_study(mock_study, areas, area_loads)
+    add_areas_to_study(mock_study, areas, area_loads, area_thermals)
     assert mock_study.create_area.call_count == 2
 
 
@@ -90,8 +91,9 @@ def test_add_areas_to_study_calls_create_area_and_set_load(mock_read_feather, mo
 
     areas = ["A", "B"]
     area_loads = {"A": ["loadA.feather"], "B": ["loadB.feather", "loadB2.feather"]}
+    area_thermals = {}
 
-    add_areas_to_study(mock_study, areas, area_loads)
+    add_areas_to_study(mock_study, areas, area_loads, area_thermals)
 
     assert mock_study.create_area.call_count == 2
     assert mock_area_obj.set_load.call_count == 3
