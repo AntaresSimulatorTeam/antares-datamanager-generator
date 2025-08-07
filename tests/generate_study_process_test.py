@@ -58,7 +58,7 @@ def test_load_study_data(mock_env_class, mock_open_file, mock_json_data):
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
-    study_name, areas, links, area_loads = load_study_data("test_study")
+    study_name, areas, links, area_loads, area_thermals, random_gen_settings = load_study_data("test_study")
 
     assert study_name == "test_study"
     assert areas == ["area1", "area2"]
