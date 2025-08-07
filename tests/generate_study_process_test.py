@@ -58,7 +58,7 @@ def test_load_study_data(mock_env_class, mock_open_file, mock_json_data):
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
-    study_name, areas, links, area_loads = load_study_data("test_study")
+    study_name, areas, links, area_loads, area_thermals, random_gen_settings = load_study_data("test_study")
 
     assert study_name == "test_study"
     assert areas == ["area1", "area2"]
@@ -74,8 +74,9 @@ def test_add_areas_to_study_with_fixed_seed():
 
     areas = ["area1", "area2"]
     area_loads = {}  # Ajout d’un mock pour le paramètre manquant
+    area_thermals = {}
 
-    add_areas_to_study(mock_study, areas, area_loads)
+    add_areas_to_study(mock_study, areas, area_loads, area_thermals)
     assert mock_study.create_area.call_count == 2
 
 
@@ -90,8 +91,9 @@ def test_add_areas_to_study_calls_create_area_and_set_load(mock_read_feather, mo
 
     areas = ["A", "B"]
     area_loads = {"A": ["loadA.feather"], "B": ["loadB.feather", "loadB2.feather"]}
+    area_thermals = {}
 
-    add_areas_to_study(mock_study, areas, area_loads)
+    add_areas_to_study(mock_study, areas, area_loads, area_thermals)
 
     assert mock_study.create_area.call_count == 2
     assert mock_area_obj.set_load.call_count == 3
