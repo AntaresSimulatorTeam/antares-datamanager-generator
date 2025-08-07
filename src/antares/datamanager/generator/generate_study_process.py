@@ -16,13 +16,11 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from antares.craft import ThermalClusterProperties
 
+from antares.craft import ThermalClusterProperties
 from antares.craft.api_conf.api_conf import APIconf
 from antares.craft.model.area import AreaUi
 from antares.craft.model.study import Study, create_study_api
-from antares.tsgen.ts_generator import OutageGenerationParameters
-
 from antares.datamanager.APIGeneratorConfig.config import APIGeneratorConfig
 from antares.datamanager.env_variables import EnvVariableType
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
@@ -43,7 +41,10 @@ def generate_study(study_id: str) -> dict[str, str]:
 
     return {"message": f"Study {study_name} successfully generated"}
 
-def load_study_data(study_id: str) -> tuple[str, list[str], dict[str, dict[str, int]], dict[str, list[str]], dict[str, Any], tuple[bool, int]]:
+
+def load_study_data(
+    study_id: str,
+) -> tuple[str, list[str], dict[str, dict[str, int]], dict[str, list[str]], dict[str, Any], tuple[bool, int]]:
     path_to_load_directory = generator_load_directory()
     joined_path = Path(path_to_load_directory) / f"{study_id}.json"
     print(f"Chemin du fichier JSON utilisé : {joined_path}")
@@ -63,7 +64,7 @@ def load_study_data(study_id: str) -> tuple[str, list[str], dict[str, dict[str, 
     for area, area_data in areas_dict.items():
         # Loads
         loads = area_data.get("loads", [])
-            # Si "loads" est une chaîne (ex: "No LOAD files for this area"), on retourne une liste vide
+        # Si "loads" est une chaîne (ex: "No LOAD files for this area"), on retourne une liste vide
         if isinstance(loads, list):
             area_loads[area] = loads
         else:
@@ -89,7 +90,9 @@ def create_study(study_name: str) -> Study:
     return create_study_api(study_name, "8.8", api_config)
 
 
-def add_areas_to_study(study: Study, areas: list[str], area_loads: dict[str, list[str]], area_thermals: dict[str, Any]) -> None:
+def add_areas_to_study(
+    study: Study, areas: list[str], area_loads: dict[str, list[str]], area_thermals: dict[str, Any]
+) -> None:
     path_to_load_directory = generator_load_directory()
     for area in areas:
         x, y = generate_random_coordinate()
