@@ -30,7 +30,6 @@ from antares.datamanager.utils.areaUi import generate_random_color, generate_ran
 
 def generate_study(study_id: str) -> dict[str, str]:
     study_name, areas, links, area_loads, area_thermals, random_gen_settings = load_study_data(study_id)
-    print(random_gen_settings)
     study = create_study(study_name)
 
     add_areas_to_study(study, areas, area_loads, area_thermals)
