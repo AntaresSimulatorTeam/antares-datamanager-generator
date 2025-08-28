@@ -30,6 +30,16 @@ def mock_json_data():
                         "every matrices name inside HydroMatrixName enum": "matrix hash",
                         "properties": "HydroProperties as JSON",
                     },
+                    "thermals": {
+                        "thermal_name": {
+                            "properties": "ThermalProperties class as JSON",
+                            "series": "matrix hash",
+                            "fuel_cost": "matrix hash",
+                            "c02_cpst": "matrix hash",
+                            "data": "matrix hash",
+                            "modulation": "matrix hash"
+                        }
+                    },
                     "ui": "AreaUI class as JSON",
                     "properties": "AreaProperties as JSON",
                     "loads": ["load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
@@ -38,6 +48,16 @@ def mock_json_data():
                     "hydro": {
                         "every matrices name inside HydroMatrixName enum": "matrix hash",
                         "properties": "HydroProperties as JSON",
+                    },
+                    "thermals": {
+                        "thermal_name": {
+                            "properties": "ThermalProperties class as JSON",
+                            "series": "matrix hash",
+                            "fuel_cost": "matrix hash",
+                            "c02_cpst": "matrix hash",
+                            "data": "matrix hash",
+                            "modulation": "matrix hash"
+                        }
                     },
                     "ui": "AreaUI class as JSON",
                     "properties": "AreaProperties as JSON",
