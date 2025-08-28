@@ -37,7 +37,7 @@ def mock_json_data():
                             "fuel_cost": "matrix hash",
                             "c02_cpst": "matrix hash",
                             "data": "matrix hash",
-                            "modulation": "matrix hash"
+                            "modulation": "matrix hash",
                         }
                     },
                     "ui": "AreaUI class as JSON",
@@ -56,7 +56,7 @@ def mock_json_data():
                             "fuel_cost": "matrix hash",
                             "c02_cpst": "matrix hash",
                             "data": "matrix hash",
-                            "modulation": "matrix hash"
+                            "modulation": "matrix hash",
                         }
                     },
                     "ui": "AreaUI class as JSON",
