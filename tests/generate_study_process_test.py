@@ -222,7 +222,7 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
 
     with patch(
         "antares.datamanager.generator.generate_study_process.ThermalClusterProperties",
-        side_effect=lambda **kwargs: kwargs, # input as dictionary
+        side_effect=lambda **kwargs: kwargs,  # input as dictionary
     ):
         add_areas_to_study(mock_study, areas, area_loads, area_thermals)
 
