@@ -34,7 +34,7 @@ def generate_study(study_id: str) -> dict[str, str]:
 
     add_areas_to_study(study, areas, area_loads, area_thermals)
     add_links_to_study(study, links)
-    if random_gen_settings[0] is True:
+    if area_thermals and random_gen_settings[0] is True:
         print(f"Generating timeseries for {random_gen_settings[1]} years")
         study.generate_thermal_timeseries(random_gen_settings[1])
 
@@ -71,7 +71,8 @@ def load_study_data(
 
         # Thermals
         thermals_dict = area_data.get("thermals", {})
-        area_thermals[area] = thermals_dict
+        if thermals_dict:
+            area_thermals[area] = thermals_dict
 
     return study_name, area_names, links_dict, area_loads, area_thermals, random_gen_settings
 
