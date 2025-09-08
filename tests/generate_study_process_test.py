@@ -17,8 +17,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
-from antares.datamanager.generator.generate_study_process import add_areas_to_study, add_links_to_study, \
-    load_study_data, generate_study
+from antares.datamanager.generator.generate_study_process import (
+    add_areas_to_study,
+    add_links_to_study,
+    generate_study,
+    load_study_data,
+)
 
 
 @pytest.fixture
@@ -171,13 +175,12 @@ def test_add_links_to_study_calls_create_link():
     assert mock_link.set_capacity_direct.call_count == 2
     assert mock_link.set_capacity_indirect.call_count == 2
 
+
 @patch("antares.datamanager.generator.generate_study_process.load_study_data")
 @patch("antares.datamanager.generator.generate_study_process.create_study")
 @patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
 @patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
-def test_generate_study_calls_all_functions(
-    mock_add_links, mock_add_areas, mock_create_study, mock_load_study_data
-):
+def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock_create_study, mock_load_study_data):
     mock_study = MagicMock()
     mock_create_study.return_value = mock_study
     mock_load_study_data.return_value = (
@@ -217,7 +220,10 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
         }
     }
 
-    with patch("antares.datamanager.generator.generate_study_process.ThermalClusterProperties", side_effect=lambda **kwargs: kwargs) as mock_tcp:
+    with patch(
+        "antares.datamanager.generator.generate_study_process.ThermalClusterProperties",
+        side_effect=lambda **kwargs: kwargs, # input as dictionary
+    ):
         add_areas_to_study(mock_study, areas, area_loads, area_thermals)
 
         assert mock_area_obj.create_thermal_cluster.call_count == 2
