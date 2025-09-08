@@ -17,7 +17,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
-from antares.datamanager.generator.generate_study_process import add_areas_to_study, add_links_to_study, load_study_data
+from antares.datamanager.generator.generate_study_process import (
+    add_areas_to_study,
+    add_links_to_study,
+    generate_study,
+    load_study_data,
+)
 
 
 @pytest.fixture
@@ -30,6 +35,16 @@ def mock_json_data():
                         "every matrices name inside HydroMatrixName enum": "matrix hash",
                         "properties": "HydroProperties as JSON",
                     },
+                    "thermals": {
+                        "thermal_name": {
+                            "properties": "ThermalProperties class as JSON",
+                            "series": "matrix hash",
+                            "fuel_cost": "matrix hash",
+                            "c02_cpst": "matrix hash",
+                            "data": "matrix hash",
+                            "modulation": "matrix hash",
+                        }
+                    },
                     "ui": "AreaUI class as JSON",
                     "properties": "AreaProperties as JSON",
                     "loads": ["load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
@@ -38,6 +53,16 @@ def mock_json_data():
                     "hydro": {
                         "every matrices name inside HydroMatrixName enum": "matrix hash",
                         "properties": "HydroProperties as JSON",
+                    },
+                    "thermals": {
+                        "thermal_name": {
+                            "properties": "ThermalProperties class as JSON",
+                            "series": "matrix hash",
+                            "fuel_cost": "matrix hash",
+                            "c02_cpst": "matrix hash",
+                            "data": "matrix hash",
+                            "modulation": "matrix hash",
+                        }
                     },
                     "ui": "AreaUI class as JSON",
                     "properties": "AreaProperties as JSON",
@@ -58,7 +83,7 @@ def test_load_study_data(mock_env_class, mock_open_file, mock_json_data):
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
-    study_name, areas, links, area_loads = load_study_data("test_study")
+    study_name, areas, links, area_loads, area_thermals, random_gen_settings = load_study_data("test_study")
 
     assert study_name == "test_study"
     assert areas == ["area1", "area2"]
@@ -74,8 +99,9 @@ def test_add_areas_to_study_with_fixed_seed():
 
     areas = ["area1", "area2"]
     area_loads = {}  # Ajout d’un mock pour le paramètre manquant
+    area_thermals = {}
 
-    add_areas_to_study(mock_study, areas, area_loads)
+    add_areas_to_study(mock_study, areas, area_loads, area_thermals)
     assert mock_study.create_area.call_count == 2
 
 
@@ -90,8 +116,9 @@ def test_add_areas_to_study_calls_create_area_and_set_load(mock_read_feather, mo
 
     areas = ["A", "B"]
     area_loads = {"A": ["loadA.feather"], "B": ["loadB.feather", "loadB2.feather"]}
+    area_thermals = {}
 
-    add_areas_to_study(mock_study, areas, area_loads)
+    add_areas_to_study(mock_study, areas, area_loads, area_thermals)
 
     assert mock_study.create_area.call_count == 2
     assert mock_area_obj.set_load.call_count == 3
@@ -147,3 +174,58 @@ def test_add_links_to_study_calls_create_link():
     assert mock_study.create_link.call_count == 2
     assert mock_link.set_capacity_direct.call_count == 2
     assert mock_link.set_capacity_indirect.call_count == 2
+
+
+@patch("antares.datamanager.generator.generate_study_process.load_study_data")
+@patch("antares.datamanager.generator.generate_study_process.create_study")
+@patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
+@patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
+def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock_create_study, mock_load_study_data):
+    mock_study = MagicMock()
+    mock_create_study.return_value = mock_study
+    mock_load_study_data.return_value = (
+        "study_name",
+        ["area1", "area2"],
+        {"area1/area2": {}},
+        {"area1": ["load1"], "area2": ["load2"]},
+        {"area1": {}, "area2": {}},
+        (True, 3),
+    )
+
+    result = generate_study("dummy_id")
+
+    mock_load_study_data.assert_called_once_with("dummy_id")
+    mock_create_study.assert_called_once_with("study_name")
+    mock_add_areas.assert_called_once_with(
+        mock_study, ["area1", "area2"], {"area1": ["load1"], "area2": ["load2"]}, {"area1": {}, "area2": {}}
+    )
+    mock_add_links.assert_called_once_with(mock_study, {"area1/area2": {}})
+    mock_study.generate_thermal_timeseries.assert_called_once_with(3)
+    assert result == {"message": "Study study_name successfully generated"}
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directory):
+    mock_study = MagicMock()
+    mock_area_obj = MagicMock()
+    mock_study.create_area.return_value = mock_area_obj
+    mock_generator_load_directory.return_value = "/fake/path"
+
+    areas = ["A"]
+    area_loads = {"A": []}
+    area_thermals = {
+        "A": {
+            "cluster1": {"properties": {"enabled": True, "nominal_capacity": 2.0}},
+            "cluster2": {"properties": {"must_run": True}},
+        }
+    }
+
+    with patch(
+        "antares.datamanager.generator.generate_study_process.ThermalClusterProperties",
+        side_effect=lambda **kwargs: kwargs,  # input as dictionary
+    ):
+        add_areas_to_study(mock_study, areas, area_loads, area_thermals)
+
+        assert mock_area_obj.create_thermal_cluster.call_count == 2
+        mock_area_obj.create_thermal_cluster.assert_any_call("cluster1", {"enabled": True, "nominal_capacity": 2.0})
+        mock_area_obj.create_thermal_cluster.assert_any_call("cluster2", {"must_run": True})
