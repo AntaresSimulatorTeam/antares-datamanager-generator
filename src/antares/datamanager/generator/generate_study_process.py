@@ -55,7 +55,7 @@ def load_study_data(
     study_data = data.get(study_name, {})
     areas_dict = study_data.get("areas", {})
     links_dict = study_data.get("links", {})
-    random_gen_settings = study_data.get("random_timeseries", False), study_data.get("nb_years", 1)
+    random_gen_settings = study_data.get("enable_random_ts", True), study_data.get("nb_years", 1)
 
     area_names = list(areas_dict.keys())
     area_loads = {}
