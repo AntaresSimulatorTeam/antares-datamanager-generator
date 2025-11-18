@@ -7,7 +7,7 @@ RUN echo "alias ll='/bin/ls -l --color=auto'" >> /root/.bashrc
 
 WORKDIR /code/antares/datamanager
 
-COPY ./requirements.txt ./conf/* /conf/
+COPY ./requirements.txt /conf/
 COPY ./src/antares/datamanager /code/antares/datamanager
 # Configure Python RTE mirrors
 RUN echo "[global]" >> /etc/pip.conf &&\
