@@ -4,7 +4,6 @@ uvicorn[standard]==0.34.0
 antares_craft~=0.6.0
 dotenv~=0.9.9
 python-dotenv~=1.0.1
-#freeze from here
 annotated-types==0.7.0
 antares-study-version==1.0.20
 antares-timeseries-generation==0.1.8
