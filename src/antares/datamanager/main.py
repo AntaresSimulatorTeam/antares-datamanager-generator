@@ -12,8 +12,9 @@
 
 import uvicorn
 
-from antares.datamanager.generator.generate_study_process import generate_study
 from fastapi import FastAPI
+
+from antares.datamanager.generator.generate_study_process import generate_study
 
 app = FastAPI(
     title="datamanager-datamanager-generator", description="API to launch datamanager study generation", version="0.0.1"

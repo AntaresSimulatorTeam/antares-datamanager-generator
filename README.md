@@ -44,14 +44,6 @@ The generator requires the following environment variables:
 
 ## Usage
 
-### Running the API Server
-
-```bash
-python -m antares.datamanager.main
-```
-
-This will start the FastAPI server on port 8094.
-
 ### Generating a Study
 
 To generate a study, make a POST request to the `/generate_study/` endpoint with a study ID:
