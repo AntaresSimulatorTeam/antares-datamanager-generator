@@ -12,7 +12,7 @@ authors = [
     {name="Tatiana Vargas"},
     {name="Moaud El-Azaar"}
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "configparser~=5.0.2",
     "numpy~=1.26.4",

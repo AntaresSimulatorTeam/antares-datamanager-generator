@@ -166,7 +166,9 @@ def test_add_links_to_study_calls_create_link():
     }
 
     # Patch the capacity generation functions to avoid randomness
-    with patch("antares.datamanager.generator.generate_link_capacity_data", return_value="mock_df"):
+    with patch(
+        "antares.datamanager.generator.generate_study_process.generate_link_capacity_df", return_value="mock_df"
+    ):
         # When
         add_links_to_study(mock_study, links)
 
@@ -229,3 +231,56 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
         assert mock_area_obj.create_thermal_cluster.call_count == 2
         mock_area_obj.create_thermal_cluster.assert_any_call("cluster1", {"enabled": True, "nominal_capacity": 2.0})
         mock_area_obj.create_thermal_cluster.assert_any_call("cluster2", {"must_run": True})
+
+
+def test_add_areas_to_study_with_unit_count_and_data_sets_prepro():
+    mock_study = MagicMock()
+    mock_area_obj = MagicMock()
+    mock_cluster_obj = MagicMock()
+    mock_study.create_area.return_value = mock_area_obj
+    mock_area_obj.create_thermal_cluster.return_value = mock_cluster_obj
+
+    areas = ["A"]
+    area_loads = {"A": []}
+    area_thermals = {
+        "A": {
+            "clusterX": {
+                "properties": {"enabled": True, "unit_count": 3},
+                "data": {
+                    "fo_duration": 1,
+                    "po_duration": 2,
+                    "fo_monthly_rate": [10] * 12,
+                    "po_monthly_rate": [20] * 12,
+                    "npo_max_winter": 5,
+                    "npo_max_summer": 10,
+                    "nb_unit": 1,
+                },
+            }
+        }
+    }
+
+    class DummyProps:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    sentinel_matrix = "PREPRO_MATRIX"
+
+    with (
+        patch(
+            "antares.datamanager.generator.generate_study_process.ThermalClusterProperties",
+            side_effect=lambda **kwargs: DummyProps(**kwargs),
+        ),
+        patch(
+            "antares.datamanager.generator.generate_study_process.create_prepro_data_matrix",
+            return_value=sentinel_matrix,
+        ) as mock_create_matrix,
+    ):
+        add_areas_to_study(mock_study, areas, area_loads, area_thermals)
+
+        # create_thermal_cluster called once with DummyProps instance
+        assert mock_area_obj.create_thermal_cluster.call_count == 1
+        # Ensure prepro matrix was computed with provided data and unit_count
+        mock_create_matrix.assert_called_once()
+        # And set on the cluster object
+        mock_cluster_obj.set_prepro_data.assert_called_once_with(sentinel_matrix)

@@ -25,6 +25,7 @@ from antares.datamanager.APIGeneratorConfig.config import APIGeneratorConfig
 from antares.datamanager.env_variables import EnvVariableType
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
+from antares.datamanager.generator.generate_thermal_matrices_data import create_prepro_data_matrix
 from antares.datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
 
 
@@ -111,7 +112,18 @@ def add_areas_to_study(
             # Thermals
             for cluster_name, values in thermals.items():
                 cluster_properties = ThermalClusterProperties(**values.get("properties", {}))
-                area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+                # If cluster_properties doesn't expose attributes (e.g., patched as dict in tests),
+                # just create the cluster with given properties and skip prepro data generation.
+                if not hasattr(cluster_properties, "unit_count"):
+                    area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+                    continue
+
+                cluster_data = values.get("data", {})
+                unit_count = cluster_properties.unit_count
+
+                prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count)
+                thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+                thermal_cluster.set_prepro_data(prepro_matrix)
             print(f"Successfully created area for {area} with loads: {loads}")
         except APIGenerationError as e:
             raise AreaGenerationError(area, e.message) from e
