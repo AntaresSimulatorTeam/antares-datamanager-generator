@@ -9,7 +9,6 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
-
 import pytest
 
 import numpy as np
@@ -18,7 +17,7 @@ from antares.datamanager.generator.generate_thermal_matrices_data import create_
 
 
 def test_prepro_basic_shape():
-    """Matrix should contain 8760 hours and 6 columns."""
+    """Matrix should contain 365 days and 6 columns."""
     data = {
         "fo_duration": 1,
         "po_duration": 2,
@@ -31,15 +30,15 @@ def test_prepro_basic_shape():
 
     df = create_prepro_data_matrix(data, unit_count=2)
 
-    assert df.shape == (8760, 6)
+    assert df.shape == (365, 6)
 
 
-def test_monthly_to_hourly_expansion():
-    """Verify that monthly values expand properly into hourly vectors."""
+def test_monthly_to_daily_expansion():
+    """Verify that monthly values expand properly into daily vectors."""
     data = {
         "fo_duration": 1,
         "po_duration": 2,
-        "fo_monthly_rate": list(range(12)),  # 0..11
+        "fo_monthly_rate": list(range(12)),  # months 0..11
         "po_monthly_rate": [100] * 12,
         "npo_max_winter": 5,
         "npo_max_summer": 10,
@@ -48,15 +47,19 @@ def test_monthly_to_hourly_expansion():
 
     df = create_prepro_data_matrix(data, unit_count=1)
 
-    fo_rate = df.iloc[:, 2]  # third column
-    # January = 31 days = 744 hours
-    assert (fo_rate[:744] == 0).all()
-    # February = next 28 days = 672 hours
-    assert (fo_rate[744 : 744 + 672] == 1).all()
+    fo_rate = df.iloc[:, 2]
+
+    jan_days = 31
+    feb_days = 28
+
+    # January block
+    assert (fo_rate[:jan_days] == 0).all()
+    # February block
+    assert (fo_rate[jan_days : jan_days + feb_days] == 1).all()
 
 
 def test_npo_min_is_zero():
-    """npo_min must be 0 for all 8760 hours."""
+    """npo_min must be 0 for all 365 days."""
     data = {
         "fo_duration": 1,
         "po_duration": 2,
@@ -74,7 +77,7 @@ def test_npo_min_is_zero():
 
 
 def test_npo_max_season_logic():
-    """Check the correct assignment of summer vs. winter values."""
+    """Check the correct assignment of summer vs. winter values at a daily level."""
     data = {
         "fo_duration": 1,
         "po_duration": 2,
@@ -91,13 +94,12 @@ def test_npo_max_season_logic():
     npo_max = df.iloc[:, 5]
     factor = unit_count / data["nb_unit"]
 
-    # Define season indices
-    hours = np.arange(8760)
-    day_of_year = (hours // 24) + 1
+    days = np.arange(365)
+    day_of_year = days + 1
+
     winter_mask = (day_of_year <= 90) | (day_of_year >= 305)
     summer_mask = ~winter_mask
 
-    # Expected values
     expected_winter = data["npo_max_winter"] * factor
     expected_summer = data["npo_max_summer"] * factor
 
