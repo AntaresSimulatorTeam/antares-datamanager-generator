@@ -21,7 +21,7 @@ from antares.datamanager.generator.generate_study_process import (
     add_areas_to_study,
     add_links_to_study,
     generate_study,
-    load_study_data,
+    read_study_data_from_json,
 )
 
 
@@ -76,14 +76,14 @@ def mock_json_data():
 
 @patch("builtins.open", new_callable=mock_open)
 @patch("antares.datamanager.env_variables.EnvVariableType")
-def test_load_study_data(mock_env_class, mock_open_file, mock_json_data):
+def test_read_study_data_from_json(mock_env_class, mock_open_file, mock_json_data):
     mock_env_instance = MagicMock()
     mock_env_instance.get_env_variable.return_value = "/mock/path"
     mock_env_class.return_value = mock_env_instance
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
-    study_name, areas, links, area_loads, area_thermals, random_gen_settings = load_study_data("test_study")
+    study_name, areas, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json("test_study")
 
     assert study_name == "test_study"
     assert areas == ["area1", "area2"]
@@ -178,14 +178,16 @@ def test_add_links_to_study_calls_create_link():
     assert mock_link.set_capacity_indirect.call_count == 2
 
 
-@patch("antares.datamanager.generator.generate_study_process.load_study_data")
+@patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
 @patch("antares.datamanager.generator.generate_study_process.create_study")
 @patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
 @patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
-def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock_create_study, mock_load_study_data):
+def test_generate_study_calls_all_functions(
+    mock_add_links, mock_add_areas, mock_create_study, mock_read_study_data_from_json
+):
     mock_study = MagicMock()
     mock_create_study.return_value = mock_study
-    mock_load_study_data.return_value = (
+    mock_read_study_data_from_json.return_value = (
         "study_name",
         ["area1", "area2"],
         {"area1/area2": {}},
@@ -196,7 +198,7 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
 
     result = generate_study("dummy_id")
 
-    mock_load_study_data.assert_called_once_with("dummy_id")
+    mock_read_study_data_from_json.assert_called_once_with("dummy_id")
     mock_create_study.assert_called_once_with("study_name")
     mock_add_areas.assert_called_once_with(
         mock_study, ["area1", "area2"], {"area1": ["load1"], "area2": ["load2"]}, {"area1": {}, "area2": {}}
