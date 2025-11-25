@@ -9,10 +9,13 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+from pathlib import Path
 from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
+
+from antares.datamanager.utils.resolve_directory import resolve_directory
 
 
 def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataFrame:
@@ -75,4 +78,58 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataF
         )
     )
 
+    return df
+
+
+def generator_param_modulation_directory() -> Path:
+    return resolve_directory("PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY")
+
+
+def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
+    """
+    cluster_modulation: list of filenames
+    Returns a 4-column DataFrame without column names:
+        [1, 1, CM_value, MR_value]
+
+    Skips processing if cluster_modulation is empty.
+    Raises an error if:
+    - CM or MR file is missing
+    - CM and MR files have different number of rows
+    """
+    if not cluster_modulation:
+        print("cluster_modulation is empty, skipping modulation matrix generation.")
+        return pd.DataFrame()  # empty DF
+
+    base_dir = generator_param_modulation_directory()
+
+    # Detect CM and MR filenames
+    cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
+    mr_file = next((f for f in cluster_modulation if "MR_" in f), None)
+
+    # Raise error immediately if missing
+    if cm_file is None:
+        raise FileNotFoundError("CM file is missing in cluster_modulation.")
+    if mr_file is None:
+        raise FileNotFoundError("MR file is missing in cluster_modulation.")
+
+    # Build full paths
+    cm_path = base_dir / cm_file
+    mr_path = base_dir / mr_file
+
+    # Read files
+    df_cm = pd.read_feather(cm_path)
+    df_mr = pd.read_feather(mr_path)
+    cm_values = df_cm.iloc[:, 0]
+    mr_values = df_mr.iloc[:, 0]
+
+    print(f"CM file '{cm_file}' size: {len(cm_values)}")
+    print(f"MR file '{mr_file}' size: {len(mr_values)}")
+
+    # Check row counts (to check if I can have only one file CM or MR)
+    if len(cm_values) != len(mr_values):
+        raise ValueError(f"CM and MR files must have the same number of rows. Got {len(cm_values)} vs {len(mr_values)}")
+
+    # Build DataFrame
+    df = pd.DataFrame([[1, 1, cm, mr] for cm, mr in zip(cm_values, mr_values)])
+    print(f"Final DataFrame shape: {df.shape}")
     return df
