@@ -32,6 +32,10 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataF
     fo_monthly_rate = data.get("fo_monthly_rate", [])
     po_monthly_rate = data.get("po_monthly_rate", [])
 
+    if  fo_monthly_rate or po_monthly_rate:
+        print("fo_monthly_rate or po_monthly_rate area empty skipping modulation matrix generation.")
+        return pd.DataFrame()  # empty DF
+
     if len(fo_monthly_rate) != 12 or len(po_monthly_rate) != 12:
         raise ValueError("fo_monthly_rate and po_monthly_rate must have 12 values")
 
