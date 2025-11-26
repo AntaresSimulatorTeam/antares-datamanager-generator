@@ -119,6 +119,7 @@ def add_areas_to_study(
 
             # Thermals
             for cluster_name, values in thermals.items():
+                print(f"Creating thermal cluster: {cluster_name}")
                 cluster_properties = ThermalClusterProperties(**values.get("properties", {}))
                 # If cluster_properties doesn't expose attributes (e.g., patched as dict in tests),
                 if not hasattr(cluster_properties, "unit_count"):
