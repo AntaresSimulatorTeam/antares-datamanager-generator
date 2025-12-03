@@ -53,6 +53,7 @@ def read_study_data_from_json(
     joined_path = json_dir / f"{study_id}.json"
 
     print(f"Path to JSON with data for generation : {joined_path}")
+    print(f"Path to JSON with data for generation : {joined_path}")
 
     try:
         with open(joined_path, "r", encoding="utf-8") as file:
