@@ -22,10 +22,13 @@ from antares.datamanager.generator.generate_thermal_matrices_data import (
 )
 
 
-def test_create_modulation_matrix_empty_returns_empty_df():
+def test_create_modulation_matrix_empty_returns_default_df():
     df = create_modulation_matrix([])
     assert isinstance(df, pd.DataFrame)
-    assert df.empty
+    # Expect 8760 rows and 4 columns with default values [1,1,1,0]
+    assert df.shape == (8760, 4)
+    assert df.iloc[0].tolist() == [1, 1, 1, 0]
+    assert df.iloc[-1].tolist() == [1, 1, 1, 0]
 
 
 @patch("antares.datamanager.generator.generate_thermal_matrices_data.generator_param_modulation_directory")
@@ -77,9 +80,9 @@ def test_create_modulation_matrix_raises_when_missing_cm_or_mr(mock_read_feather
     mock_mod_dir.return_value = Path("/fake/mod")
 
     # Only CM provided
-    with pytest.raises(Exception):
+    with pytest.raises(FileNotFoundError):
         create_modulation_matrix(["CM_only.arrow"])  # missing MR
 
     # Only MR provided
-    with pytest.raises(Exception):
+    with pytest.raises(FileNotFoundError):
         create_modulation_matrix(["MR_only.arrow"])  # missing CM

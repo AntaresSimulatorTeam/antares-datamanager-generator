@@ -102,7 +102,9 @@ def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
     """
     if not cluster_modulation:
         print("cluster_modulation is empty, skipping modulation matrix generation.")
-        return pd.DataFrame()  # empty DF
+        # Return 8760 rows with 4 columns: first three columns = 1, last column = 0
+        data = np.tile([1, 1, 1, 0], (8760, 1))
+        return pd.DataFrame(data)
 
     base_dir = generator_param_modulation_directory()
 
