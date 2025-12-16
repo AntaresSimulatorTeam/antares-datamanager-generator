@@ -12,6 +12,7 @@
 import pytest
 
 import numpy as np
+import pandas as pd
 
 from antares.datamanager.generator.generate_thermal_matrices_data import create_prepro_data_matrix
 
@@ -118,3 +119,11 @@ def test_invalid_monthly_rate_length():
 
     with pytest.raises(ValueError):
         create_prepro_data_matrix(data, unit_count=1)
+
+
+def test_create_prepro_data_matrix_when_data_is_none_returns_365_default_rows():
+    df = create_prepro_data_matrix(None, unit_count=5)
+
+    expected = pd.DataFrame([[1, 1, 0, 0, 0, 0]] * 365)
+
+    pd.testing.assert_frame_equal(df, expected)
