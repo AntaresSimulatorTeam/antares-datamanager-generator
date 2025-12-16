@@ -76,13 +76,41 @@ def test_create_modulation_matrix_raises_on_mismatched_rows(mock_read_feather, m
 
 @patch("antares.datamanager.generator.generate_thermal_matrices_data.generator_param_modulation_directory")
 @patch("antares.datamanager.generator.generate_thermal_matrices_data.pd.read_feather")
-def test_create_modulation_matrix_raises_when_missing_cm_or_mr(mock_read_feather, mock_mod_dir):
+def test_create_modulation_matrix_cm_only_sets_mr_to_zero(mock_read_feather, mock_mod_dir):
     mock_mod_dir.return_value = Path("/fake/mod")
 
-    # Only CM provided
-    with pytest.raises(FileNotFoundError):
-        create_modulation_matrix(["CM_only.arrow"])  # missing MR
+    # Fake CM data
+    mock_read_feather.return_value = pd.DataFrame([0.2, 0.3, 0.4])
 
-    # Only MR provided
-    with pytest.raises(FileNotFoundError):
-        create_modulation_matrix(["MR_only.arrow"])  # missing CM
+    df = create_modulation_matrix(["CM_only.arrow"])
+
+    expected = pd.DataFrame(
+        [
+            [1, 1, 0.2, 0],
+            [1, 1, 0.3, 0],
+            [1, 1, 0.4, 0],
+        ]
+    )
+
+    pd.testing.assert_frame_equal(df, expected)
+
+
+@patch("antares.datamanager.generator.generate_thermal_matrices_data.generator_param_modulation_directory")
+@patch("antares.datamanager.generator.generate_thermal_matrices_data.pd.read_feather")
+def test_create_modulation_matrix_mr_only_sets_cm_to_one(mock_read_feather, mock_mod_dir):
+    mock_mod_dir.return_value = Path("/fake/mod")
+
+    # Fake MR data
+    mock_read_feather.return_value = pd.DataFrame([0.5, 0.6, 0.7])
+
+    df = create_modulation_matrix(["MR_only.arrow"])
+
+    expected = pd.DataFrame(
+        [
+            [1, 1, 1, 0.5],
+            [1, 1, 1, 0.6],
+            [1, 1, 1, 0.7],
+        ]
+    )
+
+    pd.testing.assert_frame_equal(df, expected)
