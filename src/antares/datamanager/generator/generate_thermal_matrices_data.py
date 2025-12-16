@@ -89,20 +89,67 @@ def generator_param_modulation_directory() -> Path:
     return resolve_directory("PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY")
 
 
+# def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
+#     """
+#     cluster_modulation: list of filenames
+#     Returns a 4-column DataFrame without column names:
+#         [1, 1, CM_value, MR_value]
+#
+#     Skips processing if cluster_modulation is empty.
+#     Raises an error if:
+#     - CM or MR file is missing
+#     - CM and MR files have different number of rows
+#     """
+#     if not cluster_modulation:
+#         print("cluster_modulation is empty, skipping modulation matrix generation.")
+#         # Return 8760 rows with 4 columns: first three columns = 1, last column = 0
+#         data = np.tile([1, 1, 1, 0], (8760, 1))
+#         return pd.DataFrame(data)
+#
+#     base_dir = generator_param_modulation_directory()
+#
+#     # Detect CM and MR filenames
+#     cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
+#     mr_file = next((f for f in cluster_modulation if "MR_" in f), None)
+#
+#     # Raise error immediately if missing
+#     if cm_file is None:
+#         raise FileNotFoundError("CM file is missing in cluster_modulation.")
+#     if mr_file is None:
+#         raise FileNotFoundError("MR file is missing in cluster_modulation.")
+#
+#     # Build full paths
+#     cm_path = base_dir / cm_file
+#     mr_path = base_dir / mr_file
+#
+#     # Read files
+#     df_cm = pd.read_feather(cm_path)
+#     df_mr = pd.read_feather(mr_path)
+#     cm_values = df_cm.iloc[:, 0]
+#     mr_values = df_mr.iloc[:, 0]
+#
+#     print(f"CM file '{cm_file}' size: {len(cm_values)}")
+#     print(f"MR file '{mr_file}' size: {len(mr_values)}")
+#
+#     # Check row counts (to check if I can have only one file CM or MR)
+#     if len(cm_values) != len(mr_values):
+#         raise ValueError(f"CM and MR files must have the same number of rows. Got {len(cm_values)} vs {len(mr_values)}")
+#
+#     # Build DataFrame
+#     df = pd.DataFrame([[1, 1, cm, mr] for cm, mr in zip(cm_values, mr_values)])
+#     print(f"Final DataFrame shape: {df.shape}")
+#     return df
 def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
     """
     cluster_modulation: list of filenames
     Returns a 4-column DataFrame without column names:
         [1, 1, CM_value, MR_value]
 
-    Skips processing if cluster_modulation is empty.
-    Raises an error if:
-    - CM or MR file is missing
-    - CM and MR files have different number of rows
+    If cluster_modulation is empty:
+        returns 8760 rows of [1, 1, 1, 0]
     """
     if not cluster_modulation:
         print("cluster_modulation is empty, skipping modulation matrix generation.")
-        # Return 8760 rows with 4 columns: first three columns = 1, last column = 0
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -112,30 +159,46 @@ def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
     cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
     mr_file = next((f for f in cluster_modulation if "MR_" in f), None)
 
-    # Raise error immediately if missing
-    if cm_file is None:
-        raise FileNotFoundError("CM file is missing in cluster_modulation.")
-    if mr_file is None:
-        raise FileNotFoundError("MR file is missing in cluster_modulation.")
+    # If both are missing, reuse existing fallback behavior
+    if cm_file is None and mr_file is None:
+        print("No CM or MR file found, using default modulation matrix.")
+        data = np.tile([1, 1, 1, 0], (8760, 1))
+        return pd.DataFrame(data)
 
-    # Build full paths
-    cm_path = base_dir / cm_file
-    mr_path = base_dir / mr_file
+    cm_values = None
+    mr_values = None
 
-    # Read files
-    df_cm = pd.read_feather(cm_path)
-    df_mr = pd.read_feather(mr_path)
-    cm_values = df_cm.iloc[:, 0]
-    mr_values = df_mr.iloc[:, 0]
+    # Read CM if present
+    if cm_file is not None:
+        cm_path = base_dir / cm_file
+        df_cm = pd.read_feather(cm_path)
+        cm_values = df_cm.iloc[:, 0]
+        print(f"CM file '{cm_file}' size: {len(cm_values)}")
 
-    print(f"CM file '{cm_file}' size: {len(cm_values)}")
-    print(f"MR file '{mr_file}' size: {len(mr_values)}")
+    # Read MR if present
+    if mr_file is not None:
+        mr_path = base_dir / mr_file
+        df_mr = pd.read_feather(mr_path)
+        mr_values = df_mr.iloc[:, 0]
+        print(f"MR file '{mr_file}' size: {len(mr_values)}")
 
-    # Check row counts (to check if I can have only one file CM or MR)
-    if len(cm_values) != len(mr_values):
-        raise ValueError(f"CM and MR files must have the same number of rows. Got {len(cm_values)} vs {len(mr_values)}")
+    # If both exist, row counts must match
+    if cm_values is not None and mr_values is not None:
+        if len(cm_values) != len(mr_values):
+            raise ValueError(
+                f"CM and MR files must have the same number of rows. Got {len(cm_values)} vs {len(mr_values)}"
+            )
+        df = pd.DataFrame([[1, 1, cm, mr] for cm, mr in zip(cm_values, mr_values)])
 
-    # Build DataFrame
-    df = pd.DataFrame([[1, 1, cm, mr] for cm, mr in zip(cm_values, mr_values)])
+    # CM missing → CM = 1
+    elif cm_values is None:
+        assert mr_values is not None
+        df = pd.DataFrame([[1, 1, 1, mr] for mr in mr_values])
+
+    # MR missing → MR = 0
+    else:  # mr_values is None
+        assert cm_values is not None
+        df = pd.DataFrame([[1, 1, cm, 0] for cm in cm_values])
+
     print(f"Final DataFrame shape: {df.shape}")
     return df

@@ -1,7 +1,7 @@
 python-dateutil~=2.9.0
 fastapi==0.115.8
 uvicorn[standard]==0.34.0
-antares_craft~=0.6.0
+antares_craft~=0.7.0
 dotenv~=0.9.9
 python-dotenv~=1.0.1
 annotated-types==0.7.0
@@ -48,8 +48,8 @@ pluggy==1.6.0
 psutil==7.0.0
 pyarrow==21.0.0
 pyarrow-stubs==20.0.0.20250928
-pydantic==2.11.7
-pydantic_core==2.33.2
+pydantic==2.12.4
+pydantic_core==2.41.5
 Pygments==2.19.1
 pymdown-extensions==10.15
 pyproject-api==1.9.1
@@ -70,8 +70,8 @@ tox-uv==1.25.0
 types-psutil==7.0.0.20250601
 types-pytz==2025.2.0.20250516
 types-requests==2.31.0.20240406
-typing-inspection==0.4.1
-typing_extensions==4.14.0
+typing-inspection==0.4.2
+typing_extensions==4.15.0
 tzdata==2025.2
 urllib3==2.4.0
 uv==0.7.11
