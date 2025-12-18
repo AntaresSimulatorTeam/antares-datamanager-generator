@@ -115,6 +115,9 @@ def test_invalid_monthly_rate_length():
         "po_duration": 2,
         "fo_monthly_rate": [1] * 11,  # invalid
         "po_monthly_rate": [2] * 12,
+        "npo_max_winter": 5,
+        "npo_max_summer": 10,
+        "nb_unit": 1,
     }
 
     with pytest.raises(ValueError):
@@ -127,7 +130,6 @@ def test_create_prepro_data_matrix_when_data_is_none_returns_365_default_rows():
     expected = pd.DataFrame([[1, 1, 0, 0, 0, 0]] * 365)
 
     pd.testing.assert_frame_equal(df, expected)
-
 
 
 def test_create_prepro_data_matrix_when_critical_keys_missing_returns_365_default_rows():
