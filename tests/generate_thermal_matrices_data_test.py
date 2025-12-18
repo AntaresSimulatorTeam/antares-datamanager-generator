@@ -127,3 +127,25 @@ def test_create_prepro_data_matrix_when_data_is_none_returns_365_default_rows():
     expected = pd.DataFrame([[1, 1, 0, 0, 0, 0]] * 365)
 
     pd.testing.assert_frame_equal(df, expected)
+
+
+
+def test_create_prepro_data_matrix_when_critical_keys_missing_returns_365_default_rows():
+    base = {
+        "fo_duration": 1,
+        "po_duration": 2,
+        "fo_monthly_rate": [10] * 12,
+        "po_monthly_rate": [20] * 12,
+        "npo_max_winter": 5,
+        "npo_max_summer": 10,
+        "nb_unit": 2,
+    }
+
+    # Each missing critical key should trigger the default (365 x 6) matrix
+    for missing_key in ["fo_duration", "po_duration", "npo_max_winter", "npo_max_summer"]:
+        data = dict(base)
+        del data[missing_key]
+
+        df = create_prepro_data_matrix(data, unit_count=base["nb_unit"])
+        expected = pd.DataFrame([[1, 1, 0, 0, 0, 0]] * 365)
+        pd.testing.assert_frame_equal(df, expected)

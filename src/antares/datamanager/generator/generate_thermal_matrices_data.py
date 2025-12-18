@@ -19,9 +19,12 @@ from antares.datamanager.utils.resolve_directory import resolve_directory
 
 
 def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataFrame:
-    if not data:
+    # If no data is provided OR if critical keys are missing, return the default 365x6 matrix
+    # Critical keys: fo_duration, po_duration, npo_max_winter, npo_max_summer
+    if not data or any(k not in data for k in ["fo_duration", "po_duration", "npo_max_winter", "npo_max_summer"]):
         # fo_duration, po_duration, fo_rate, po_rate, npo_min, npo_max
         return pd.DataFrame([[1, 1, 0, 0, 0, 0]] * 365)
+
     fo_duration_const = data.get("fo_duration", 0)
     po_duration_const = data.get("po_duration", 0)
     npo_max_winter = data.get("npo_max_winter", 0)
