@@ -18,23 +18,22 @@ from typing import Any
 import pandas as pd
 
 from antares.craft import ThermalClusterProperties
+from antares.craft.api_conf.api_conf import APIconf
 from antares.craft.model.area import AreaUi
-from antares.craft.model.study import Study
-from antares.datamanager.env_variables import EnvVariableType
+from antares.craft.model.study import Study, create_study_api
+from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
+from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
 from antares.datamanager.generator.generate_thermal_matrices_data import (
     create_modulation_matrix,
     create_prepro_data_matrix,
 )
-from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
-from antares.datamanager.utils.resolve_directory import resolve_directory
-
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     study_name, areas, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json(study_id)
-    study = factory.create_study(study_name)  # can specify version
+    study = factory.create_study(study_name) # can specify version
 
     add_areas_to_study(study, areas, area_loads, area_thermals)
     add_links_to_study(study, links)
@@ -45,14 +44,14 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     return {
         "message": f"Study {study_name} successfully generated",
         "study_id": study.service.study_id,
-        "study_path": str(study.path) if study.path else "",
+        "study_path": str(study.path) if study.path else ""
     }
 
 
 def read_study_data_from_json(
     study_id: str,
 ) -> tuple[str, list[str], dict[str, dict[str, int]], dict[str, list[str]], dict[str, Any], tuple[bool, int]]:
-    json_dir = resolve_directory("PEGASE_STUDY_JSON_OUTPUT_DIRECTORY")
+    json_dir = settings.nas_path / settings.json_output_directory
     joined_path = json_dir / f"{study_id}.json"
 
     print(f"Path to JSON with data for generation : {joined_path}")
@@ -90,10 +89,7 @@ def read_study_data_from_json(
 
 
 def generator_load_directory() -> Path:
-    env_vars = EnvVariableType()
-    path_to_nas = env_vars.get_env_variable("NAS_PATH")
-    path_to_load_directory = env_vars.get_env_variable("PEGASE_LOAD_OUTPUT_DIRECTORY")
-    return Path(path_to_nas) / Path(path_to_load_directory)
+    return settings.nas_path / settings.load_output_directory
 
 
 def add_areas_to_study(
