@@ -21,9 +21,9 @@ from antares.craft import ThermalClusterProperties
 from antares.craft.api_conf.api_conf import APIconf
 from antares.craft.model.area import AreaUi
 from antares.craft.model.study import Study, create_study_api
-from antares.datamanager.APIGeneratorConfig.config import APIGeneratorConfig
 from antares.datamanager.env_variables import EnvVariableType
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
+from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
 from antares.datamanager.generator.generate_thermal_matrices_data import (
     create_modulation_matrix,
@@ -33,9 +33,9 @@ from antares.datamanager.utils.areaUi import generate_random_color, generate_ran
 from antares.datamanager.utils.resolve_directory import resolve_directory
 
 
-def generate_study(study_id: str) -> dict[str, str]:
+def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     study_name, areas, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json(study_id)
-    study = create_study(study_name)
+    study = factory.create_study(study_name) # can specify version
 
     add_areas_to_study(study, areas, area_loads, area_thermals)
     add_links_to_study(study, links)
@@ -43,7 +43,11 @@ def generate_study(study_id: str) -> dict[str, str]:
         print(f"Generating timeseries for {random_gen_settings[1]} years")
         study.generate_thermal_timeseries(random_gen_settings[1])
 
-    return {"message": f"Study {study_name} successfully generated"}
+    return {
+        "message": f"Study {study_name} successfully generated",
+        "study_id": study.service.study_id,
+        "study_path": str(study.path) if study.path else ""
+    }
 
 
 def read_study_data_from_json(
@@ -92,17 +96,11 @@ def generator_load_directory() -> Path:
     path_to_load_directory = env_vars.get_env_variable("PEGASE_LOAD_OUTPUT_DIRECTORY")
     return Path(path_to_nas) / Path(path_to_load_directory)
 
-
-def create_study(study_name: str) -> Study:
-    generator_config = APIGeneratorConfig()
-    api_config = APIconf(generator_config.host, generator_config.token, generator_config.verify_ssl)
-    return create_study_api(study_name, "8.8", api_config)
-
-
 def add_areas_to_study(
     study: Study, areas: list[str], area_loads: dict[str, list[str]], area_thermals: dict[str, Any]
 ) -> None:
     path_to_load_directory = generator_load_directory()
+    print(areas)
     for area in areas:
         x, y = generate_random_coordinate()
         color_rgb = generate_random_color()
