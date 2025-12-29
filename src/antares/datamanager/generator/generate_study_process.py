@@ -18,22 +18,22 @@ from typing import Any
 import pandas as pd
 
 from antares.craft import ThermalClusterProperties
-from antares.craft.api_conf.api_conf import APIconf
 from antares.craft.model.area import AreaUi
-from antares.craft.model.study import Study, create_study_api
+from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
-from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
 from antares.datamanager.generator.generate_thermal_matrices_data import (
     create_modulation_matrix,
     create_prepro_data_matrix,
 )
+from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
+
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     study_name, areas, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json(study_id)
-    study = factory.create_study(study_name) # can specify version
+    study = factory.create_study(study_name)  # can specify version
 
     add_areas_to_study(study, areas, area_loads, area_thermals)
     add_links_to_study(study, links)
@@ -44,7 +44,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     return {
         "message": f"Study {study_name} successfully generated",
         "study_id": study.service.study_id,
-        "study_path": str(study.path) if study.path else ""
+        "study_path": str(study.path) if study.path else "",
     }
 
 

@@ -10,10 +10,9 @@
 #
 # This file is part of the Antares project.
 
-# settings.py
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,6 +20,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class GenerationMode(str, Enum):
     API = "API"
     LOCAL = "LOCAL"
+
 
 class AppSettings(BaseSettings):
     generation_mode: GenerationMode = Field(validation_alias="GENERATION_MODE")
@@ -41,8 +41,8 @@ class AppSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    @model_validator(mode='after')
-    def validate_mode(self) -> 'AppSettings':
+    @model_validator(mode="after")
+    def validate_mode(self) -> "AppSettings":
         if self.generation_mode == GenerationMode.LOCAL:
             if not self.nas_path.exists():
                 raise ValueError(f"NAS_PATH does not exist: {self.nas_path}")
