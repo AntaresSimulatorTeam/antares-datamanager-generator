@@ -10,28 +10,31 @@
 #
 # This file is part of the Antares project.
 
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Protocol
 
-from antares.craft.model.study import Study, create_study_api
 from antares.craft.api_conf.api_conf import APIconf
+from antares.craft.model.study import Study, create_study_api
 from antares.craft.service.local_services.factory import create_study_local
 
+
 class StudyFactory(Protocol):
-    def create_study(self, name: str, version: str = "8.8") -> Study:
-        ...
+    def create_study(self, name: str, version: str = "8.8") -> Study: ...
+
 
 class APIStudyFactory:
     """API Adapter"""
+
     def __init__(self, api_conf: APIconf):
         self.api_conf = api_conf
 
     def create_study(self, name: str, version: str = "8.8") -> Study:
         return create_study_api(name, version, self.api_conf)
 
+
 class LocalStudyFactory:
     """Local adapter"""
+
     def __init__(self, path: Path):
         self.path = path
 

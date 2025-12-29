@@ -12,25 +12,21 @@
 from typing import Annotated
 
 import uvicorn
-from antares.craft import APIconf
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import Depends, FastAPI, HTTPException
 
-from antares.datamanager.APIGeneratorConfig.config import APIGeneratorConfig
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
-from antares.datamanager.generator.study_adapters import APIStudyFactory, StudyFactory
 from antares.datamanager.generator.generate_study_process import generate_study
+from antares.datamanager.generator.study_adapters import StudyFactory
 
 app = FastAPI(
     title="datamanager-datamanager-generator", description="API to launch datamanager study generation", version="0.0.1"
 )
 
+
 @app.post("/generate_study/")
-def create_study(
-    study_id: str,
-    factory: Annotated[StudyFactory, Depends(get_study_factory)]
-) -> dict[str, str]:
+def create_study(study_id: str, factory: Annotated[StudyFactory, Depends(get_study_factory)]) -> dict[str, str]:
     """
     Generates an antrares study
     The mode (API, LOCAL) is determined by GENERATION_MODE environment variable
