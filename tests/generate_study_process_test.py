@@ -179,14 +179,16 @@ def test_add_links_to_study_calls_create_link():
 
 
 @patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
-@patch("antares.datamanager.generator.generate_study_process.create_study")
 @patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
 @patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
-def test_generate_study_calls_all_functions(
-    mock_add_links, mock_add_areas, mock_create_study, mock_read_study_data_from_json
-):
+def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock_read_study_data_from_json):
     mock_study = MagicMock()
-    mock_create_study.return_value = mock_study
+    mock_study.service.study_id = "dummy_id"
+    mock_study.path = ""
+
+    mock_factory = MagicMock()
+    mock_factory.create_study.return_value = mock_study
+
     mock_read_study_data_from_json.return_value = (
         "study_name",
         ["area1", "area2"],
@@ -196,16 +198,16 @@ def test_generate_study_calls_all_functions(
         (True, 3),
     )
 
-    result = generate_study("dummy_id")
+    result = generate_study("dummy_id", mock_factory)
 
     mock_read_study_data_from_json.assert_called_once_with("dummy_id")
-    mock_create_study.assert_called_once_with("study_name")
+    mock_factory.create_study.assert_called_once_with("study_name")
     mock_add_areas.assert_called_once_with(
         mock_study, ["area1", "area2"], {"area1": ["load1"], "area2": ["load2"]}, {"area1": {}, "area2": {}}
     )
     mock_add_links.assert_called_once_with(mock_study, {"area1/area2": {}})
     mock_study.generate_thermal_timeseries.assert_called_once_with(3)
-    assert result == {"message": "Study study_name successfully generated"}
+    assert result == {"message": "Study study_name successfully generated", "study_id": "dummy_id", "study_path": ""}
 
 
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
