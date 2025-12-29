@@ -9,20 +9,51 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
-
 import pytest
 
 import json
+import os
 
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
+from antares.datamanager.core.dependencies import get_study_factory
+from antares.datamanager.core.settings import AppSettings
 from antares.datamanager.generator.generate_study_process import (
     add_areas_to_study,
     add_links_to_study,
     generate_study,
     read_study_data_from_json,
 )
+from antares.datamanager.generator.study_adapters import APIStudyFactory, LocalStudyFactory
+
+
+def test_dependency_factory_selection_local(tmp_path):
+    env_vars = {
+        "GENERATION_MODE": "LOCAL",
+        "NAS_PATH": str(tmp_path),
+        "PEGASE_STUDY_JSON_OUTPUT_DIRECTORY": "json",
+        "PEGASE_LOAD_OUTPUT_DIRECTORY": "load",
+        "PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY": "mod",
+    }
+
+    with patch.dict(os.environ, env_vars, clear=True):
+        settings = AppSettings()
+        factory = get_study_factory(settings)
+
+        assert isinstance(factory, LocalStudyFactory)
+        assert factory.path == tmp_path
+
+
+def test_dependency_factory_selection_api():
+    env_vars = {"GENERATION_MODE": "API", "AW_API_HOST": "http://api-test", "AW_API_TOKEN": "token-test"}
+
+    with patch.dict(os.environ, env_vars, clear=True):
+        settings = AppSettings()
+        factory = get_study_factory(settings)
+
+        assert isinstance(factory, APIStudyFactory)
+        assert factory.api_conf.api_host == "http://api-test"
 
 
 @pytest.fixture
@@ -75,15 +106,15 @@ def mock_json_data():
 
 
 @patch("builtins.open", new_callable=mock_open)
-@patch("antares.datamanager.env_variables.EnvVariableType")
-def test_read_study_data_from_json(mock_env_class, mock_open_file, mock_json_data):
-    mock_env_instance = MagicMock()
-    mock_env_instance.get_env_variable.return_value = "/mock/path"
-    mock_env_class.return_value = mock_env_instance
+def test_read_study_data_from_json(mock_open_file, mock_json_data, tmp_path):
+    test_settings = AppSettings()
+    test_settings.nas_path = tmp_path
+    test_settings.json_output_directory = Path("json_dir")
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
-    study_name, areas, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json("test_study")
+    with patch("antares.datamanager.generator.generate_study_process.settings", test_settings):
+        study_name, areas, links, area_loads, thermals, gen_settings = read_study_data_from_json("test_study")
 
     assert study_name == "test_study"
     assert areas == ["area1", "area2"]
