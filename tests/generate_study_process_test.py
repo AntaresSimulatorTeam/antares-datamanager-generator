@@ -17,12 +17,16 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
+from antares.datamanager.APIGeneratorConfig.config import APIGeneratorConfig
+from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.generator.generate_study_process import (
     add_areas_to_study,
     add_links_to_study,
     generate_study,
     read_study_data_from_json,
 )
+from antares.datamanager.generator.study_adapters import APIStudyFactory, LocalStudyFactory
+from antares.datamanager.main import create_study
 
 
 @pytest.fixture
@@ -288,3 +292,55 @@ def test_add_areas_to_study_with_unit_count_and_data_sets_prepro():
         mock_create_matrix.assert_called_once()
         # And set on the cluster object
         mock_cluster_obj.set_prepro_data.assert_called_once_with(sentinel_matrix)
+
+
+class TestInfrastructure:
+    """
+    Tests for main, adapters, config
+    """
+
+    @patch("antares.datamanager.APIGeneratorConfig.config.EnvVariableType")
+    def test_config_reads_env_variable(self, mock_env):
+        mock_env.return_value.get_env_variable.side_effect = lambda k: "LOCAL" if k == "GENERATION_MODE" else ""
+
+        config = APIGeneratorConfig()
+        assert config.generation_mode == "LOCAL"
+
+    @patch("antares.datamanager.core.dependencies.api_config")
+    @patch("antares.datamanager.core.dependencies.EnvVariableType")
+    def test_get_study_factory_selection(self, mock_env_cls, mock_api_config):
+        mock_api_config.generation_mode = "LOCAL"
+        mock_env_cls.return_value.get_env_variable.return_value = "/tmp/nas"
+
+        factory = get_study_factory()
+
+        assert isinstance(factory, LocalStudyFactory)
+        assert factory.path == Path("/tmp/nas")
+
+        mock_api_config.generation_mode = "API"
+        factory = get_study_factory()
+
+        assert isinstance(factory, APIStudyFactory)
+
+    @patch("antares.datamanager.generator.study_adapters.create_study_local")
+    def test_local_adapter_calls_service(self, mock_create_local):
+        factory = LocalStudyFactory(Path("/root"))
+        factory.create_study("StudyName", "8.8")
+        mock_create_local.assert_called_once_with("StudyName", "8.8", Path("/root"))
+
+    @patch("antares.datamanager.generator.study_adapters.create_study_api")
+    def test_api_adapter_calls_service(self, mock_create_api):
+        mock_conf = MagicMock()
+        factory = APIStudyFactory(mock_conf)
+        factory.create_study("StudyName", "8.8")
+        mock_create_api.assert_called_once_with("StudyName", "8.8", mock_conf)
+
+    @patch("antares.datamanager.main.generate_study")
+    def test_main_create_study_function_direct(self, mock_generate_study):
+        mock_factory = MagicMock()
+        mock_generate_study.return_value = {"message": "success"}
+
+        response = create_study("my_study_id", factory=mock_factory)
+
+        assert response == {"message": "success"}
+        mock_generate_study.assert_called_once_with("my_study_id", mock_factory)
