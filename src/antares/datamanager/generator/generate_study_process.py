@@ -11,16 +11,18 @@
 # This file is part of the Antares project.
 
 import json
+import os
+import shutil
 
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from antares.craft import ThermalClusterProperties
+from antares.craft import ThermalClusterProperties, APIconf
 from antares.craft.model.area import AreaUi
-from antares.craft.model.study import Study
-from antares.datamanager.core.settings import settings
+from antares.craft.model.study import Study, import_study_api
+from antares.datamanager.core.settings import settings, GenerationMode
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
 from antares.datamanager.generator.generate_thermal_matrices_data import (
@@ -41,9 +43,12 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         print(f"Generating timeseries for {random_gen_settings[1]} years")
         study.generate_thermal_timeseries(random_gen_settings[1])
 
+    if settings.generation_mode == GenerationMode.LOCAL:
+        _package_and_upload_local_study(study_name)
+
     return {
         "message": f"Study {study_name} successfully generated",
-        "study_id": study.service.study_id,
+        "study_id": study_id,
         "study_path": str(study.path) if study.path else "",
     }
 
@@ -149,3 +154,31 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]]) -> None:
             print(f"Called create_link for: {area_from} and {area_to}")
         except APIGenerationError as e:
             raise LinkGenerationError(area_from, area_to, f"Link from {area_from} to {area_to} not created") from e
+
+def _package_and_upload_local_study(study_id_name: str) -> None:
+    try:
+        print("Starting compression and upload of local study...")
+
+        study_path = settings.nas_path / study_id_name
+        if not study_path.exists():
+            print(f"Study directory not found at {study_path}")
+            return
+
+        # archive
+        zip_base_name = str(study_path)
+        archive_path = shutil.make_archive(zip_base_name, 'zip', root_dir=study_path)
+        print(f"Study compressed to: {archive_path}")
+
+        api_conf = APIconf(
+            api_host=settings.api_host,
+            token=settings.api_token,
+            verify=settings.verify_ssl
+        )
+        # upload
+        import_study_api(api_conf, Path(archive_path))
+        print("Study uploaded to Antares Web.")
+
+        os.remove(archive_path)
+        shutil.rmtree(study_path)
+    except Exception as e:
+        raise APIGenerationError(f"Failed to archive or upload local study {study_id_name}: {str(e)}") from e
