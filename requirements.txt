@@ -50,7 +50,6 @@ pyarrow==21.0.0
 pyarrow-stubs==20.0.0.20250928
 pydantic==2.12.4
 pydantic_core==2.41.5
-pydantic-settings~=2.12.0
 Pygments==2.19.1
 pymdown-extensions==10.15
 pyproject-api==1.9.1
