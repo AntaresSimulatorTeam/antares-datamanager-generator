@@ -17,9 +17,11 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
+from antares.craft import APIconf
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.generator.generate_study_process import (
+    _package_and_upload_local_study,
     add_areas_to_study,
     add_links_to_study,
     generate_study,
@@ -294,6 +296,35 @@ def test_add_areas_to_study_with_unit_count_and_data_sets_prepro(mock_load_dir):
         mock_create_matrix.assert_called_once()
         # And set on the cluster object
         mock_cluster_obj.set_prepro_data.assert_called_once_with(sentinel_matrix)
+
+    @patch("antares.datamanager.generator.generate_study_process.import_study_api")
+    @patch("antares.datamanager.generator.generate_study_process.shutil")
+    @patch("antares.datamanager.generator.generate_study_process.os.remove")
+    @patch("antares.datamanager.generator.generate_study_process.settings")
+    def test_package_and_upload_local_study_success(mock_settings, mock_os_remove, mock_shutil, mock_import_api):
+        mock_settings.nas_path = Path("/mock/nas")
+        mock_settings.api_host = "http://mock-api"
+        mock_settings.api_token = "mock-token"
+        mock_settings.verify_ssl = False
+
+        study_name = "test_study_123"
+        expected_study_path = Path("/mock/nas") / study_name
+        mock_shutil.make_archive.return_value = "/mock/nas/test_study_123.zip"
+
+        with patch("pathlib.Path.exists", return_value=True):
+            _package_and_upload_local_study(study_name)
+
+        # assert
+        mock_shutil.make_archive.assert_called_once_with(str(expected_study_path), "zip", root_dir=expected_study_path)
+
+        assert mock_import_api.call_count == 1
+        args, _ = mock_import_api.call_args
+        assert isinstance(args[0], APIconf)
+        assert args[0].api_host == "http://mock-api"
+        assert args[0].token == "mock-token"
+        assert args[1] == Path("/mock/nas/test_study_123.zip")
+        mock_os_remove.assert_called_once_with("/mock/nas/test_study_123.zip")
+        mock_shutil.rmtree.assert_called_once_with(expected_study_path)
 
 
 class TestInfrastructure:

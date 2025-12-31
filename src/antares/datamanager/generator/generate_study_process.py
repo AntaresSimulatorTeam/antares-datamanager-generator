@@ -19,10 +19,10 @@ from typing import Any
 
 import pandas as pd
 
-from antares.craft import ThermalClusterProperties, APIconf
+from antares.craft import APIconf, ThermalClusterProperties
 from antares.craft.model.area import AreaUi
 from antares.craft.model.study import Study, import_study_api
-from antares.datamanager.core.settings import settings, GenerationMode
+from antares.datamanager.core.settings import GenerationMode, settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
 from antares.datamanager.generator.generate_thermal_matrices_data import (
@@ -155,6 +155,7 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]]) -> None:
         except APIGenerationError as e:
             raise LinkGenerationError(area_from, area_to, f"Link from {area_from} to {area_to} not created") from e
 
+
 def _package_and_upload_local_study(study_id_name: str) -> None:
     try:
         print("Starting compression and upload of local study...")
@@ -166,14 +167,10 @@ def _package_and_upload_local_study(study_id_name: str) -> None:
 
         # archive
         zip_base_name = str(study_path)
-        archive_path = shutil.make_archive(zip_base_name, 'zip', root_dir=study_path)
+        archive_path = shutil.make_archive(zip_base_name, "zip", root_dir=study_path)
         print(f"Study compressed to: {archive_path}")
 
-        api_conf = APIconf(
-            api_host=settings.api_host,
-            token=settings.api_token,
-            verify=settings.verify_ssl
-        )
+        api_conf = APIconf(api_host=settings.api_host, token=settings.api_token, verify=settings.verify_ssl)
         # upload
         import_study_api(api_conf, Path(archive_path))
         print("Study uploaded to Antares Web.")
