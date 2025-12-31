@@ -9,17 +9,19 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
-
 import pytest
 
 import json
+import os
 
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
-from antares.datamanager.APIGeneratorConfig.config import APIGeneratorConfig
+from antares.craft import APIconf
 from antares.datamanager.core.dependencies import get_study_factory
+from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.generator.generate_study_process import (
+    _package_and_upload_local_study,
     add_areas_to_study,
     add_links_to_study,
     generate_study,
@@ -79,11 +81,9 @@ def mock_json_data():
 
 
 @patch("builtins.open", new_callable=mock_open)
-@patch("antares.datamanager.env_variables.EnvVariableType")
-def test_read_study_data_from_json(mock_env_class, mock_open_file, mock_json_data):
-    mock_env_instance = MagicMock()
-    mock_env_instance.get_env_variable.return_value = "/mock/path"
-    mock_env_class.return_value = mock_env_instance
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_read_study_data_from_json(mock_settings, mock_open_file, mock_json_data):
+    mock_settings.study_json_directory = Path("/mock/path")
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
@@ -98,7 +98,9 @@ def test_read_study_data_from_json(mock_env_class, mock_open_file, mock_json_dat
     assert "area1/area2" in links
 
 
-def test_add_areas_to_study_with_fixed_seed():
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_with_fixed_seed(mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()
 
     areas = ["area1", "area2"]
@@ -241,7 +243,9 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
         mock_area_obj.create_thermal_cluster.assert_any_call("cluster2", {"must_run": True})
 
 
-def test_add_areas_to_study_with_unit_count_and_data_sets_prepro():
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_with_unit_count_and_data_sets_prepro(mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()
     mock_area_obj = MagicMock()
     mock_cluster_obj = MagicMock()
@@ -294,32 +298,70 @@ def test_add_areas_to_study_with_unit_count_and_data_sets_prepro():
         mock_cluster_obj.set_prepro_data.assert_called_once_with(sentinel_matrix)
 
 
+@patch("antares.datamanager.generator.generate_study_process.import_study_api")
+@patch("antares.datamanager.generator.generate_study_process.shutil")
+@patch("antares.datamanager.generator.generate_study_process.os.remove")
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_package_and_upload_local_study_success(mock_settings, mock_os_remove, mock_shutil, mock_import_api):
+    mock_settings.nas_path = Path("/mock/nas")
+    mock_settings.api_host = "http://mock-api"
+    mock_settings.api_token = "mock-token"
+    mock_settings.verify_ssl = False
+
+    study_name = "test_study_123"
+    expected_study_path = Path("/mock/nas") / study_name
+    mock_shutil.make_archive.return_value = "/mock/nas/test_study_123.zip"
+    with patch("pathlib.Path.exists", return_value=True):
+        _package_and_upload_local_study(study_name)
+
+    # assert
+    mock_shutil.make_archive.assert_called_once_with(str(expected_study_path), "zip", root_dir=expected_study_path)
+    assert mock_import_api.call_count == 1
+    args, _ = mock_import_api.call_args
+    assert isinstance(args[0], APIconf)
+    assert args[0].api_host == "http://mock-api"
+    assert args[0].token == "mock-token"
+    assert args[1] == Path("/mock/nas/test_study_123.zip")
+
+    mock_os_remove.assert_called_once_with("/mock/nas/test_study_123.zip")
+    mock_shutil.rmtree.assert_called_once_with(expected_study_path)
+
+
 class TestInfrastructure:
     """
     Tests for main, adapters, config
     """
 
-    @patch("antares.datamanager.APIGeneratorConfig.config.EnvVariableType")
-    def test_config_reads_env_variable(self, mock_env):
-        mock_env.return_value.get_env_variable.side_effect = lambda k: "LOCAL" if k == "GENERATION_MODE" else ""
+    @patch.dict(
+        os.environ,
+        {
+            "GENERATION_MODE": "LOCAL",
+            "NAS_PATH": "/env/nas",
+            "PEGASE_LOAD_OUTPUT_DIRECTORY": "load_dir",
+            "PEGASE_STUDY_JSON_OUTPUT_DIRECTORY": "json_dir",
+            "PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY": "mod_dir",
+        },
+    )
+    def test_settings_initialization(self):
+        from antares.datamanager.core.settings import settings
 
-        config = APIGeneratorConfig()
-        assert config.generation_mode == "LOCAL"
+        assert settings.generation_mode == GenerationMode.LOCAL
+        assert settings.nas_path == Path("/env/nas")
+        assert settings.load_output_directory == Path("/env/nas/load_dir")
 
-    @patch("antares.datamanager.core.dependencies.api_config")
-    @patch("antares.datamanager.core.dependencies.EnvVariableType")
-    def test_get_study_factory_selection(self, mock_env_cls, mock_api_config):
-        mock_api_config.generation_mode = "LOCAL"
-        mock_env_cls.return_value.get_env_variable.return_value = "/tmp/nas"
+    @patch("antares.datamanager.core.dependencies.settings")
+    def test_get_study_factory_selection(self, mock_settings):
+        mock_settings.generation_mode = GenerationMode.LOCAL
+        mock_settings.nas_path = Path("/tmp/nas")
 
         factory = get_study_factory()
-
         assert isinstance(factory, LocalStudyFactory)
-        assert factory.path == Path("/tmp/nas")
 
-        mock_api_config.generation_mode = "API"
+        mock_settings.generation_mode = GenerationMode.API
+        mock_settings.api_host = "http://localhost"
+        mock_settings.api_token = "token"
+
         factory = get_study_factory()
-
         assert isinstance(factory, APIStudyFactory)
 
     @patch("antares.datamanager.generator.study_adapters.create_study_local")
