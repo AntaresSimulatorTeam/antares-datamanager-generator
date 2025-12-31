@@ -25,6 +25,7 @@ class EnvVariableType:
         self.PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY = os.getenv("PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY")
         self.AW_API_HOST = os.getenv("AW_API_HOST")
         self.AW_API_TOKEN = os.getenv("AW_API_TOKEN")
+        self.GENERATION_MODE = os.getenv("GENERATION_MODE", "API")
 
     def get_env_variable(self, key: str) -> str:
         value = getattr(self, key, None)

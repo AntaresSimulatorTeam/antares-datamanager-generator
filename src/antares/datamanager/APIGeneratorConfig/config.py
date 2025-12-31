@@ -19,6 +19,7 @@ class APIGeneratorConfig:
         self.host = env_vars.get_env_variable("AW_API_HOST")
         self.token = env_vars.get_env_variable("AW_API_TOKEN")
         self.verify_ssl = False
+        self.generation_mode = env_vars.get_env_variable("GENERATION_MODE")
 
 
 api_config = APIGeneratorConfig()

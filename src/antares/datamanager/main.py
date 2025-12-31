@@ -9,12 +9,16 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+from typing import Annotated
 
 import uvicorn
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 
+from antares.datamanager.core.dependencies import get_study_factory
+from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_study_process import generate_study
+from antares.datamanager.generator.study_adapters import StudyFactory
 
 app = FastAPI(
     title="datamanager-datamanager-generator", description="API to launch datamanager study generation", version="0.0.1"
@@ -22,8 +26,19 @@ app = FastAPI(
 
 
 @app.post("/generate_study/")
-def create_study(study_id: str) -> dict[str, str]:
-    return generate_study(study_id)
+def create_study(study_id: str, factory: Annotated[StudyFactory, Depends(get_study_factory)]) -> dict[str, str]:
+    """
+    Generates an antrares study
+    The mode (API, LOCAL) is determined by GENERATION_MODE environment variable
+    """
+    try:
+        return generate_study(study_id, factory)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (APIGenerationError, AreaGenerationError, LinkGenerationError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 
 if __name__ == "__main__":
