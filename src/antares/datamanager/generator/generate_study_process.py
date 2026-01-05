@@ -11,31 +11,31 @@
 # This file is part of the Antares project.
 
 import json
+import os
+import shutil
 
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from antares.craft import ThermalClusterProperties
-from antares.craft.api_conf.api_conf import APIconf
+from antares.craft import APIconf, ThermalClusterProperties
 from antares.craft.model.area import AreaUi
-from antares.craft.model.study import Study, create_study_api
-from antares.datamanager.APIGeneratorConfig.config import APIGeneratorConfig
-from antares.datamanager.env_variables import EnvVariableType
+from antares.craft.model.study import Study, import_study_api
+from antares.datamanager.core.settings import GenerationMode, settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
 from antares.datamanager.generator.generate_thermal_matrices_data import (
     create_modulation_matrix,
     create_prepro_data_matrix,
 )
+from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
-from antares.datamanager.utils.resolve_directory import resolve_directory
 
 
-def generate_study(study_id: str) -> dict[str, str]:
+def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     study_name, areas, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json(study_id)
-    study = create_study(study_name)
+    study = factory.create_study(study_name)  # can specify version
 
     add_areas_to_study(study, areas, area_loads, area_thermals)
     add_links_to_study(study, links)
@@ -43,13 +43,20 @@ def generate_study(study_id: str) -> dict[str, str]:
         print(f"Generating timeseries for {random_gen_settings[1]} years")
         study.generate_thermal_timeseries(random_gen_settings[1])
 
-    return {"message": f"Study {study_name} successfully generated"}
+    if settings.generation_mode == GenerationMode.LOCAL:
+        _package_and_upload_local_study(study_name)
+
+    return {
+        "message": f"Study {study_name} successfully generated",
+        "study_id": study_id,
+        "study_path": str(study.path) if study.path else "",
+    }
 
 
 def read_study_data_from_json(
     study_id: str,
 ) -> tuple[str, list[str], dict[str, dict[str, int]], dict[str, list[str]], dict[str, Any], tuple[bool, int]]:
-    json_dir = resolve_directory("PEGASE_STUDY_JSON_OUTPUT_DIRECTORY")
+    json_dir = settings.study_json_directory
     joined_path = json_dir / f"{study_id}.json"
 
     print(f"Path to JSON with data for generation : {joined_path}")
@@ -87,22 +94,14 @@ def read_study_data_from_json(
 
 
 def generator_load_directory() -> Path:
-    env_vars = EnvVariableType()
-    path_to_nas = env_vars.get_env_variable("NAS_PATH")
-    path_to_load_directory = env_vars.get_env_variable("PEGASE_LOAD_OUTPUT_DIRECTORY")
-    return Path(path_to_nas) / Path(path_to_load_directory)
-
-
-def create_study(study_name: str) -> Study:
-    generator_config = APIGeneratorConfig()
-    api_config = APIconf(generator_config.host, generator_config.token, generator_config.verify_ssl)
-    return create_study_api(study_name, "8.8", api_config)
+    return settings.load_output_directory
 
 
 def add_areas_to_study(
     study: Study, areas: list[str], area_loads: dict[str, list[str]], area_thermals: dict[str, Any]
 ) -> None:
     path_to_load_directory = generator_load_directory()
+    print(areas)
     for area in areas:
         x, y = generate_random_coordinate()
         color_rgb = generate_random_color()
@@ -155,3 +154,28 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]]) -> None:
             print(f"Called create_link for: {area_from} and {area_to}")
         except APIGenerationError as e:
             raise LinkGenerationError(area_from, area_to, f"Link from {area_from} to {area_to} not created") from e
+
+
+def _package_and_upload_local_study(study_id_name: str) -> None:
+    try:
+        print("Starting compression and upload of local study...")
+
+        study_path = settings.nas_path / study_id_name
+        if not study_path.exists():
+            print(f"Study directory not found at {study_path}")
+            return
+
+        # archive
+        zip_base_name = str(study_path)
+        archive_path = shutil.make_archive(zip_base_name, "zip", root_dir=study_path)
+        print(f"Study compressed to: {archive_path}")
+
+        api_conf = APIconf(api_host=settings.api_host, token=settings.api_token, verify=settings.verify_ssl)
+        # upload
+        import_study_api(api_conf, Path(archive_path))
+        print("Study uploaded to Antares Web.")
+
+        os.remove(archive_path)
+        shutil.rmtree(study_path)
+    except Exception as e:
+        raise APIGenerationError(f"Failed to archive or upload local study {study_id_name}: {str(e)}") from e

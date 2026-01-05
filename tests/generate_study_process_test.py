@@ -9,20 +9,26 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
-
 import pytest
 
 import json
+import os
 
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
+from antares.craft import APIconf
+from antares.datamanager.core.dependencies import get_study_factory
+from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.generator.generate_study_process import (
+    _package_and_upload_local_study,
     add_areas_to_study,
     add_links_to_study,
     generate_study,
     read_study_data_from_json,
 )
+from antares.datamanager.generator.study_adapters import APIStudyFactory, LocalStudyFactory
+from antares.datamanager.main import create_study
 
 
 @pytest.fixture
@@ -75,11 +81,9 @@ def mock_json_data():
 
 
 @patch("builtins.open", new_callable=mock_open)
-@patch("antares.datamanager.env_variables.EnvVariableType")
-def test_read_study_data_from_json(mock_env_class, mock_open_file, mock_json_data):
-    mock_env_instance = MagicMock()
-    mock_env_instance.get_env_variable.return_value = "/mock/path"
-    mock_env_class.return_value = mock_env_instance
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_read_study_data_from_json(mock_settings, mock_open_file, mock_json_data):
+    mock_settings.study_json_directory = Path("/mock/path")
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
@@ -94,7 +98,9 @@ def test_read_study_data_from_json(mock_env_class, mock_open_file, mock_json_dat
     assert "area1/area2" in links
 
 
-def test_add_areas_to_study_with_fixed_seed():
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_with_fixed_seed(mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()
 
     areas = ["area1", "area2"]
@@ -179,14 +185,16 @@ def test_add_links_to_study_calls_create_link():
 
 
 @patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
-@patch("antares.datamanager.generator.generate_study_process.create_study")
 @patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
 @patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
-def test_generate_study_calls_all_functions(
-    mock_add_links, mock_add_areas, mock_create_study, mock_read_study_data_from_json
-):
+def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock_read_study_data_from_json):
     mock_study = MagicMock()
-    mock_create_study.return_value = mock_study
+    mock_study.service.study_id = "dummy_id"
+    mock_study.path = ""
+
+    mock_factory = MagicMock()
+    mock_factory.create_study.return_value = mock_study
+
     mock_read_study_data_from_json.return_value = (
         "study_name",
         ["area1", "area2"],
@@ -196,16 +204,16 @@ def test_generate_study_calls_all_functions(
         (True, 3),
     )
 
-    result = generate_study("dummy_id")
+    result = generate_study("dummy_id", mock_factory)
 
     mock_read_study_data_from_json.assert_called_once_with("dummy_id")
-    mock_create_study.assert_called_once_with("study_name")
+    mock_factory.create_study.assert_called_once_with("study_name")
     mock_add_areas.assert_called_once_with(
         mock_study, ["area1", "area2"], {"area1": ["load1"], "area2": ["load2"]}, {"area1": {}, "area2": {}}
     )
     mock_add_links.assert_called_once_with(mock_study, {"area1/area2": {}})
     mock_study.generate_thermal_timeseries.assert_called_once_with(3)
-    assert result == {"message": "Study study_name successfully generated"}
+    assert result == {"message": "Study study_name successfully generated", "study_id": "dummy_id", "study_path": ""}
 
 
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
@@ -235,7 +243,9 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
         mock_area_obj.create_thermal_cluster.assert_any_call("cluster2", {"must_run": True})
 
 
-def test_add_areas_to_study_with_unit_count_and_data_sets_prepro():
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_with_unit_count_and_data_sets_prepro(mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()
     mock_area_obj = MagicMock()
     mock_cluster_obj = MagicMock()
@@ -286,3 +296,93 @@ def test_add_areas_to_study_with_unit_count_and_data_sets_prepro():
         mock_create_matrix.assert_called_once()
         # And set on the cluster object
         mock_cluster_obj.set_prepro_data.assert_called_once_with(sentinel_matrix)
+
+
+@patch("antares.datamanager.generator.generate_study_process.import_study_api")
+@patch("antares.datamanager.generator.generate_study_process.shutil")
+@patch("antares.datamanager.generator.generate_study_process.os.remove")
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_package_and_upload_local_study_success(mock_settings, mock_os_remove, mock_shutil, mock_import_api):
+    mock_settings.nas_path = Path("/mock/nas")
+    mock_settings.api_host = "http://mock-api"
+    mock_settings.api_token = "mock-token"
+    mock_settings.verify_ssl = False
+
+    study_name = "test_study_123"
+    expected_study_path = Path("/mock/nas") / study_name
+    mock_shutil.make_archive.return_value = "/mock/nas/test_study_123.zip"
+    with patch("pathlib.Path.exists", return_value=True):
+        _package_and_upload_local_study(study_name)
+
+    # assert
+    mock_shutil.make_archive.assert_called_once_with(str(expected_study_path), "zip", root_dir=expected_study_path)
+    assert mock_import_api.call_count == 1
+    args, _ = mock_import_api.call_args
+    assert isinstance(args[0], APIconf)
+    assert args[0].api_host == "http://mock-api"
+    assert args[0].token == "mock-token"
+    assert args[1] == Path("/mock/nas/test_study_123.zip")
+
+    mock_os_remove.assert_called_once_with("/mock/nas/test_study_123.zip")
+    mock_shutil.rmtree.assert_called_once_with(expected_study_path)
+
+
+class TestInfrastructure:
+    """
+    Tests for main, adapters, config
+    """
+
+    @patch.dict(
+        os.environ,
+        {
+            "GENERATION_MODE": "LOCAL",
+            "NAS_PATH": "/env/nas",
+            "PEGASE_LOAD_OUTPUT_DIRECTORY": "load_dir",
+            "PEGASE_STUDY_JSON_OUTPUT_DIRECTORY": "json_dir",
+            "PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY": "mod_dir",
+        },
+    )
+    def test_settings_initialization(self):
+        from antares.datamanager.core.settings import settings
+
+        assert settings.generation_mode == GenerationMode.LOCAL
+        assert settings.nas_path == Path("/env/nas")
+        assert settings.load_output_directory == Path("/env/nas/load_dir")
+
+    @patch("antares.datamanager.core.dependencies.settings")
+    def test_get_study_factory_selection(self, mock_settings):
+        mock_settings.generation_mode = GenerationMode.LOCAL
+        mock_settings.nas_path = Path("/tmp/nas")
+
+        factory = get_study_factory()
+        assert isinstance(factory, LocalStudyFactory)
+
+        mock_settings.generation_mode = GenerationMode.API
+        mock_settings.api_host = "http://localhost"
+        mock_settings.api_token = "token"
+
+        factory = get_study_factory()
+        assert isinstance(factory, APIStudyFactory)
+
+    @patch("antares.datamanager.generator.study_adapters.create_study_local")
+    def test_local_adapter_calls_service(self, mock_create_local):
+        factory = LocalStudyFactory(Path("/root"))
+        factory.create_study("StudyName", "8.8")
+        mock_create_local.assert_called_once_with("StudyName", "8.8", Path("/root"))
+
+    @patch("antares.datamanager.generator.study_adapters.create_study_api")
+    def test_api_adapter_calls_service(self, mock_create_api):
+        mock_conf = MagicMock()
+        factory = APIStudyFactory(mock_conf)
+        factory.create_study("StudyName", "8.8")
+        mock_create_api.assert_called_once_with("StudyName", "8.8", mock_conf)
+
+    @patch("antares.datamanager.main.generate_study")
+    def test_main_create_study_function_direct(self, mock_generate_study):
+        mock_factory = MagicMock()
+        mock_generate_study.return_value = {"message": "success"}
+
+        response = create_study("my_study_id", factory=mock_factory)
+
+        assert response == {"message": "success"}
+        mock_generate_study.assert_called_once_with("my_study_id", mock_factory)
