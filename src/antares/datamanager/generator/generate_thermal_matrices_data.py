@@ -15,7 +15,7 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
-from antares.datamanager.utils.resolve_directory import resolve_directory
+from antares.datamanager.core.settings import settings
 
 
 def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataFrame:
@@ -92,7 +92,7 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataF
 
 
 def generator_param_modulation_directory() -> Path:
-    return resolve_directory("PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY")
+    return settings.param_modulation_directory
 
 
 def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
