@@ -16,6 +16,12 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
+
+# Load environment variables from a .env file if present
+# Use find_dotenv to locate the file starting from the current working directory upward
+load_dotenv(find_dotenv(), override=False)
+
 
 class GenerationMode(str, Enum):
     API = "API"
@@ -47,7 +53,9 @@ class Settings:
     # Properties for lazy loading (avoid crashes at import)
     @property
     def generation_mode(self) -> GenerationMode:
-        return GenerationMode(os.getenv("GENERATION_MODE", "API"))
+        # Treat missing or empty env as default API to be robust in CI/tox where .env may define empty values
+        value = os.getenv("GENERATION_MODE") or "API"
+        return GenerationMode(value)
 
     @property
     def nas_path(self) -> Path:
