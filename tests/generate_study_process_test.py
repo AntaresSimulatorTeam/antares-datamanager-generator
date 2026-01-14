@@ -153,12 +153,112 @@ def test_add_links_to_study_calls_create_link():
             "parameters": "matrix hash",
             "properties": "LinkProperties as JSON",
             "capacity_indirect": "matrix hash",
+            "hurdleCost": None,
         },
         "FR/IT": {
             "winterHcIndirectMw": 1200,
             "winterHpDirectMw": 1200,
             "summerHcDirectMw": 1200,
             "winterHpIndirectMw": 1200,
+            "ui": "LinkUi class as JSON",
+            "summerHcIndirectMw": 1200,
+            "capacity_direct": "matrix hash",
+            "winterHcDirectMw": 1200,
+            "summerHpDirectMw": 1200,
+            "summerHpIndirectMw": 1200,
+            "parameters": "matrix hash",
+            "properties": "LinkProperties as JSON",
+            "capacity_indirect": "matrix hash",
+            "hurdleCost": None,
+        },
+    }
+
+    # Patch the capacity generation functions to avoid randomness
+    with patch(
+        "antares.datamanager.generator.generate_study_process.generate_link_capacity_df", return_value="mock_df"
+    ):
+        # When
+        add_links_to_study(mock_study, links)
+
+    # Then
+    assert mock_study.create_link.call_count == 2
+    assert mock_link.set_capacity_direct.call_count == 2
+    assert mock_link.set_capacity_indirect.call_count == 2
+
+
+def test_add_links_to_study_with_hurdle_cost():
+    """
+    Ensure that when hurdleCost is provided, we set link parameters and update properties.
+    """
+    mock_study = MagicMock()
+    mock_link = MagicMock()
+    mock_study.create_link.return_value = mock_link
+
+    hurdle_value = 0.1
+    links = {
+        "A/B": {
+            # minimal keys required by generate_link_capacity_df for both modes
+            "winterHcDirectMw": 1,
+            "winterHpDirectMw": 1,
+            "summerHcDirectMw": 1,
+            "summerHpDirectMw": 1,
+            "winterHcIndirectMw": 1,
+            "winterHpIndirectMw": 1,
+            "summerHcIndirectMw": 1,
+            "summerHpIndirectMw": 1,
+            "hurdleCost": 0.1,
+        }
+    }
+
+    with patch(
+        "antares.datamanager.generator.generate_study_process.generate_link_capacity_df", return_value="mock_df"
+    ):
+        add_links_to_study(mock_study, links)
+
+    # Property update method should be called once
+    assert mock_link.update_properties.call_count == 1
+
+    # set_parameters should be called with a DataFrame of shape (8760, 6)
+    assert mock_link.set_parameters.call_count == 1
+    df_passed = mock_link.set_parameters.call_args[0][0]
+    # Lazy import pandas to avoid hard dependency at import time
+    import pandas as pd
+
+    assert isinstance(df_passed, pd.DataFrame)
+    assert df_passed.shape == (8760, 6)
+    # The first two columns should contain the hurdle value
+    assert float(df_passed.iloc[0, 0]) == float(hurdle_value)
+    assert float(df_passed.iloc[100, 1]) == float(hurdle_value)
+    # The last four columns should be zeros
+    assert float(df_passed.iloc[0, 2]) == 0.0
+    assert float(df_passed.iloc[8759, 5]) == 0.0
+    mock_study = MagicMock()
+    mock_link = MagicMock()
+    mock_study.create_link.return_value = mock_link
+
+    links = {
+        "FR/CH": {
+            "winterHcIndirectMw": 1300,
+            "winterHpDirectMw": 1200,
+            "summerHcDirectMw": 1100,
+            "winterHpIndirectMw": 1300,
+            "hurdleCost": 0.1,
+            "ui": "LinkUi class as JSON",
+            "summerHcIndirectMw": 1000,
+            "capacity_direct": "matrix hash",
+            "winterHcDirectMw": 1200,
+            "summerHpDirectMw": 1300,
+            "summerHpIndirectMw": 1200,
+            "parameters": "matrix hash",
+            "properties": "LinkProperties as JSON",
+            "capacity_indirect": "matrix hash",
+        },
+        "FR/IT": {
+            "winterHcIndirectMw": 1200,
+            "winterHpDirectMw": 1200,
+            "summerHcDirectMw": 1200,
+            "winterHpIndirectMw": 1200,
+            "hurdleCost": 0.1,
             "ui": "LinkUi class as JSON",
             "summerHcIndirectMw": 1200,
             "capacity_direct": "matrix hash",

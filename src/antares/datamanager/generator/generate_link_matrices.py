@@ -60,3 +60,32 @@ def generate_link_capacity_df(link_data: dict[str, int], mode: str) -> pd.DataFr
     df = pd.DataFrame(capacity)
 
     return df
+
+
+def generate_link_parameters_df(hurdle_cost: float) -> pd.DataFrame:
+    """
+    Generate a DataFrame for link parameters.
+
+    When hurdleCost is provided (not None/NaN), return a DataFrame with 8760 rows
+    and 6 unnamed columns where:
+      - the first two columns are filled with hurdleCost value
+      - the remaining four columns are filled with 0
+
+    If hurdleCost is None or NaN, a DataFrame of the same shape filled with zeros is returned.
+
+    Note: Although the signature expects a float, callers may pass a dict containing
+    the key "hurdleCost". This function supports that pattern for robustness.
+    """
+    total_hours = 8760
+
+    # Handle None/NaN as missing value → use zeros
+    if hurdle_cost is None or pd.isna(hurdle_cost):
+        first_two = np.zeros((total_hours, 2), dtype=float)
+    else:
+        first_two = np.full((total_hours, 2), float(hurdle_cost))
+
+    last_four = np.zeros((total_hours, 4), dtype=float)
+
+    data = np.concatenate([first_two, last_four], axis=1)
+    df = pd.DataFrame(data)
+    return df
