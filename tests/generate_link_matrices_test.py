@@ -12,7 +12,7 @@
 
 import pytest
 
-from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
+from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
 
 
 @pytest.fixture
@@ -73,3 +73,36 @@ def test_array_length(link_data_example: dict[str, int]) -> None:
 
     assert len(df_direct) == 8760, "Direct DataFrame should have 8760 hours."
     assert len(df_indirect) == 8760, "Indirect DataFrame should have 8760 hours."
+
+
+def test_generate_link_parameters_df_with_value() -> None:
+    import pandas as pd
+
+    hurdle = 5.5
+    df = generate_link_parameters_df(hurdle)
+
+    # Shape
+    assert df.shape == (8760, 6)
+
+    # First two columns = hurdle, last four = 0
+    first_two_unique = set(pd.unique(df.iloc[:, 0:2].values.ravel()))
+    last_four_unique = set(pd.unique(df.iloc[:, 2:6].values.ravel()))
+
+    assert first_two_unique == {float(hurdle)}
+    assert last_four_unique == {0.0}
+
+
+def test_generate_link_parameters_df_with_none() -> None:
+    df = generate_link_parameters_df(None)  # type: ignore[arg-type]
+
+    assert df.shape == (8760, 6)
+    assert float(df.values.max()) == 0.0
+    assert float(df.values.min()) == 0.0
+
+
+def test_generate_link_parameters_df_with_nan() -> None:
+    df = generate_link_parameters_df(float("nan"))
+
+    assert df.shape == (8760, 6)
+    assert float(df.values.max()) == 0.0
+    assert float(df.values.min()) == 0.0

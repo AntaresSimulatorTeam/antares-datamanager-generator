@@ -19,12 +19,12 @@ from typing import Any
 
 import pandas as pd
 
-from antares.craft import APIconf, ThermalClusterProperties
+from antares.craft import APIconf, LinkPropertiesUpdate, ThermalClusterProperties
 from antares.craft.model.area import AreaUi
 from antares.craft.model.study import Study, import_study_api
 from antares.datamanager.core.settings import GenerationMode, settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
-from antares.datamanager.generator.generate_link_capacity_data import generate_link_capacity_df
+from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
 from antares.datamanager.generator.generate_thermal_matrices_data import (
     create_modulation_matrix,
     create_prepro_data_matrix,
@@ -151,6 +151,10 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]]) -> None:
             link = study.create_link(area_from=area_from, area_to=area_to)
             link.set_capacity_direct(df_capacity_direct)
             link.set_capacity_indirect(df_capacity_indirect)
+            if link_data["hurdleCost"] is not None:
+                df_parameters = generate_link_parameters_df(link_data["hurdleCost"])
+                link.update_properties(LinkPropertiesUpdate(hurdles_cost=True))
+                link.set_parameters(df_parameters)
             print(f"Called create_link for: {area_from} and {area_to}")
         except APIGenerationError as e:
             raise LinkGenerationError(area_from, area_to, f"Link from {area_from} to {area_to} not created") from e
