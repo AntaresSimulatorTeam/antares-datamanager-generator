@@ -114,22 +114,17 @@ def add_areas_to_study(
             x, y = generate_random_coordinate()
             color_rgb = generate_random_color()
             area_ui = AreaUi(x=x, y=y, color_rgb=color_rgb)
-
-        # Properties from JSON if provided
         properties_json = area_def.get("properties") if isinstance(area_def, dict) else None
         area_properties = None
         if isinstance(properties_json, dict):
-            props = {}
-            for k, v in properties_json.items():
-                if k in {"energy_cost_unsupplied", "energy_cost_spilled"}:
-                    try:
-                        props[k] = float(v)
-                    except Exception:
-                        continue
-            try:
-                area_properties = AreaProperties(**props)
-            except Exception:
-                area_properties = None
+            has_ecu = "energy_cost_unsupplied" in properties_json
+            has_ecs = "energy_cost_spilled" in properties_json
+
+            if has_ecu or has_ecs:
+                area_properties = AreaProperties(
+                    energy_cost_unsupplied=properties_json.get("energy_cost_unsupplied", 0.0),
+                    energy_cost_spilled=properties_json.get("energy_cost_spilled", 0.0),
+                )
 
         loads = area_loads.get(area_name, [])
         thermals = area_thermals.get(area_name, {})
