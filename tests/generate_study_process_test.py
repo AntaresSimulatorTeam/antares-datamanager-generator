@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, mock_open, patch
 from antares.craft import APIconf
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
+from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError
 from antares.datamanager.generator.generate_study_process import (
     _package_and_upload_local_study,
     add_areas_to_study,
@@ -52,7 +53,7 @@ def mock_json_data():
                         }
                     },
                     "ui": "AreaUI class as JSON",
-                    "properties": "AreaProperties as JSON",
+                    "properties": {"energy_cost_unsupplied": "4000.0", "energy_cost_spilled": "200.0"},
                     "loads": ["load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
                 },
                 "area2": {
@@ -71,7 +72,7 @@ def mock_json_data():
                         }
                     },
                     "ui": "AreaUI class as JSON",
-                    "properties": "AreaProperties as JSON",
+                    "properties": {"energy_cost_unsupplied": "4000.0", "energy_cost_spilled": "1500.0"},
                     "loads": ["load_area2_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
                 },
             },
@@ -87,10 +88,14 @@ def test_read_study_data_from_json(mock_settings, mock_open_file, mock_json_data
 
     mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
 
-    study_name, areas, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json("test_study")
+    study_name, areas_dict, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json(
+        "test_study"
+    )
 
     assert study_name == "test_study"
-    assert areas == ["area1", "area2"]
+    assert sorted(list(areas_dict.keys())) == ["area1", "area2"]
+    assert areas_dict["area1"]["properties"]["energy_cost_unsupplied"] == "4000.0"
+    assert areas_dict["area1"]["properties"]["energy_cost_spilled"] == "200.0"
     assert area_loads == {
         "area1": ["load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
         "area2": ["load_area2_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
@@ -103,11 +108,11 @@ def test_add_areas_to_study_with_fixed_seed(mock_load_dir):
     mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()
 
-    areas = ["area1", "area2"]
+    areas_dict = {"area1": {}, "area2": {}}
     area_loads = {}  # Ajout d’un mock pour le paramètre manquant
     area_thermals = {}
 
-    add_areas_to_study(mock_study, areas, area_loads, area_thermals)
+    add_areas_to_study(mock_study, areas_dict, area_loads, area_thermals)
     assert mock_study.create_area.call_count == 2
 
 
@@ -120,11 +125,11 @@ def test_add_areas_to_study_calls_create_area_and_set_load(mock_read_feather, mo
     mock_generator_load_directory.return_value = "/fake/path"
     mock_read_feather.return_value = "fake_df"
 
-    areas = ["A", "B"]
+    areas_dict = {"A": {}, "B": {}}
     area_loads = {"A": ["loadA.feather"], "B": ["loadB.feather", "loadB2.feather"]}
     area_thermals = {}
 
-    add_areas_to_study(mock_study, areas, area_loads, area_thermals)
+    add_areas_to_study(mock_study, areas_dict, area_loads, area_thermals)
 
     assert mock_study.create_area.call_count == 2
     assert mock_area_obj.set_load.call_count == 3
@@ -297,7 +302,7 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
 
     mock_read_study_data_from_json.return_value = (
         "study_name",
-        ["area1", "area2"],
+        {"area1": {}, "area2": {}},
         {"area1/area2": {}},
         {"area1": ["load1"], "area2": ["load2"]},
         {"area1": {}, "area2": {}},
@@ -309,7 +314,7 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
     mock_read_study_data_from_json.assert_called_once_with("dummy_id")
     mock_factory.create_study.assert_called_once_with("study_name")
     mock_add_areas.assert_called_once_with(
-        mock_study, ["area1", "area2"], {"area1": ["load1"], "area2": ["load2"]}, {"area1": {}, "area2": {}}
+        mock_study, {"area1": {}, "area2": {}}, {"area1": ["load1"], "area2": ["load2"]}, {"area1": {}, "area2": {}}
     )
     mock_add_links.assert_called_once_with(mock_study, {"area1/area2": {}})
     mock_study.generate_thermal_timeseries.assert_called_once_with(3)
@@ -323,7 +328,7 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
     mock_study.create_area.return_value = mock_area_obj
     mock_generator_load_directory.return_value = "/fake/path"
 
-    areas = ["A"]
+    areas_dict = {"A": {}}
     area_loads = {"A": []}
     area_thermals = {
         "A": {
@@ -336,7 +341,7 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
         "antares.datamanager.generator.generate_study_process.ThermalClusterProperties",
         side_effect=lambda **kwargs: kwargs,  # input as dictionary
     ):
-        add_areas_to_study(mock_study, areas, area_loads, area_thermals)
+        add_areas_to_study(mock_study, areas_dict, area_loads, area_thermals)
 
         assert mock_area_obj.create_thermal_cluster.call_count == 2
         mock_area_obj.create_thermal_cluster.assert_any_call("cluster1", {"enabled": True, "nominal_capacity": 2.0})
@@ -352,7 +357,7 @@ def test_add_areas_to_study_with_unit_count_and_data_sets_prepro(mock_load_dir):
     mock_study.create_area.return_value = mock_area_obj
     mock_area_obj.create_thermal_cluster.return_value = mock_cluster_obj
 
-    areas = ["A"]
+    areas_dict = {"A": {}}
     area_loads = {"A": []}
     area_thermals = {
         "A": {
@@ -388,7 +393,7 @@ def test_add_areas_to_study_with_unit_count_and_data_sets_prepro(mock_load_dir):
             return_value=sentinel_matrix,
         ) as mock_create_matrix,
     ):
-        add_areas_to_study(mock_study, areas, area_loads, area_thermals)
+        add_areas_to_study(mock_study, areas_dict, area_loads, area_thermals)
 
         # create_thermal_cluster called once with DummyProps instance
         assert mock_area_obj.create_thermal_cluster.call_count == 1
@@ -486,3 +491,89 @@ class TestInfrastructure:
 
         assert response == {"message": "success"}
         mock_generate_study.assert_called_once_with("my_study_id", mock_factory)
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_uses_ui_and_properties_from_json(mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
+    mock_study = MagicMock()
+
+    # Provide explicit UI and properties
+    areas_dict = {
+        "AreaJson": {
+            "ui": {"x": 10, "y": 20, "color_rgb": [1, 2, 3]},
+            "properties": {"energy_cost_unsupplied": "4000.0", "energy_cost_spilled": "200.5"},
+        }
+    }
+
+    class DummyUI:
+        def __init__(self, **kwargs):
+            self.x = kwargs.get("x")
+            self.y = kwargs.get("y")
+            self.color_rgb = kwargs.get("color_rgb")
+
+    with patch("antares.datamanager.generator.generate_study_process.AreaUi", side_effect=lambda **kw: DummyUI(**kw)):
+        add_areas_to_study(mock_study, areas_dict, area_loads={}, area_thermals={})
+
+    # Verify create_area called once with matching UI and parsed properties
+    assert mock_study.create_area.call_count == 1
+    _, kwargs = mock_study.create_area.call_args
+    ui_passed = kwargs.get("ui")
+    props_passed = kwargs.get("properties")
+    assert isinstance(ui_passed, DummyUI)
+    assert ui_passed.x == 10 and ui_passed.y == 20 and ui_passed.color_rgb == [1, 2, 3]
+    # Properties should be an object exposing attributes with float values
+    assert hasattr(props_passed, "energy_cost_unsupplied")
+    assert hasattr(props_passed, "energy_cost_spilled")
+    assert float(getattr(props_passed, "energy_cost_unsupplied")) == 4000.0
+    assert float(getattr(props_passed, "energy_cost_spilled")) == 200.5
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+@patch("antares.datamanager.generator.generate_study_process.generate_random_color", return_value=[9, 9, 9])
+@patch("antares.datamanager.generator.generate_study_process.generate_random_coordinate", return_value=(7, 8))
+def test_add_areas_to_study_invalid_ui_falls_back_to_random(mock_coord, mock_color, mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
+    mock_study = MagicMock()
+
+    # ui provided but invalid for AreaUi constructor (unknown key), causing fallback path
+    areas_dict = {"X": {"ui": {"unknown": 1}}}
+
+    class DummyUI:
+        def __init__(self, **kwargs):
+            self.x = kwargs.get("x")
+            self.y = kwargs.get("y")
+            self.color_rgb = kwargs.get("color_rgb")
+
+    # The first call (from invalid dict) should raise, the second call (fallback with x,y,color_rgb) should succeed
+    def area_ui_constructor(**kwargs):
+        if "unknown" in kwargs:
+            raise TypeError("invalid field")
+        return DummyUI(**kwargs)
+
+    with patch("antares.datamanager.generator.generate_study_process.AreaUi", side_effect=area_ui_constructor):
+        add_areas_to_study(mock_study, areas_dict, area_loads={}, area_thermals={})
+
+    assert mock_study.create_area.call_count == 1
+    _, kwargs = mock_study.create_area.call_args
+    ui_passed = kwargs.get("ui")
+    assert isinstance(ui_passed, DummyUI)
+    assert ui_passed.x == 7 and ui_passed.y == 8 and ui_passed.color_rgb == [9, 9, 9]
+    mock_coord.assert_called_once()
+    mock_color.assert_called_once()
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_maps_api_error_to_area_error(mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
+    mock_study = MagicMock()
+    # Simulate API error when creating the area
+    mock_study.create_area.side_effect = APIGenerationError("backend failed")
+
+    areas_dict = {"ERR": {}}
+
+    with pytest.raises(AreaGenerationError) as exc:
+        add_areas_to_study(mock_study, areas_dict, area_loads={}, area_thermals={})
+
+    assert "ERR" in str(exc.value)
+    assert "backend failed" in str(exc.value)

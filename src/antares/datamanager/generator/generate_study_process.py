@@ -20,7 +20,7 @@ from typing import Any
 import pandas as pd
 
 from antares.craft import APIconf, LinkPropertiesUpdate, ThermalClusterProperties
-from antares.craft.model.area import AreaUi
+from antares.craft.model.area import AreaProperties, AreaUi
 from antares.craft.model.study import Study, import_study_api
 from antares.datamanager.core.settings import GenerationMode, settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
@@ -34,10 +34,10 @@ from antares.datamanager.utils.areaUi import generate_random_color, generate_ran
 
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
-    study_name, areas, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json(study_id)
+    study_name, areas_dict, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json(study_id)
     study = factory.create_study(study_name)  # can specify version
 
-    add_areas_to_study(study, areas, area_loads, area_thermals)
+    add_areas_to_study(study, areas_dict, area_loads, area_thermals)
     add_links_to_study(study, links)
     if area_thermals and random_gen_settings[0] is True:
         print(f"Generating timeseries for {random_gen_settings[1]} years")
@@ -55,7 +55,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
 
 def read_study_data_from_json(
     study_id: str,
-) -> tuple[str, list[str], dict[str, dict[str, int]], dict[str, list[str]], dict[str, Any], tuple[bool, int]]:
+) -> tuple[str, dict[str, Any], dict[str, dict[str, int]], dict[str, list[str]], dict[str, Any], tuple[bool, int]]:
     json_dir = settings.study_json_directory
     joined_path = json_dir / f"{study_id}.json"
 
@@ -73,7 +73,6 @@ def read_study_data_from_json(
     links_dict = study_data.get("links", {})
     random_gen_settings = study_data.get("enable_random_ts", True), study_data.get("nb_years", 1)
 
-    area_names = list(areas_dict.keys())
     area_loads = {}
     area_thermals = {}
     for area, area_data in areas_dict.items():
@@ -90,7 +89,7 @@ def read_study_data_from_json(
         if thermals_dict:
             area_thermals[area] = thermals_dict
 
-    return study_name, area_names, links_dict, area_loads, area_thermals, random_gen_settings
+    return study_name, areas_dict, links_dict, area_loads, area_thermals, random_gen_settings
 
 
 def generator_load_directory() -> Path:
@@ -98,19 +97,40 @@ def generator_load_directory() -> Path:
 
 
 def add_areas_to_study(
-    study: Study, areas: list[str], area_loads: dict[str, list[str]], area_thermals: dict[str, Any]
+    study: Study, areas_dict: dict[str, Any], area_loads: dict[str, list[str]], area_thermals: dict[str, Any]
 ) -> None:
     path_to_load_directory = generator_load_directory()
-    print(areas)
-    for area in areas:
-        x, y = generate_random_coordinate()
-        color_rgb = generate_random_color()
-        area_ui = AreaUi(x=x, y=y, color_rgb=color_rgb)
-        loads = area_loads.get(area, [])
-        thermals = area_thermals.get(area, {})
+    print(list(areas_dict.keys()))
+    for area_name, area_def in areas_dict.items():
+        # UI from JSON if provided, otherwise random
+        ui_json = area_def.get("ui") if isinstance(area_def, dict) else None
+        area_ui = None
+        if isinstance(ui_json, dict):
+            try:
+                area_ui = AreaUi(**ui_json)
+            except Exception:
+                area_ui = None
+        if area_ui is None:
+            x, y = generate_random_coordinate()
+            color_rgb = generate_random_color()
+            area_ui = AreaUi(x=x, y=y, color_rgb=color_rgb)
+        properties_json = area_def.get("properties") if isinstance(area_def, dict) else None
+        area_properties = None
+        if isinstance(properties_json, dict):
+            has_ecu = "energy_cost_unsupplied" in properties_json
+            has_ecs = "energy_cost_spilled" in properties_json
+
+            if has_ecu or has_ecs:
+                area_properties = AreaProperties(
+                    energy_cost_unsupplied=properties_json.get("energy_cost_unsupplied", 0.0),
+                    energy_cost_spilled=properties_json.get("energy_cost_spilled", 0.0),
+                )
+
+        loads = area_loads.get(area_name, [])
+        thermals = area_thermals.get(area_name, {})
 
         try:
-            area_obj = study.create_area(area_name=area, ui=area_ui)
+            area_obj = study.create_area(area_name=area_name, properties=area_properties, ui=area_ui)
             for load_file in loads:
                 load_path = Path(path_to_load_directory) / load_file
                 df = pd.read_feather(load_path)
@@ -136,9 +156,9 @@ def add_areas_to_study(
                 thermal_cluster.set_prepro_data(prepro_matrix)
                 thermal_cluster.set_prepro_modulation(modulation_matrix)
 
-            print(f"Successfully created area for {area}")
+            print(f"Successfully created area for {area_name}")
         except APIGenerationError as e:
-            raise AreaGenerationError(area, e.message) from e
+            raise AreaGenerationError(area_name, e.message) from e
 
 
 def add_links_to_study(study: Study, links: dict[str, dict[str, int]]) -> None:
