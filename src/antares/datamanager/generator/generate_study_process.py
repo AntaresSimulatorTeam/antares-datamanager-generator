@@ -15,47 +15,43 @@ import os
 import shutil
 
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
-from antares.craft import APIconf, LinkPropertiesUpdate, ThermalClusterProperties
+from antares.craft import APIconf, LinkPropertiesUpdate
 from antares.craft.model.area import AreaProperties, AreaUi
 from antares.craft.model.study import Study, import_study_api
 from antares.datamanager.core.settings import GenerationMode, settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
-from antares.datamanager.generator.generate_thermal_matrices_data import (
-    create_modulation_matrix,
-    create_prepro_data_matrix,
-)
+from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
+from antares.datamanager.generator.generate_thermal_clusters import generate_thermal_clusters
 from antares.datamanager.generator.study_adapters import StudyFactory
+from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
 
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
-    study_name, areas_dict, links, area_loads, area_thermals, random_gen_settings = read_study_data_from_json(study_id)
-    study = factory.create_study(study_name)  # can specify version
+    study_data = read_study_data_from_json(study_id)
+    study = factory.create_study(study_data.name, "9.3")
 
-    add_areas_to_study(study, areas_dict, area_loads, area_thermals)
-    add_links_to_study(study, links)
-    if area_thermals and random_gen_settings[0] is True:
-        print(f"Generating timeseries for {random_gen_settings[1]} years")
-        study.generate_thermal_timeseries(random_gen_settings[1])
+    add_areas_to_study(study, study_data)
+    add_links_to_study(study, study_data.links)
+    if study_data.area_thermals and study_data.enable_random_ts:
+        print(f"Generating timeseries for {study_data.nb_years} years")
+        study.generate_thermal_timeseries(study_data.nb_years)
 
     if settings.generation_mode == GenerationMode.LOCAL:
-        _package_and_upload_local_study(study_name)
+        _package_and_upload_local_study(study_data.name)
 
     return {
-        "message": f"Study {study_name} successfully generated",
+        "message": f"Study {study_data.name} successfully generated",
         "study_id": study_id,
         "study_path": str(study.path) if study.path else "",
     }
 
 
-def read_study_data_from_json(
-    study_id: str,
-) -> tuple[str, dict[str, Any], dict[str, dict[str, int]], dict[str, list[str]], dict[str, Any], tuple[bool, int]]:
+def read_study_data_from_json(study_id: str) -> StudyData:
     json_dir = settings.study_json_directory
     joined_path = json_dir / f"{study_id}.json"
 
@@ -68,40 +64,42 @@ def read_study_data_from_json(
         raise FileNotFoundError(f"File does not exist: {joined_path}") from e
 
     study_name = list(data.keys())[0]
-    study_data = data.get(study_name, {})
-    areas_dict = study_data.get("areas", {})
-    links_dict = study_data.get("links", {})
-    random_gen_settings = study_data.get("enable_random_ts", True), study_data.get("nb_years", 1)
+    raw_study_data = data.get(study_name, {})
 
-    area_loads = {}
-    area_thermals = {}
-    for area, area_data in areas_dict.items():
+    study_data = StudyData(
+        name=study_name,
+        areas=raw_study_data.get("areas", {}),
+        links=raw_study_data.get("links", {}),
+        enable_random_ts=raw_study_data.get("enable_random_ts", True),
+        nb_years=raw_study_data.get("nb_years", 1),
+    )
+
+    for area, area_info in study_data.areas.items():
         # Loads
-        loads = area_data.get("loads", [])
-
-        if isinstance(loads, list):
-            area_loads[area] = loads
-        else:
-            area_loads[area] = []
+        loads = area_info.get("loads", [])
+        study_data.area_loads[area] = loads if isinstance(loads, list) else []
 
         # Thermals
-        thermals_dict = area_data.get("thermals", {})
-        if thermals_dict:
-            area_thermals[area] = thermals_dict
+        thermals = area_info.get("thermals", {})
+        if thermals:
+            study_data.area_thermals[area] = thermals
 
-    return study_name, areas_dict, links_dict, area_loads, area_thermals, random_gen_settings
+        # STS
+        sts = area_info.get("sts", {})
+        if sts:
+            study_data.area_sts[area] = sts
+
+    return study_data
 
 
 def generator_load_directory() -> Path:
     return settings.load_output_directory
 
 
-def add_areas_to_study(
-    study: Study, areas_dict: dict[str, Any], area_loads: dict[str, list[str]], area_thermals: dict[str, Any]
-) -> None:
+def add_areas_to_study(study: Study, study_data: StudyData) -> None:
     path_to_load_directory = generator_load_directory()
-    print(list(areas_dict.keys()))
-    for area_name, area_def in areas_dict.items():
+    print(list(study_data.areas.keys()))
+    for area_name, area_def in study_data.areas.items():
         # UI from JSON if provided, otherwise random
         ui_json = area_def.get("ui") if isinstance(area_def, dict) else None
         area_ui = None
@@ -126,8 +124,9 @@ def add_areas_to_study(
                     energy_cost_spilled=properties_json.get("energy_cost_spilled", 0.0),
                 )
 
-        loads = area_loads.get(area_name, [])
-        thermals = area_thermals.get(area_name, {})
+        loads = study_data.area_loads.get(area_name, [])
+        thermals = study_data.area_thermals.get(area_name, {})
+        sts = study_data.area_sts.get(area_name, {})
 
         try:
             area_obj = study.create_area(area_name=area_name, properties=area_properties, ui=area_ui)
@@ -136,25 +135,8 @@ def add_areas_to_study(
                 df = pd.read_feather(load_path)
                 area_obj.set_load(df)
 
-            # Thermals
-            for cluster_name, values in thermals.items():
-                print(f"Creating thermal cluster: {cluster_name}")
-                cluster_properties = ThermalClusterProperties(**values.get("properties", {}))
-                # If cluster_properties doesn't expose attributes (e.g., patched as dict in tests),
-                if not hasattr(cluster_properties, "unit_count"):
-                    area_obj.create_thermal_cluster(cluster_name, cluster_properties)
-                    continue
-
-                cluster_data = values.get("data", {})
-                unit_count = cluster_properties.unit_count
-                prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count)
-
-                cluster_modulation = values.get("modulation", {})
-                modulation_matrix = create_modulation_matrix(cluster_modulation)
-
-                thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
-                thermal_cluster.set_prepro_data(prepro_matrix)
-                thermal_cluster.set_prepro_modulation(modulation_matrix)
+            generate_thermal_clusters(area_obj, thermals)
+            generate_sts_clusters(area_obj, sts)
 
             print(f"Successfully created area for {area_name}")
         except APIGenerationError as e:

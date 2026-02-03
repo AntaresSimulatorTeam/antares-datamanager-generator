@@ -14,7 +14,7 @@ import pytest
 import numpy as np
 import pandas as pd
 
-from antares.datamanager.generator.generate_thermal_matrices_data import create_prepro_data_matrix
+from antares.datamanager.generator.generate_thermal_clusters import create_prepro_data_matrix
 
 
 def test_prepro_basic_shape():
