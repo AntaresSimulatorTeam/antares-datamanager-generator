@@ -15,7 +15,31 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
+from antares.craft import ThermalClusterProperties
+from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
+
+
+def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
+    # Thermals
+    for cluster_name, values in thermals.items():
+        print(f"Creating thermal cluster: {cluster_name}")
+        cluster_properties = ThermalClusterProperties(**values.get("properties", {}))
+        # If cluster_properties doesn't expose attributes (e.g., patched as dict in tests),
+        if not hasattr(cluster_properties, "unit_count"):
+            area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+            continue
+
+        cluster_data = values.get("data", {})
+        unit_count = cluster_properties.unit_count
+        prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count)
+
+        cluster_modulation = values.get("modulation", {})
+        modulation_matrix = create_modulation_matrix(cluster_modulation)
+
+        thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+        thermal_cluster.set_prepro_data(prepro_matrix)
+        thermal_cluster.set_prepro_modulation(modulation_matrix)
 
 
 def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataFrame:

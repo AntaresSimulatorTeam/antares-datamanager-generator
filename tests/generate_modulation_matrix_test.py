@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from antares.datamanager.generator.generate_thermal_matrices_data import (
+from antares.datamanager.generator.generate_thermal_clusters import (
     create_modulation_matrix,
 )
 
@@ -31,8 +31,8 @@ def test_create_modulation_matrix_empty_returns_default_df():
     assert df.iloc[-1].tolist() == [1, 1, 1, 0]
 
 
-@patch("antares.datamanager.generator.generate_thermal_matrices_data.generator_param_modulation_directory")
-@patch("antares.datamanager.generator.generate_thermal_matrices_data.pd.read_feather")
+@patch("antares.datamanager.generator.generate_thermal_clusters.generator_param_modulation_directory")
+@patch("antares.datamanager.generator.generate_thermal_clusters.pd.read_feather")
 def test_create_modulation_matrix_builds_dataframe(mock_read_feather, mock_mod_dir):
     # Arrange
     mock_mod_dir.return_value = Path("/fake/mod")
@@ -61,8 +61,8 @@ def test_create_modulation_matrix_builds_dataframe(mock_read_feather, mock_mod_d
     mock_read_feather.assert_any_call(Path("/fake/mod/MR_cluster.arrow"))
 
 
-@patch("antares.datamanager.generator.generate_thermal_matrices_data.generator_param_modulation_directory")
-@patch("antares.datamanager.generator.generate_thermal_matrices_data.pd.read_feather")
+@patch("antares.datamanager.generator.generate_thermal_clusters.generator_param_modulation_directory")
+@patch("antares.datamanager.generator.generate_thermal_clusters.pd.read_feather")
 def test_create_modulation_matrix_raises_on_mismatched_rows(mock_read_feather, mock_mod_dir):
     mock_mod_dir.return_value = Path("/fake/mod")
 
@@ -74,8 +74,8 @@ def test_create_modulation_matrix_raises_on_mismatched_rows(mock_read_feather, m
         create_modulation_matrix(["CM_x.arrow", "MR_x.arrow"])
 
 
-@patch("antares.datamanager.generator.generate_thermal_matrices_data.generator_param_modulation_directory")
-@patch("antares.datamanager.generator.generate_thermal_matrices_data.pd.read_feather")
+@patch("antares.datamanager.generator.generate_thermal_clusters.generator_param_modulation_directory")
+@patch("antares.datamanager.generator.generate_thermal_clusters.pd.read_feather")
 def test_create_modulation_matrix_cm_only_sets_mr_to_zero(mock_read_feather, mock_mod_dir):
     mock_mod_dir.return_value = Path("/fake/mod")
 
@@ -95,8 +95,8 @@ def test_create_modulation_matrix_cm_only_sets_mr_to_zero(mock_read_feather, moc
     pd.testing.assert_frame_equal(df, expected)
 
 
-@patch("antares.datamanager.generator.generate_thermal_matrices_data.generator_param_modulation_directory")
-@patch("antares.datamanager.generator.generate_thermal_matrices_data.pd.read_feather")
+@patch("antares.datamanager.generator.generate_thermal_clusters.generator_param_modulation_directory")
+@patch("antares.datamanager.generator.generate_thermal_clusters.pd.read_feather")
 def test_create_modulation_matrix_mr_only_sets_cm_to_one(mock_read_feather, mock_mod_dir):
     mock_mod_dir.return_value = Path("/fake/mod")
 
