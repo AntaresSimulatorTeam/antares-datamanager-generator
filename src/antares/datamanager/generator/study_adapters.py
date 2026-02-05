@@ -16,10 +16,11 @@ from typing import Protocol
 from antares.craft.api_conf.api_conf import APIconf
 from antares.craft.model.study import Study, create_study_api
 from antares.craft.service.local_services.factory import create_study_local
+from antares.datamanager.core.settings import settings
 
 
 class StudyFactory(Protocol):
-    def create_study(self, name: str, version: str = "8.8") -> Study: ...
+    def create_study(self, name: str, version: str = settings.study_version) -> Study: ...
 
 
 class APIStudyFactory:
@@ -28,7 +29,7 @@ class APIStudyFactory:
     def __init__(self, api_conf: APIconf):
         self.api_conf = api_conf
 
-    def create_study(self, name: str, version: str = "8.8") -> Study:
+    def create_study(self, name: str, version: str = settings.study_version) -> Study:
         return create_study_api(name, version, self.api_conf)
 
 
@@ -38,6 +39,6 @@ class LocalStudyFactory:
     def __init__(self, path: Path):
         self.path = path
 
-    def create_study(self, name: str, version: str = "8.8") -> Study:
+    def create_study(self, name: str, version: str = settings.study_version) -> Study:
         # create_study_local will throw if directaory already exists
         return create_study_local(name, version, self.path)

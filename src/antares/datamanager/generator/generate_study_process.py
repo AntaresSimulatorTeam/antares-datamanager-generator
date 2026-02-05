@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from antares.craft import APIconf, LinkPropertiesUpdate
+from antares.craft import APIconf, GeneralParametersUpdate, LinkPropertiesUpdate, StudySettingsUpdate
 from antares.craft.model.area import AreaProperties, AreaUi
 from antares.craft.model.study import Study, import_study_api
 from antares.datamanager.core.settings import GenerationMode, settings
@@ -33,7 +33,11 @@ from antares.datamanager.utils.areaUi import generate_random_color, generate_ran
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     study_data = read_study_data_from_json(study_id)
-    study = factory.create_study(study_data.name, "9.3")
+    study = factory.create_study(study_data.name)
+    study_settings = StudySettingsUpdate(
+        general_parameters=GeneralParametersUpdate(first_month_in_year=settings.study_setting_first_month)
+    )
+    study.update_settings(study_settings)
 
     add_areas_to_study(study, study_data)
     add_links_to_study(study, study_data.links)

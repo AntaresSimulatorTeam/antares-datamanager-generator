@@ -18,6 +18,8 @@ from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
 
+from antares.craft import Month
+
 # Load environment variables from a .env file if present
 # Use find_dotenv to locate the file starting from the current working directory upward
 load_dotenv(find_dotenv(), override=False)
@@ -84,6 +86,18 @@ class Settings:
     @property
     def api_token(self) -> str:
         return os.getenv("AW_API_TOKEN", "")
+
+    # JULY BECAUSE BP TYPE
+    @property
+    def study_setting_first_month(self) -> Month:
+        value = os.getenv("STUDY_SETTING_FIRST_MONTH")
+        if value:
+            return Month(value)
+        return Month.JULY
+
+    @property
+    def study_version(self) -> str:
+        return os.getenv("STUDY_VERSION", "")
 
     @property
     def verify_ssl(self) -> bool:

@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
-from antares.craft import APIconf
+from antares.craft import APIconf, Month
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError
@@ -318,7 +318,10 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
     result = generate_study("dummy_id", mock_factory)
 
     mock_read_study_data_from_json.assert_called_once_with("dummy_id")
-    mock_factory.create_study.assert_called_once_with("study_name", "9.3")
+    mock_factory.create_study.assert_called_once_with("study_name")
+    args, _ = mock_study.update_settings.call_args
+    study_settings_update = args[0]
+    assert study_settings_update.general_parameters.first_month_in_year == Month.JULY  # Value from .env
     mock_add_areas.assert_called_once_with(mock_study, study_data)
     mock_add_links.assert_called_once_with(mock_study, study_data.links)
     mock_study.generate_thermal_timeseries.assert_called_once_with(3)

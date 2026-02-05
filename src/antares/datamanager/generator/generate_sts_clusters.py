@@ -9,7 +9,6 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
-from pathlib import Path
 from typing import Any, Dict
 
 import pandas as pd
@@ -29,8 +28,6 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any]) -> None:
 
         storage = area_obj.create_st_storage(cluster_name, st_storage_properties)
 
-        # Mapping of arrow file prefixes to their corresponding setter methods in antares-craft
-        # Filename example: inflows.xlsx.f185b056-c144-445f-9dd1-34f92c6138c9.arrow
         matrix_setter_map = {
             "inflows": storage.set_storage_inflows,
             "lower_curve": storage.set_lower_rule_curve,
@@ -40,16 +37,21 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any]) -> None:
         }
 
         base_dir = settings.sts_ts_directory
+
         for filename in sts_series:
             prefix = filename.split(".")[0]
             setter = matrix_setter_map.get(prefix)
-            if setter:
-                file_path = base_dir / filename
-                if file_path.exists():
-                    df = pd.read_feather(file_path)
-                    # Use the first column of the matrix (it corresponds to TS1)
-                    if not df.empty:
-                        df = df.iloc[:, [0]]
-                    setter(df)
-                else:
-                    print(f"Warning: STS matrix file not found: {file_path}")
+            if not setter:
+                continue
+
+            file_path = base_dir / filename
+            if not file_path.exists():
+                raise FileNotFoundError(f"STS matrix file not found for cluster '{cluster_name}': {file_path}")
+
+            df = pd.read_feather(file_path)
+
+            # Column 0 = timestamps, column 1 = TS1
+            if not df.empty:
+                df = df.iloc[:, [1]]
+
+            setter(df)
