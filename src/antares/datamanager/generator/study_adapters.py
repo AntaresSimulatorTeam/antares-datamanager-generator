@@ -10,6 +10,8 @@
 #
 # This file is part of the Antares project.
 
+import shutil
+
 from pathlib import Path
 from typing import Protocol
 
@@ -40,5 +42,9 @@ class LocalStudyFactory:
         self.path = path
 
     def create_study(self, name: str, version: str = settings.study_version) -> Study:
-        # create_study_local will throw if directaory already exists
+        study_path = self.path / name
+        # if the directory already exists, it will recursively delete the content
+        if study_path.exists():
+            shutil.rmtree(study_path)
+
         return create_study_local(name, version, self.path)
