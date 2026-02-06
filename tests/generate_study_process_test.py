@@ -522,8 +522,28 @@ class TestInfrastructure:
         factory = get_study_factory()
         assert isinstance(factory, APIStudyFactory)
 
+    @patch("antares.datamanager.generator.study_adapters.shutil.rmtree")
+    @patch("antares.datamanager.generator.study_adapters.Path.exists")
     @patch("antares.datamanager.generator.study_adapters.create_study_local")
-    def test_local_adapter_calls_service(self, mock_create_local):
+    def test_local_adapter_deletes_existing_directory(self, mock_create_local, mock_exists, mock_rmtree):
+        factory = LocalStudyFactory(Path("/root"))
+
+        # Case 1: Directory exists
+        mock_exists.return_value = True
+        factory.create_study("StudyName", "8.8")
+        mock_rmtree.assert_called_once_with(Path("/root/StudyName"))
+        mock_create_local.assert_called_with("StudyName", "8.8", Path("/root"))
+
+        # Case 2: Directory does not exist
+        mock_rmtree.reset_mock()
+        mock_exists.return_value = False
+        factory.create_study("StudyName", "8.8")
+        mock_rmtree.assert_not_called()
+
+    @patch("antares.datamanager.generator.study_adapters.Path.exists")
+    @patch("antares.datamanager.generator.study_adapters.create_study_local")
+    def test_local_adapter_calls_service(self, mock_create_local, mock_exists):
+        mock_exists.return_value = False
         factory = LocalStudyFactory(Path("/root"))
         factory.create_study("StudyName", "8.8")
         mock_create_local.assert_called_once_with("StudyName", "8.8", Path("/root"))
