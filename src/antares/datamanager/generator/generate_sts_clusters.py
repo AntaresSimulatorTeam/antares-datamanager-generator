@@ -16,11 +16,17 @@ import pandas as pd
 from antares.craft import Area, STStorageProperties
 from antares.datamanager.core.settings import settings
 
+from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
+
+# Configurer le logger au démarrage du module (ou appeler configure_ecs_logger() dans le main)
+configure_ecs_logger()
+logger = get_logger(__name__)
+
 
 def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any]) -> None:
     # Short-term storage clusters
     for cluster_name, values in sts.items():
-        print(f"Creating sts cluster: {cluster_name}")
+        logger.info("Creating sts cluster : ", cluster_name)
         properties = values.get("properties", {})
         st_storage_properties = STStorageProperties(**properties)
 

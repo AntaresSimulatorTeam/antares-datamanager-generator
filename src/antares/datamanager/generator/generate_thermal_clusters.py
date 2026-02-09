@@ -18,12 +18,16 @@ import pandas as pd
 from antares.craft import ThermalClusterProperties
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
+from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
+
+configure_ecs_logger()
+logger = get_logger(__name__)
 
 
 def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
     # Thermals
     for cluster_name, values in thermals.items():
-        print(f"Creating thermal cluster: {cluster_name}")
+        logger.info(f"Creating thermal cluster: {cluster_name}")
         cluster_properties = ThermalClusterProperties(**values.get("properties", {}))
         # If cluster_properties doesn't expose attributes (e.g., patched as dict in tests),
         if not hasattr(cluster_properties, "unit_count"):
@@ -63,7 +67,7 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataF
     po_monthly_rate = data.get("po_monthly_rate", [])
 
     if not fo_monthly_rate or not po_monthly_rate:
-        print("fo_monthly_rate or po_monthly_rate area empty skipping modulation matrix generation.")
+        logger.info("fo_monthly_rate or po_monthly_rate area empty skipping modulation matrix generation.")
         return pd.DataFrame()  # empty DF
 
     if len(fo_monthly_rate) != 12 or len(po_monthly_rate) != 12:
@@ -129,7 +133,7 @@ def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
         returns 8760 rows of [1, 1, 1, 0]
     """
     if not cluster_modulation:
-        print("cluster_modulation is empty, skipping modulation matrix generation.")
+        logger.info("cluster_modulation is empty, skipping modulation matrix generation.")
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -141,7 +145,7 @@ def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
 
     # If both are missing, reuse existing fallback behavior
     if cm_file is None and mr_file is None:
-        print("No CM or MR file found, using default modulation matrix.")
+        logger.info("No CM or MR file found, using default modulation matrix.")
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -153,14 +157,14 @@ def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
         cm_path = base_dir / cm_file
         df_cm = pd.read_feather(cm_path)
         cm_values = df_cm.iloc[:, 0]
-        print(f"CM file '{cm_file}' size: {len(cm_values)}")
+        logger.info(f"CM file '{cm_file}' size: {len(cm_values)}")
 
     # Read MR if present
     if mr_file is not None:
         mr_path = base_dir / mr_file
         df_mr = pd.read_feather(mr_path)
         mr_values = df_mr.iloc[:, 0]
-        print(f"MR file '{mr_file}' size: {len(mr_values)}")
+        logger.info(f"MR file '{mr_file}' size: {len(mr_values)}")
 
     # If both exist, row counts must match
     if cm_values is not None and mr_values is not None:
@@ -180,5 +184,5 @@ def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
         assert cm_values is not None
         df = pd.DataFrame([[1, 1, cm, 0] for cm in cm_values])
 
-    print(f"Final DataFrame shape: {df.shape}")
+    logger.info(f"Final DataFrame shape: {df.shape}")
     return df

@@ -29,6 +29,11 @@ from antares.datamanager.generator.generate_thermal_clusters import generate_the
 from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
+from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
+
+# Configurer le logger au démarrage du module (ou appeler configure_ecs_logger() dans le main)
+configure_ecs_logger()
+logger = get_logger(__name__)
 
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
@@ -42,7 +47,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     add_areas_to_study(study, study_data)
     add_links_to_study(study, study_data.links)
     if study_data.area_thermals and study_data.enable_random_ts:
-        print(f"Generating timeseries for {study_data.nb_years} years")
+        logger.info(f"Generating timeseries for {study_data.nb_years} years")
         study.generate_thermal_timeseries(study_data.nb_years)
 
     if settings.generation_mode == GenerationMode.LOCAL:
@@ -59,7 +64,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
     json_dir = settings.study_json_directory
     joined_path = json_dir / f"{study_id}.json"
 
-    print(f"Path to JSON with data for generation : {joined_path}")
+    logger.info(f"Path to JSON with data for generation : {joined_path}")
 
     try:
         with open(joined_path, "r", encoding="utf-8") as file:
@@ -102,7 +107,7 @@ def generator_load_directory() -> Path:
 
 def add_areas_to_study(study: Study, study_data: StudyData) -> None:
     path_to_load_directory = generator_load_directory()
-    print(list(study_data.areas.keys()))
+    logger.info(list(study_data.areas.keys()))
     for area_name, area_def in study_data.areas.items():
         # UI from JSON if provided, otherwise random
         ui_json = area_def.get("ui") if isinstance(area_def, dict) else None
@@ -142,7 +147,7 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
             generate_thermal_clusters(area_obj, thermals)
             generate_sts_clusters(area_obj, sts)
 
-            print(f"Successfully created area for {area_name}")
+            logger.info(f"Successfully created area for {area_name}")
         except APIGenerationError as e:
             raise AreaGenerationError(area_name, e.message) from e
 
@@ -161,29 +166,29 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]]) -> None:
                 df_parameters = generate_link_parameters_df(link_data["hurdleCost"])
                 link.update_properties(LinkPropertiesUpdate(hurdles_cost=True))
                 link.set_parameters(df_parameters)
-            print(f"Called create_link for: {area_from} and {area_to}")
+            logger.info(f"Called create_link for: {area_from} and {area_to}")
         except APIGenerationError as e:
             raise LinkGenerationError(area_from, area_to, f"Link from {area_from} to {area_to} not created") from e
 
 
 def _package_and_upload_local_study(study_id_name: str) -> None:
     try:
-        print("Starting compression and upload of local study...")
+        logger.info("Starting compression and upload of local study...")
 
         study_path = settings.nas_path / study_id_name
         if not study_path.exists():
-            print(f"Study directory not found at {study_path}")
+            logger.info(f"Study directory not found at {study_path}")
             return
 
         # archive
         zip_base_name = str(study_path)
         archive_path = shutil.make_archive(zip_base_name, "zip", root_dir=study_path)
-        print(f"Study compressed to: {archive_path}")
+        logger.info(f"Study compressed to: {archive_path}")
 
         api_conf = APIconf(api_host=settings.api_host, token=settings.api_token, verify=settings.verify_ssl)
         # upload
         import_study_api(api_conf, Path(archive_path))
-        print("Study uploaded to Antares Web.")
+        logger.info("Study uploaded to Antares Web.")
 
         os.remove(archive_path)
         shutil.rmtree(study_path)
