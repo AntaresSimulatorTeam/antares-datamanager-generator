@@ -87,7 +87,13 @@ def create_thermal_cluster_with_prepro(
     cluster_data = cluster_values.get("data", {})
     unit_count = cluster_properties.unit_count
     prepro_matrix = prepro_matrix_func(cluster_data, unit_count)
+    cluster_data = cluster_values.get("data", {})
+    unit_count = cluster_properties.unit_count
+    prepro_matrix = prepro_matrix_func(cluster_data, unit_count)
 
+    thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+    thermal_cluster.set_prepro_data(prepro_matrix)
+    thermal_cluster.set_prepro_modulation(modulation_matrix)
         thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
         thermal_cluster.update_properties(ThermalClusterPropertiesUpdate(min_stable_power=min_stable_power_final))
         thermal_cluster.set_prepro_data(prepro_matrix)
