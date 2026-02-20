@@ -22,5 +22,6 @@ class StudyData:
     area_loads: dict[str, list[str]] = field(default_factory=dict)
     area_thermals: dict[str, Any] = field(default_factory=dict)
     area_sts: dict[str, Any] = field(default_factory=dict)
+    area_dsr: dict[str, Any] = field(default_factory=dict)
     enable_random_ts: bool = True
     nb_years: int = 1

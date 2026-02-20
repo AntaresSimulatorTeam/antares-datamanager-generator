@@ -17,6 +17,8 @@ import os
 
 from datetime import datetime
 
+from typing_extensions import override
+
 ECS_VERSION = "1.6.0"
 
 
