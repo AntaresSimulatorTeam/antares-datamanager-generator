@@ -1,12 +1,29 @@
+# Copyright (c) 2024, RTE (https://www.rte-france.com)
+#
+# See AUTHORS.txt
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+#
+# This file is part of the Antares project.
+
 # File: src/antares/datamanager/logging_setup.py
-import logging
 import json
+import logging
 import os
+
 from datetime import datetime
+
+from typing_extensions import override
 
 ECS_VERSION = "1.6.0"
 
+
 class ECSJSONFormatter(logging.Formatter):
+    @override
     def format(self, record: logging.LogRecord) -> str:
         msg = record.getMessage()
         payload = {
@@ -22,12 +39,31 @@ class ECSJSONFormatter(logging.Formatter):
 
         # Extra fields passés via `extra={...}`
         extras = {
-            k: v for k, v in record.__dict__.items()
-            if k not in (
-                "name", "msg", "args", "levelname", "levelno", "pathname",
-                "filename", "module", "exc_info", "exc_text", "stack_info",
-                "lineno", "funcName", "created", "msecs", "relativeCreated",
-                "thread", "threadName", "processName", "process", "message"
+            k: v
+            for k, v in record.__dict__.items()
+            if k
+            not in (
+                "name",
+                "msg",
+                "args",
+                "levelname",
+                "levelno",
+                "pathname",
+                "filename",
+                "module",
+                "exc_info",
+                "exc_text",
+                "stack_info",
+                "lineno",
+                "funcName",
+                "created",
+                "msecs",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "processName",
+                "process",
+                "message",
             )
         }
         if extras:
@@ -47,7 +83,8 @@ class ECSJSONFormatter(logging.Formatter):
 
         return json.dumps(payload, default=str, ensure_ascii=False)
 
-def configure_ecs_logger(level: int = logging.INFO):
+
+def configure_ecs_logger(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     if root.handlers:
         return
@@ -56,5 +93,6 @@ def configure_ecs_logger(level: int = logging.INFO):
     root.setLevel(level)
     root.addHandler(handler)
 
-def get_logger(name: str):
+
+def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
