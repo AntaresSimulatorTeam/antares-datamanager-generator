@@ -80,6 +80,10 @@ class Settings:
         return self._resolve_env_path("PEGASE_STS_TS_OUTPUT_DIRECTORY")
 
     @property
+    def dsr_modulation_directory(self) -> Path:
+        return self._resolve_env_path("PEGASE_DSR_TS_OUTPUT_DIRECTORY")
+
+    @property
     def api_host(self) -> str:
         return os.getenv("AW_API_HOST", "")
 

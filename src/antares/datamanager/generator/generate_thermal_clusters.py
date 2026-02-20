@@ -28,22 +28,37 @@ def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
     # Thermals
     for cluster_name, values in thermals.items():
         logger.info(f"Creating thermal cluster: {cluster_name}")
-        cluster_properties = ThermalClusterProperties(**values.get("properties", {}))
-        # If cluster_properties doesn't expose attributes (e.g., patched as dict in tests),
-        if not hasattr(cluster_properties, "unit_count"):
-            area_obj.create_thermal_cluster(cluster_name, cluster_properties)
-            continue
-
-        cluster_data = values.get("data", {})
-        unit_count = cluster_properties.unit_count
-        prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count)
 
         cluster_modulation = values.get("modulation", {})
         modulation_matrix = create_modulation_matrix(cluster_modulation)
 
-        thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
-        thermal_cluster.set_prepro_data(prepro_matrix)
-        thermal_cluster.set_prepro_modulation(modulation_matrix)
+        create_thermal_cluster_with_prepro(area_obj, cluster_name, values, create_prepro_data_matrix, modulation_matrix)
+
+
+def create_thermal_cluster_with_prepro(
+    area_obj: Area,
+    cluster_name: str,
+    cluster_values: Dict[str, Any],
+    prepro_matrix_func: Any,
+    modulation_matrix: pd.DataFrame,
+) -> None:
+    """
+    Creates a thermal cluster, generates its prepro matrix, and sets it.
+    """
+    cluster_properties = ThermalClusterProperties(**cluster_values.get("properties", {}))
+
+    # If cluster_properties doesn't expose attributes (e.g., patched as dict in tests),
+    if not hasattr(cluster_properties, "unit_count"):
+        area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+        return
+
+    cluster_data = cluster_values.get("data", {})
+    unit_count = cluster_properties.unit_count
+    prepro_matrix = prepro_matrix_func(cluster_data, unit_count)
+
+    thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+    thermal_cluster.set_prepro_data(prepro_matrix)
+    thermal_cluster.set_prepro_modulation(modulation_matrix)
 
 
 def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataFrame:
@@ -133,7 +148,7 @@ def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
         returns 8760 rows of [1, 1, 1, 0]
     """
     if not cluster_modulation:
-        logger.info("cluster_modulation is empty, skipping modulation matrix generation.")
+        logger.info("cluster_modulation is empty, skipping thermal modulation matrix generation.")
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 

@@ -15,7 +15,6 @@ import pandas as pd
 
 from antares.craft import Area, STStorageProperties
 from antares.datamanager.core.settings import settings
-
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
 
 # Configurer le logger au démarrage du module (ou appeler configure_ecs_logger() dans le main)
