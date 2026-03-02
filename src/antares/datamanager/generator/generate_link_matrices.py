@@ -17,11 +17,11 @@ import pandas as pd
 def generate_link_capacity_df(link_data: dict[str, int], mode: str) -> pd.DataFrame:
     """
     Generation of df for direct and indirect links capacity,
-    in first version HP (Peak hours) are defined as 9h to 20h all
+    in first version HP (Peak hours) are defined as 8h to 19h all
     other hours are HC (Off-peak hours)
     Total number of rows is 8760
-    Winter is defined as Jan, Feb, Mar, Nov and Dec (days 0 - 90 and 305 - 635)
-    Summer is defined as Apr, Jun, Jul, Aug, Sep, Oct
+    Winter is defined as Jan, Feb, Mar, Oct, Nov and Dec (days 1 - 90 and 274 - 365)
+    Summer is defined as Apr, May, Jun, Jul, Aug, Sep
     :param link_data: Mw value to use for different periods of year
     :param mode: direct or indirect
     :return: df corresponding to direct or indirect parameter
@@ -30,8 +30,8 @@ def generate_link_capacity_df(link_data: dict[str, int], mode: str) -> pd.DataFr
     indices = np.arange(total_hours)
     hours = indices % 24
     day_of_year = (indices // 24) + 1
-    seasons = np.where((day_of_year <= 90) | (day_of_year >= 305), "winter", "summer")
-    periods = np.where((hours >= 9) & (hours <= 20), "HP", "HC")
+    seasons = np.where((day_of_year <= 90) | (day_of_year >= 274), "winter", "summer")
+    periods = np.where((hours >= 8) & (hours <= 19), "HP", "HC")
 
     if mode.lower() == "direct":
         winter_hc_value = link_data["winterHcDirectMw"]

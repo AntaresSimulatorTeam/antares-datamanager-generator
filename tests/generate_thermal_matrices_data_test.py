@@ -98,7 +98,7 @@ def test_npo_max_season_logic():
     days = np.arange(365)
     day_of_year = days + 1
 
-    winter_mask = (day_of_year <= 90) | (day_of_year >= 305)
+    winter_mask = (day_of_year <= 90) | (day_of_year >= 274)
     summer_mask = ~winter_mask
 
     expected_winter = data["npo_max_winter"] * factor
