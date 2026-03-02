@@ -10,6 +10,7 @@
 #
 # This file is part of the Antares project.
 
+import pytest
 from pathlib import Path
 from unittest.mock import patch
 
