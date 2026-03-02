@@ -27,9 +27,9 @@ from antares.datamanager.generator.generate_link_matrices import generate_link_c
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
 from antares.datamanager.generator.generate_thermal_clusters import generate_thermal_clusters
 from antares.datamanager.generator.study_adapters import StudyFactory
+from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
 from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
-from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
 
 # Configurer le logger au démarrage du module (ou appeler configure_ecs_logger() dans le main)
 configure_ecs_logger()

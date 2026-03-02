@@ -34,12 +34,12 @@ def link_data_example() -> dict[str, int]:
 def get_season_period(index: int) -> tuple[str, str]:
     hour = index % 24
     day_of_year = (index // 24) + 1
-    season = "winter" if (day_of_year <= 90 or day_of_year >= 305) else "summer"
-    period = "HP" if 9 <= hour <= 20 else "HC"
+    season = "winter" if (day_of_year <= 90 or day_of_year >= 274) else "summer"
+    period = "HP" if 8 <= hour <= 19 else "HC"
     return season, period
 
 
-@pytest.mark.parametrize("index", [0, 100, 2500, 8500])
+@pytest.mark.parametrize("index", [0, 100, 2500, 7000, 8500])
 @pytest.mark.parametrize("mode", ["direct", "indirect"])
 def test_generate_link_capacity_data_by_index_auto_keys(
     link_data_example: dict[str, int],

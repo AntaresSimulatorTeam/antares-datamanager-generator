@@ -1,7 +1,21 @@
+# Copyright (c) 2024, RTE (https://www.rte-france.com)
+#
+# See AUTHORS.txt
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+#
+# This file is part of the Antares project.
+
 # python
 import logging
-import uvicorn
+
 from typing import Annotated
+
+import uvicorn
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -38,8 +52,10 @@ def create_study(study_id: str, factory: Annotated[StudyFactory, Depends(get_stu
 
 # Gestionnaire global pour logger toute exception non interceptée ailleurs
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.exception("Unhandled exception on request", exc_info=True, extra={"method": request.method, "path": str(request.url)})
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception(
+        "Unhandled exception on request", exc_info=True, extra={"method": request.method, "path": str(request.url)}
+    )
     return JSONResponse(status_code=500, content={"detail": f"Internal Error: {str(exc)}"})
 
 

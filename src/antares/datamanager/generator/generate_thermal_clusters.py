@@ -88,7 +88,7 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataF
     days = np.arange(1, 366)
 
     # Determine season
-    season_is_winter = (days <= 90) | (days >= 305)
+    season_is_winter = (days <= 90) | (days >= 274)
     season_is_summer = ~season_is_winter
 
     # Compute NPO_max daily safely
