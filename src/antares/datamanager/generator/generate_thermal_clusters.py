@@ -15,13 +15,26 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
-from antares.craft import ThermalClusterProperties
+from antares.craft import ThermalClusterProperties, ThermalClusterPropertiesUpdate
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
 
 configure_ecs_logger()
 logger = get_logger(__name__)
+
+
+def calculate_min_stable_power(min_stable_power: float , cluster_modulation: list[str])-> Any:
+    cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
+    if cm_file is not None:
+        base_dir = generator_param_modulation_directory()
+        cm_path = base_dir / cm_file
+        df_cm = pd.read_feather(cm_path)
+        cm_values = df_cm.iloc[:, 0]
+        logger.info(f"CM file '{cm_file}' size: {len(cm_values)}")
+        min_cm_value = cm_values.min()
+        return round(min_stable_power * min_cm_value,2)
+    return round(min_stable_power, 2)
 
 
 def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
@@ -36,12 +49,17 @@ def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
 
         cluster_data = values.get("data", {})
         unit_count = cluster_properties.unit_count
+
+
         prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count)
 
         cluster_modulation = values.get("modulation", {})
+        min_stable_power_final = calculate_min_stable_power(cluster_properties.min_stable_power,cluster_modulation)
+
         modulation_matrix = create_modulation_matrix(cluster_modulation)
 
         thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+        thermal_cluster.update_properties(ThermalClusterPropertiesUpdate(min_stable_power=min_stable_power_final))
         thermal_cluster.set_prepro_data(prepro_matrix)
         thermal_cluster.set_prepro_modulation(modulation_matrix)
 
