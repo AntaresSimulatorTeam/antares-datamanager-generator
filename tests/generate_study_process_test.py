@@ -414,7 +414,7 @@ def test_add_areas_to_study_with_unit_count_and_data_sets_prepro(mock_load_dir):
         area_thermals={
             "A": {
                 "clusterX": {
-                    "properties": {"enabled": True, "unit_count": 3},
+                    "properties": {"enabled": True, "unit_count": 3, "min_stable_power": 100},
                     "data": {
                         "fo_duration": 1,
                         "po_duration": 2,
