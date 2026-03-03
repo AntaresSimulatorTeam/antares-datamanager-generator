@@ -29,7 +29,7 @@ from antares.datamanager.generator.generate_thermal_clusters import generate_the
 from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
 from antares.datamanager.models.study_data_json_model import StudyData
-from antares.datamanager.utils.areaUi import generate_random_color, generate_random_coordinate
+from antares.datamanager.utils.area_ui_utils import generate_random_color, generate_random_coordinate
 
 # Configurer le logger au démarrage du module (ou appeler configure_ecs_logger() dans le main)
 configure_ecs_logger()
@@ -144,7 +144,7 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
                 df = pd.read_feather(load_path)
                 area_obj.set_load(df)
 
-            generate_thermal_clusters(area_obj, thermals)
+            generate_thermal_clusters(area_obj, thermals, first_month=settings.study_setting_first_month)
             generate_sts_clusters(area_obj, sts)
 
             logger.info(f"Successfully created area for {area_name}")

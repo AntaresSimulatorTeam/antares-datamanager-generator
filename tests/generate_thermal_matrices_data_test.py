@@ -14,6 +14,7 @@ import pytest
 import numpy as np
 import pandas as pd
 
+from antares.craft import Month
 from antares.datamanager.generator.generate_thermal_clusters import (
     NPO_SUMMER_DIVISOR,
     NPO_WINTER_DIVISOR,
@@ -37,15 +38,20 @@ def test_npo_max_default_when_zero():
     df = create_prepro_data_matrix(data, unit_count)
 
     npo_max = df.iloc[:, 5]
-    days = np.arange(1, 366)
-    winter_mask = (days <= 90) | (days >= 274)
-    summer_mask = ~winter_mask
+    # Starting July 1st
+    # Jul (0-30), Aug (31-61), Sep (62-91) -> Summer (0-91)
+    # Oct (92-122), Nov (123-152), Dec (153-183) -> Winter (92-183)
+    # Jan (184-214), Feb (215-242), Mar (243-273) -> Winter (184-273)
+    # Apr (274-303), May (304-334), Jun (335-364) -> Summer (274-364)
 
     expected_summer = unit_count / NPO_SUMMER_DIVISOR
     expected_winter = unit_count / NPO_WINTER_DIVISOR
 
-    assert (npo_max[summer_mask] == expected_summer).all()
-    assert (npo_max[winter_mask] == expected_winter).all()
+    # Summer slices
+    assert (npo_max[0:92] == expected_summer).all()
+    assert (npo_max[274:365] == expected_summer).all()
+    # Winter slice
+    assert (npo_max[92:274] == expected_winter).all()
 
 
 def test_prepro_basic_shape():
@@ -81,13 +87,10 @@ def test_monthly_to_daily_expansion():
 
     fo_rate = df.iloc[:, 2]
 
-    jan_days = 31
-    feb_days = 28
-
-    # January block
-    assert (fo_rate[:jan_days] == 0).all()
-    # February block
-    assert (fo_rate[jan_days : jan_days + feb_days] == 1).all()
+    # Row 0 is July (index 6)
+    assert (fo_rate[0:31] == 6).all()
+    # Row 184 is January (index 0)
+    assert (fo_rate[184 : 184 + 31] == 0).all()
 
 
 def test_npo_min_is_zero():
@@ -126,17 +129,15 @@ def test_npo_max_season_logic():
     npo_max = df.iloc[:, 5]
     factor = unit_count / data["nb_unit"]
 
-    days = np.arange(365)
-    day_of_year = days + 1
-
-    winter_mask = (day_of_year <= 90) | (day_of_year >= 274)
-    summer_mask = ~winter_mask
-
     expected_winter = data["npo_max_winter"] * factor
     expected_summer = data["npo_max_summer"] * factor
 
-    assert np.allclose(npo_max[winter_mask], expected_winter)
-    assert np.allclose(npo_max[summer_mask], expected_summer)
+    # July (Summer)
+    assert np.allclose(npo_max[0:31], expected_summer)
+    # October (Winter)
+    assert np.allclose(npo_max[92:123], expected_winter)
+    # January (Winter)
+    assert np.allclose(npo_max[184:215], expected_winter)
 
 
 def test_invalid_monthly_rate_length():
@@ -165,8 +166,7 @@ def test_create_prepro_data_matrix_when_data_is_none_returns_365_default_rows():
 
 def test_season_boundaries():
     """Verify that winter and summer boundaries match exactly with the requirements.
-    Winter: Jan, Feb, Mar (1-90) and Oct, Nov, Dec (274-365)
-    Summer: Apr, May, Jun, Jul, Aug, Sep (91-273)
+    Row 0 = July 1st.
     """
     data = {
         "fo_duration": 1,
@@ -182,11 +182,70 @@ def test_season_boundaries():
     df = create_prepro_data_matrix(data, unit_count)
     npo_max = df.iloc[:, 5]
 
-    # March 31st is day 90
-    assert npo_max[89] == 8
-    # April 1st is day 91
+    # September 29th is Row 90
     assert npo_max[90] == 4
-    # September 30th is day 273 (90 + 30 + 31 + 30 + 31 + 31 + 30 = 273)
-    assert npo_max[272] == 4
-    # October 1st is day 274
+    # September 30th is Row 91
+    assert npo_max[91] == 4
+    # October 1st is Row 92
+    assert npo_max[92] == 8
+    # March 31st is Row 273
     assert npo_max[273] == 8
+    # April 1st is Row 274
+    assert npo_max[274] == 4
+
+
+def test_flexibility_dynamic_parameter():
+    """Verify that the first_month parameter works dynamically."""
+    data = {
+        "fo_duration": 1,
+        "po_duration": 2,
+        "fo_monthly_rate": list(range(12)),
+        "po_monthly_rate": [20] * 12,
+        "npo_max_winter": 0,
+        "npo_max_summer": 0,
+        "nb_unit": 1,
+    }
+
+    # Test January start via parameter
+    df_jan = create_prepro_data_matrix(data, unit_count=1, first_month=Month.JANUARY)
+    fo_rate_jan = df_jan.iloc[:, 2]
+    # Row 0 is January (index 0)
+    assert (fo_rate_jan[0:31] == 0).all()
+
+    # Test July start via parameter
+    df_jul = create_prepro_data_matrix(data, unit_count=1, first_month=Month.JULY)
+    fo_rate_jul = df_jul.iloc[:, 2]
+    # Row 0 is July (index 6)
+    assert (fo_rate_jul[0:31] == 6).all()
+
+
+def test_flexibility_january_start(monkeypatch):
+    """Verify that if STUDY_SETTING_FIRST_MONTH is JANUARY, the matrix starts on Jan 1st."""
+    monkeypatch.setenv("STUDY_SETTING_FIRST_MONTH", "JANUARY")
+    # Reload settings to pick up the new env var if needed,
+    # but here we rely on the fact that Settings.study_setting_first_month
+    # calls os.getenv every time.
+
+    data = {
+        "fo_duration": 1,
+        "po_duration": 2,
+        "fo_monthly_rate": list(range(1, 13)),  # 1..12 for months Jan..Dec
+        "po_monthly_rate": [20] * 12,
+        "npo_max_winter": 8,
+        "npo_max_summer": 4,
+        "nb_unit": 1,
+    }
+
+    df = create_prepro_data_matrix(data, unit_count=1)
+
+    # Row 0 should be January (if JANUARY start)
+    # fo_monthly_rate[0] is 1
+    assert (df.iloc[0:31, 2] == 1).all()
+
+    # March 31st is Day 90 (0-indexed 89)
+    # npo_max for March should be winter (8)
+    assert df.iloc[89, 5] == 8
+
+    # April 1st is Day 91 (0-indexed 90)
+    # npo_max for April should be summer (4)
+    assert df.iloc[90, 5] == 4
