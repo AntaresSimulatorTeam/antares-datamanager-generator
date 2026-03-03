@@ -10,15 +10,16 @@
 #
 # This file is part of the Antares project.
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 
-from antares.craft import ThermalClusterProperties, ThermalClusterPropertiesUpdate
+from antares.craft import Month, ThermalClusterProperties, ThermalClusterPropertiesUpdate
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
 from antares.datamanager.logs.logging_setup import get_logger
+from antares.datamanager.utils.season_utils import SeasonManager
 
 logger = get_logger(__name__)
 
@@ -42,7 +43,11 @@ def calculate_min_stable_power(min_stable_power: float, cluster_modulation: list
     return round(min_stable_power, 2)
 
 
-def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
+def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any], first_month: Optional[Month] = None) -> None:
+    # Use global setting if not provided explicitly
+    if first_month is None:
+        first_month = settings.study_setting_first_month
+
     # Thermals
     for cluster_name, values in thermals.items():
         logger.info(f"Creating thermal cluster: {cluster_name}")
@@ -55,7 +60,7 @@ def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
         cluster_data = values.get("data", {})
         unit_count = cluster_properties.unit_count
 
-        prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count)
+        prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count, first_month=first_month)
 
         cluster_modulation = values.get("modulation", {})
         min_stable_power_final = calculate_min_stable_power(cluster_properties.min_stable_power, cluster_modulation)
@@ -68,7 +73,13 @@ def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
         thermal_cluster.set_prepro_modulation(modulation_matrix)
 
 
-def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataFrame:
+def create_prepro_data_matrix(
+    data: Dict[str, Any], unit_count: int, first_month: Optional[Month] = None
+) -> pd.DataFrame:
+    # Use global setting if not provided explicitly
+    if first_month is None:
+        first_month = settings.study_setting_first_month
+
     # If no data is provided OR if critical keys are missing, return the default 365x6 matrix
     # Critical keys: fo_duration, po_duration, npo_max_winter, npo_max_summer
     if not data or any(k not in data for k in ["fo_duration", "po_duration", "npo_max_winter", "npo_max_summer"]):
@@ -95,28 +106,23 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataF
     if len(fo_monthly_rate) != 12 or len(po_monthly_rate) != 12:
         raise ValueError("fo_monthly_rate and po_monthly_rate must have 12 values")
 
-    # Days per month
-    days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    season_manager = SeasonManager(first_month)
+    month_order = season_manager.get_month_order()
+    days_in_month = season_manager.get_days_per_month()
 
     # Build 365-day arrays directly
     fo_rate_daily = []
     po_rate_daily = []
 
-    for month in range(12):
-        for _ in range(days_in_month[month]):
-            fo_rate_daily.append(fo_monthly_rate[month])
-            po_rate_daily.append(po_monthly_rate[month])
+    for i in range(12):
+        month_idx_in_data = month_order[i] - 1
+        for _ in range(days_in_month[i]):
+            fo_rate_daily.append(fo_monthly_rate[month_idx_in_data])
+            po_rate_daily.append(po_monthly_rate[month_idx_in_data])
 
-    days = np.arange(1, 366)
-
-    # Determine season
-    # Winter is defined as months 1, 2, 3, 10, 11, 12.
-    # Summer is defined as months 4, 5, 6, 7, 8, 9.
-    # In a 365-day year (non-leap), January-March = 31+28+31 = 90 days.
-    # October-December = 31+30+31 = 92 days.
-    # Days 1-90 and 274-365 are winter.
-    season_is_winter = (days <= 90) | (days >= 274)
-    season_is_summer = ~season_is_winter
+    # Determine season using SeasonManager
+    season_is_winter = season_manager.is_winter()
+    season_is_summer = season_manager.is_summer()
     npo_max_daily = np.zeros(365)
 
     # In summer, division by NPO_SUMMER_DIVISOR and in winter by NPO_WINTER_DIVISOR
