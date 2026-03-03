@@ -55,7 +55,7 @@ def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any], first_mo
         cluster_modulation = values.get("modulation", {})
         modulation_matrix = create_modulation_matrix(cluster_modulation)
 
-        create_thermal_cluster_with_prepro(area_obj, cluster_name, values, create_prepro_data_matrix, modulation_matrix)
+        create_thermal_cluster_with_prepro(area_obj, cluster_name, values, create_prepro_data_matrix, modulation_matrix, first_month)
 
 
 def create_thermal_cluster_with_prepro(
@@ -64,6 +64,7 @@ def create_thermal_cluster_with_prepro(
     cluster_values: Dict[str, Any],
     prepro_matrix_func: Any,
     modulation_matrix: pd.DataFrame,
+    first_month: Optional[Month] = None,
 ) -> None:
     """
     Creates a thermal cluster, generates its prepro matrix, and sets it.
@@ -75,30 +76,19 @@ def create_thermal_cluster_with_prepro(
         area_obj.create_thermal_cluster(cluster_name, cluster_properties)
         return
 
-        cluster_data = values.get("data", {})
-        unit_count = cluster_properties.unit_count
 
-        prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count, first_month=first_month)
+    cluster_modulation = cluster_values.get("modulation", {})
+    min_stable_power_final = calculate_min_stable_power(cluster_properties.min_stable_power, cluster_modulation)
 
-        cluster_modulation = values.get("modulation", {})
-        min_stable_power_final = calculate_min_stable_power(cluster_properties.min_stable_power, cluster_modulation)
+    modulation_matrix = create_modulation_matrix(cluster_modulation)
 
-        modulation_matrix = create_modulation_matrix(cluster_modulation)
     cluster_data = cluster_values.get("data", {})
     unit_count = cluster_properties.unit_count
-    prepro_matrix = prepro_matrix_func(cluster_data, unit_count)
-    cluster_data = cluster_values.get("data", {})
-    unit_count = cluster_properties.unit_count
-    prepro_matrix = prepro_matrix_func(cluster_data, unit_count)
+    prepro_matrix = prepro_matrix_func(cluster_data, unit_count, first_month=first_month)
+
 
     thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
-    thermal_cluster.set_prepro_data(prepro_matrix)
-    thermal_cluster.set_prepro_modulation(modulation_matrix)
-        thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
-        thermal_cluster.update_properties(ThermalClusterPropertiesUpdate(min_stable_power=min_stable_power_final))
-        thermal_cluster.set_prepro_data(prepro_matrix)
-        thermal_cluster.set_prepro_modulation(modulation_matrix)
-    thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+    thermal_cluster.update_properties(ThermalClusterPropertiesUpdate(min_stable_power=min_stable_power_final))
     thermal_cluster.set_prepro_data(prepro_matrix)
     thermal_cluster.set_prepro_modulation(modulation_matrix)
 
