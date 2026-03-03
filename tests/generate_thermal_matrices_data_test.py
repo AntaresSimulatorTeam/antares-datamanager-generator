@@ -14,7 +14,38 @@ import pytest
 import numpy as np
 import pandas as pd
 
-from antares.datamanager.generator.generate_thermal_clusters import create_prepro_data_matrix
+from antares.datamanager.generator.generate_thermal_clusters import (
+    NPO_SUMMER_DIVISOR,
+    NPO_WINTER_DIVISOR,
+    create_prepro_data_matrix,
+)
+
+
+def test_npo_max_default_when_zero():
+    """Verify default NPO max values when input is zero."""
+    data = {
+        "fo_duration": 1,
+        "po_duration": 2,
+        "fo_monthly_rate": [10] * 12,
+        "po_monthly_rate": [20] * 12,
+        "npo_max_winter": 0,
+        "npo_max_summer": 0,
+        "nb_unit": 1,
+    }
+
+    unit_count = 12
+    df = create_prepro_data_matrix(data, unit_count)
+
+    npo_max = df.iloc[:, 5]
+    days = np.arange(1, 366)
+    winter_mask = (days <= 90) | (days >= 274)
+    summer_mask = ~winter_mask
+
+    expected_summer = unit_count / NPO_SUMMER_DIVISOR
+    expected_winter = unit_count / NPO_WINTER_DIVISOR
+
+    assert (npo_max[summer_mask] == expected_summer).all()
+    assert (npo_max[winter_mask] == expected_winter).all()
 
 
 def test_prepro_basic_shape():
@@ -132,22 +163,30 @@ def test_create_prepro_data_matrix_when_data_is_none_returns_365_default_rows():
     pd.testing.assert_frame_equal(df, expected)
 
 
-def test_create_prepro_data_matrix_when_critical_keys_missing_returns_365_default_rows():
-    base = {
+def test_season_boundaries():
+    """Verify that winter and summer boundaries match exactly with the requirements.
+    Winter: Jan, Feb, Mar (1-90) and Oct, Nov, Dec (274-365)
+    Summer: Apr, May, Jun, Jul, Aug, Sep (91-273)
+    """
+    data = {
         "fo_duration": 1,
         "po_duration": 2,
         "fo_monthly_rate": [10] * 12,
         "po_monthly_rate": [20] * 12,
-        "npo_max_winter": 5,
-        "npo_max_summer": 10,
-        "nb_unit": 2,
+        "npo_max_winter": 8,
+        "npo_max_summer": 4,
+        "nb_unit": 1,
     }
 
-    # Each missing critical key should trigger the default (365 x 6) matrix
-    for missing_key in ["fo_duration", "po_duration", "npo_max_winter", "npo_max_summer"]:
-        data = dict(base)
-        del data[missing_key]
+    unit_count = 1
+    df = create_prepro_data_matrix(data, unit_count)
+    npo_max = df.iloc[:, 5]
 
-        df = create_prepro_data_matrix(data, unit_count=base["nb_unit"])
-        expected = pd.DataFrame([[1, 1, 0, 0, 0, 0]] * 365)
-        pd.testing.assert_frame_equal(df, expected)
+    # March 31st is day 90
+    assert npo_max[89] == 8
+    # April 1st is day 91
+    assert npo_max[90] == 4
+    # September 30th is day 273 (90 + 30 + 31 + 30 + 31 + 31 + 30 = 273)
+    assert npo_max[272] == 4
+    # October 1st is day 274
+    assert npo_max[273] == 8

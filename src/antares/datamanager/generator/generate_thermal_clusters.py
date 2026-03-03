@@ -18,13 +18,18 @@ import pandas as pd
 from antares.craft import ThermalClusterProperties, ThermalClusterPropertiesUpdate
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
-from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
+from antares.datamanager.logs.logging_setup import get_logger
 
-configure_ecs_logger()
 logger = get_logger(__name__)
 
+# Constants for NPO (Number of Planned Outages) calculations
+# In summer, we divide by 3 to indicate there are fewer planned outages.
+# In winter, we divide by 4.
+NPO_SUMMER_DIVISOR = 3
+NPO_WINTER_DIVISOR = 4
 
-def calculate_min_stable_power(min_stable_power: float , cluster_modulation: list[str])-> Any:
+
+def calculate_min_stable_power(min_stable_power: float, cluster_modulation: list[str]) -> Any:
     cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
     if cm_file is not None:
         base_dir = generator_param_modulation_directory()
@@ -33,7 +38,7 @@ def calculate_min_stable_power(min_stable_power: float , cluster_modulation: lis
         cm_values = df_cm.iloc[:, 0]
         logger.info(f"CM file '{cm_file}' size: {len(cm_values)}")
         min_cm_value = cm_values.min()
-        return round(min_stable_power * min_cm_value,2)
+        return round(min_stable_power * min_cm_value, 2)
     return round(min_stable_power, 2)
 
 
@@ -50,11 +55,10 @@ def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any]) -> None:
         cluster_data = values.get("data", {})
         unit_count = cluster_properties.unit_count
 
-
         prepro_matrix = create_prepro_data_matrix(cluster_data, unit_count)
 
         cluster_modulation = values.get("modulation", {})
-        min_stable_power_final = calculate_min_stable_power(cluster_properties.min_stable_power,cluster_modulation)
+        min_stable_power_final = calculate_min_stable_power(cluster_properties.min_stable_power, cluster_modulation)
 
         modulation_matrix = create_modulation_matrix(cluster_modulation)
 
@@ -106,13 +110,26 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataF
     days = np.arange(1, 366)
 
     # Determine season
+    # Winter is defined as months 1, 2, 3, 10, 11, 12.
+    # Summer is defined as months 4, 5, 6, 7, 8, 9.
+    # In a 365-day year (non-leap), January-March = 31+28+31 = 90 days.
+    # October-December = 31+30+31 = 92 days.
+    # Days 1-90 and 274-365 are winter.
     season_is_winter = (days <= 90) | (days >= 274)
     season_is_summer = ~season_is_winter
-
-    # Compute NPO_max daily safely
     npo_max_daily = np.zeros(365)
-    npo_max_daily[season_is_summer] = npo_max_summer * factor
-    npo_max_daily[season_is_winter] = npo_max_winter * factor
+
+    # In summer, division by NPO_SUMMER_DIVISOR and in winter by NPO_WINTER_DIVISOR
+    # to indicate that there are fewer NPO (Number of Planned Outages) in summer.
+    if npo_max_summer == 0:
+        npo_max_daily[season_is_summer] = int(unit_count / NPO_SUMMER_DIVISOR)
+    else:
+        npo_max_daily[season_is_summer] = npo_max_summer * factor
+
+    if npo_max_winter == 0:
+        npo_max_daily[season_is_winter] = int(unit_count / NPO_WINTER_DIVISOR)
+    else:
+        npo_max_daily[season_is_winter] = npo_max_winter * factor
 
     # NPO_min always zero
     npo_min_daily = np.zeros(365)
