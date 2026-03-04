@@ -153,7 +153,7 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
 
             generate_thermal_clusters(area_obj, thermals, first_month=settings.study_setting_first_month)
             generate_sts_clusters(area_obj, sts)
-            generate_dsr_clusters(area_obj, dsr)
+            generate_dsr_clusters(area_obj, dsr, first_month=settings.study_setting_first_month)
 
             logger.info(f"Successfully created area for {area_name}")
         except APIGenerationError as e:

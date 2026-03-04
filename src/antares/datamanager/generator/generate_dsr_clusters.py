@@ -10,23 +10,25 @@
 #
 # This file is part of the Antares project.
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 
+from antares.craft import Month
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
 from antares.datamanager.generator.generate_thermal_clusters import (
     create_thermal_cluster_with_prepro,
 )
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
+from antares.datamanager.utils.season_utils import SeasonManager
 
 configure_ecs_logger()
 logger = get_logger(__name__)
 
 
-def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any]) -> None:
+def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any], first_month: Optional[Month] = None) -> None:
     """
     Generates thermal clusters for DSR (Demand Side Response) based on provided area and DSR data.
     """
@@ -35,7 +37,7 @@ def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any]) -> None:
     base_dir = generator_dsr_modulation_directory()
     cluster_series = {}
 
-    # 1. First pass: Collect all series to find the global max for this zone
+    # 1. Collect all series to find the global max for this zone
     for cluster_name, values in dsr.items():
         cluster_modulation = values.get("modulation", [])
         if not cluster_modulation:
@@ -58,15 +60,15 @@ def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any]) -> None:
         total_series = pd.concat(cluster_series.values(), axis=1).sum(axis=1)
         global_max = total_series.max()
 
-    # 2. Second pass: Create clusters with normalized modulation
+    # 2. Create clusters with normalized modulation
     for cluster_name, values in dsr.items():
         logger.info(f"Creating dsr cluster: {cluster_name}")
 
-        cluster_series_data: "pd.Series[Any] | None" = cluster_series.get(cluster_name)
+        cluster_series_data: Optional[pd.Series[Any]] = cluster_series.get(cluster_name)
         modulation_matrix = create_dsr_modulation_matrix_from_series(cluster_series_data, global_max)
 
         create_thermal_cluster_with_prepro(
-            area_obj, cluster_name, values, create_dsr_prepro_data_matrix, modulation_matrix
+            area_obj, cluster_name, values, create_dsr_prepro_data_matrix, modulation_matrix, first_month
         )
 
 
@@ -94,11 +96,13 @@ def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None", gl
         cm_values = series.round(3)
 
     df = pd.DataFrame([[1, 1, cm, 0] for cm in cm_values])
-    logger.info(f"Final DataFrame shape: {df.shape}")
+    logger.info(f"Final dsr modulation matrix shape: {df.shape}")
     return df
 
 
-def create_dsr_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.DataFrame:
+def create_dsr_prepro_data_matrix(
+    data: Dict[str, Any], unit_count: int, first_month: Optional[Month] = None
+) -> pd.DataFrame:
     """
     Generates a data matrix for preprocessed DSR values.
 
@@ -113,6 +117,10 @@ def create_dsr_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.D
             - "fo_duration" (int): The constant duration for the first operation.
             - "fo_monthly_rate" (List[float]): Per-month rate for the first operation (12 values).
             If these keys are not provided, default values are used.
+    unit_count: int
+        Number of units in the cluster.
+    first_month: Optional[Month]
+        The first month of the study. If not provided, it uses the global setting.
 
     Returns:
     pd.DataFrame
@@ -124,6 +132,10 @@ def create_dsr_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.D
             - npo_min: default: 0.
             - npo_max: default: 0.
     """
+    # Use global setting if not provided explicitly
+    if first_month is None:
+        first_month = settings.study_setting_first_month
+
     # If no data is provided  return the default 365x6 matrix
     if not data:
         # fo_duration, po_duration, fo_rate, po_rate, npo_min, npo_max
@@ -132,15 +144,24 @@ def create_dsr_prepro_data_matrix(data: Dict[str, Any], unit_count: int) -> pd.D
     fo_duration_const = data.get("fo_duration", 1)
     fo_monthly_rate = data.get("fo_monthly_rate", [])
 
-    # Days per month
-    days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if not fo_monthly_rate:
+        logger.info("fo_monthly_rate is empty, skipping prepro data matrix generation.")
+        return pd.DataFrame()
+
+    if len(fo_monthly_rate) != 12:
+        raise ValueError("fo_monthly_rate must have 12 values")
+
+    season_manager = SeasonManager(first_month)
+    month_order = season_manager.get_month_order()
+    days_in_month = season_manager.get_days_per_month()
 
     # Build 365-day arrays directly
     fo_rate_daily = []
 
-    for month in range(12):
-        for _ in range(days_in_month[month]):
-            fo_rate_daily.append(fo_monthly_rate[month])
+    for i in range(12):
+        month_idx_in_data = month_order[i] - 1
+        for _ in range(days_in_month[i]):
+            fo_rate_daily.append(fo_monthly_rate[month_idx_in_data])
 
     # Constant daily durations
     fo_duration_daily = np.full(365, fo_duration_const)
