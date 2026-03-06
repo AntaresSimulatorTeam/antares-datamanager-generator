@@ -30,10 +30,13 @@ NPO_SUMMER_DIVISOR = 3
 NPO_WINTER_DIVISOR = 4
 
 
-def calculate_min_stable_power(min_stable_power: float, cluster_modulation: list[str]) -> Any:
+def calculate_min_stable_power(
+    min_stable_power: float, cluster_modulation: list[str], base_dir: Optional[Path] = None
+) -> Any:
     cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
     if cm_file is not None:
-        base_dir = generator_param_modulation_directory()
+        if base_dir is None:
+            base_dir = generator_param_modulation_directory()
         cm_path = base_dir / cm_file
         df_cm = pd.read_feather(cm_path)
         cm_values = df_cm.iloc[:, 0]
@@ -65,8 +68,9 @@ def create_thermal_cluster_with_prepro(
     cluster_name: str,
     cluster_values: Dict[str, Any],
     prepro_matrix_func: Any,
-    modulation_matrix: pd.DataFrame,
+    modulation_matrix: Optional[pd.DataFrame] = None,
     first_month: Optional[Month] = None,
+    base_dir: Optional[Path] = None,
 ) -> None:
     """
     Creates a thermal cluster, generates its prepro matrix, and sets it.
@@ -79,9 +83,12 @@ def create_thermal_cluster_with_prepro(
         return
 
     cluster_modulation = cluster_values.get("modulation", {})
-    min_stable_power_final = calculate_min_stable_power(cluster_properties.min_stable_power, cluster_modulation)
+    min_stable_power_final = calculate_min_stable_power(
+        cluster_properties.min_stable_power, cluster_modulation, base_dir=base_dir
+    )
 
-    modulation_matrix = create_modulation_matrix(cluster_modulation)
+    if modulation_matrix is None:
+        modulation_matrix = create_modulation_matrix(cluster_modulation, base_dir=base_dir)
 
     cluster_data = cluster_values.get("data", {})
     unit_count = cluster_properties.unit_count
@@ -125,6 +132,9 @@ def create_prepro_data_matrix(
 
     if len(fo_monthly_rate) != 12 or len(po_monthly_rate) != 12:
         raise ValueError("fo_monthly_rate and po_monthly_rate must have 12 values")
+
+    if first_month is None:
+        first_month = settings.study_setting_first_month
 
     season_manager = SeasonManager(first_month)
     month_order = season_manager.get_month_order()
@@ -184,7 +194,7 @@ def generator_param_modulation_directory() -> Path:
     return settings.param_modulation_directory
 
 
-def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
+def create_modulation_matrix(cluster_modulation: list[str], base_dir: Optional[Path] = None) -> pd.DataFrame:
     """
     cluster_modulation: list of filenames
     Returns a 4-column DataFrame without column names:
@@ -198,7 +208,8 @@ def create_modulation_matrix(cluster_modulation: list[str]) -> pd.DataFrame:
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
-    base_dir = generator_param_modulation_directory()
+    if base_dir is None:
+        base_dir = generator_param_modulation_directory()
 
     # Detect CM and MR filenames
     cm_file = next((f for f in cluster_modulation if "CM_" in f), None)

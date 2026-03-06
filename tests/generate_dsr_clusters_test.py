@@ -47,11 +47,11 @@ def test_create_dsr_modulation_matrix_from_series_builds_dataframe():
 
 
 @patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_modulation_matrix_from_series")
-@patch("antares.datamanager.generator.generate_dsr_clusters.create_thermal_cluster_with_prepro")
+@patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_cluster")
 @patch("antares.datamanager.generator.generate_dsr_clusters.pd.read_feather")
 @patch("antares.datamanager.generator.generate_dsr_clusters.Path.exists")
 def test_generate_dsr_clusters_calls_area_methods(
-    mock_exists, mock_read_feather, mock_create_thermal_cluster_with_prepro, mock_create_modulation
+    mock_exists, mock_read_feather, mock_create_dsr_cluster, mock_create_modulation
 ):
     # Arrange
     mock_exists.return_value = True
@@ -70,4 +70,4 @@ def test_generate_dsr_clusters_calls_area_methods(
     generate_dsr_clusters(area_obj, dsr_data)
 
     # Assert
-    mock_create_thermal_cluster_with_prepro.assert_called_once()
+    mock_create_dsr_cluster.assert_called_once()

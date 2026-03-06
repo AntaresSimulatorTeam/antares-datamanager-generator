@@ -15,12 +15,9 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
-from antares.craft import Month
+from antares.craft import Month, ThermalClusterProperties
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
-from antares.datamanager.generator.generate_thermal_clusters import (
-    create_thermal_cluster_with_prepro,
-)
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
 from antares.datamanager.utils.season_utils import SeasonManager
 
@@ -67,9 +64,33 @@ def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any], first_month: Opti
         cluster_series_data: Optional[pd.Series[Any]] = cluster_series.get(cluster_name)
         modulation_matrix = create_dsr_modulation_matrix_from_series(cluster_series_data, global_max)
 
-        create_thermal_cluster_with_prepro(
-            area_obj, cluster_name, values, create_dsr_prepro_data_matrix, modulation_matrix, first_month
-        )
+        create_dsr_cluster(area_obj, cluster_name, values, modulation_matrix, first_month)
+
+
+def create_dsr_cluster(
+    area_obj: Area,
+    cluster_name: str,
+    cluster_values: Dict[str, Any],
+    modulation_matrix: pd.DataFrame,
+    first_month: Optional[Month] = None,
+) -> None:
+    """
+    Creates a DSR cluster, generates its prepro matrix, and sets it.
+    """
+    cluster_properties = ThermalClusterProperties(**cluster_values.get("properties", {}))
+
+    # If cluster_properties doesn't expose attributes (e.g., patched as dict in tests),
+    if not hasattr(cluster_properties, "unit_count"):
+        area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+        return
+
+    cluster_data = cluster_values.get("data", {})
+    unit_count = cluster_properties.unit_count
+    prepro_matrix = create_dsr_prepro_data_matrix(cluster_data, unit_count, first_month=first_month)
+
+    thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
+    thermal_cluster.set_prepro_data(prepro_matrix)
+    thermal_cluster.set_prepro_modulation(modulation_matrix)
 
 
 def generator_dsr_modulation_directory() -> Path:
@@ -118,9 +139,9 @@ def create_dsr_prepro_data_matrix(
             - "fo_monthly_rate" (List[float]): Per-month rate for the first operation (12 values).
             If these keys are not provided, default values are used.
     unit_count: int
-        Number of units in the cluster.
+        The number of units in the cluster.
     first_month: Optional[Month]
-        The first month of the study. If not provided, it uses the global setting.
+        The first month of the study.
 
     Returns:
     pd.DataFrame
@@ -132,10 +153,6 @@ def create_dsr_prepro_data_matrix(
             - npo_min: default: 0.
             - npo_max: default: 0.
     """
-    # Use global setting if not provided explicitly
-    if first_month is None:
-        first_month = settings.study_setting_first_month
-
     # If no data is provided  return the default 365x6 matrix
     if not data:
         # fo_duration, po_duration, fo_rate, po_rate, npo_min, npo_max
@@ -145,11 +162,14 @@ def create_dsr_prepro_data_matrix(
     fo_monthly_rate = data.get("fo_monthly_rate", [])
 
     if not fo_monthly_rate:
-        logger.info("fo_monthly_rate is empty, skipping prepro data matrix generation.")
+        logger.info("fo_monthly_rate area empty skipping modulation matrix generation.")
         return pd.DataFrame()
 
     if len(fo_monthly_rate) != 12:
         raise ValueError("fo_monthly_rate must have 12 values")
+
+    if first_month is None:
+        first_month = settings.study_setting_first_month
 
     season_manager = SeasonManager(first_month)
     month_order = season_manager.get_month_order()
