@@ -23,6 +23,7 @@ from antares.craft.model.area import AreaProperties, AreaUi
 from antares.craft.model.study import Study, import_study_api
 from antares.datamanager.core.settings import GenerationMode, settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
+from antares.datamanager.generator.generate_dsr_clusters import generate_dsr_clusters
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
 from antares.datamanager.generator.generate_thermal_clusters import generate_thermal_clusters
@@ -98,6 +99,11 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         if sts:
             study_data.area_sts[area] = sts
 
+        # DSR
+        sts = area_info.get("dsr", {})
+        if sts:
+            study_data.area_dsr[area] = sts
+
     return study_data
 
 
@@ -136,6 +142,7 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
         loads = study_data.area_loads.get(area_name, [])
         thermals = study_data.area_thermals.get(area_name, {})
         sts = study_data.area_sts.get(area_name, {})
+        dsr = study_data.area_dsr.get(area_name, {})
 
         try:
             area_obj = study.create_area(area_name=area_name, properties=area_properties, ui=area_ui)
@@ -146,6 +153,7 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
 
             generate_thermal_clusters(area_obj, thermals, first_month=settings.study_setting_first_month)
             generate_sts_clusters(area_obj, sts)
+            generate_dsr_clusters(area_obj, dsr)
 
             logger.info(f"Successfully created area for {area_name}")
         except APIGenerationError as e:

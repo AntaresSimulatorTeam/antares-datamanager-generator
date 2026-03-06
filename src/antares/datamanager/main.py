@@ -25,7 +25,7 @@ from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGe
 from antares.datamanager.generator.generate_study_process import generate_study
 from antares.datamanager.generator.study_adapters import StudyFactory
 
-# Configuration basique du logger (ou appelez votre configure_ecs_logger si vous avez un formatter ECS)
+# Logger basic configuration for ecs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("antares.datamanager")
 
@@ -45,12 +45,12 @@ def create_study(study_id: str, factory: Annotated[StudyFactory, Depends(get_stu
         logger.exception("Generation error", exc_info=True, extra={"study_id": study_id})
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        # Logger l'exception complète (stack trace) afin qu'elle apparaisse dans vos logs
+        # Complete exception (stack trace) to appear clearly in logs
         logger.exception("Internal error while generating study", exc_info=True, extra={"study_id": study_id})
         raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
 
 
-# Gestionnaire global pour logger toute exception non interceptée ailleurs
+# Global handler to log all exceptions no intercepted
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception(
