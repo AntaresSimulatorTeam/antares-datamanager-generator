@@ -18,7 +18,17 @@ from pathlib import Path
 
 import pandas as pd
 
-from antares.craft import APIconf, GeneralParametersUpdate, LinkPropertiesUpdate, StudySettingsUpdate
+from antares.craft import (
+    APIconf,
+    BindingConstraintFrequency,
+    BindingConstraintOperator,
+    BindingConstraintProperties,
+    ClusterData,
+    ConstraintTerm,
+    GeneralParametersUpdate,
+    LinkPropertiesUpdate,
+    StudySettingsUpdate,
+)
 from antares.craft.model.area import AreaProperties, AreaUi
 from antares.craft.model.study import Study, import_study_api
 from antares.datamanager.core.settings import GenerationMode, settings
@@ -153,7 +163,49 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
 
             generate_thermal_clusters(area_obj, thermals, first_month=settings.study_setting_first_month)
             generate_sts_clusters(area_obj, sts)
-            generate_dsr_clusters(area_obj, dsr)
+            df_dsr_constraints = generate_dsr_clusters(area_obj, dsr)
+            if not df_dsr_constraints.empty:
+                logger.info(f"DSR constraints generated for {area_name}: {df_dsr_constraints.columns.tolist()}")
+                for column in df_dsr_constraints.columns:
+                    if column.startswith("FR_"):
+                        # FR Case
+                        bc_name = f"{column}_stock"
+                        cluster_name = column
+                        area_id = "fr"
+                    else:
+                        # Non-FR Case
+                        # Column name is expected to be {area_name}_DSR
+                        actual_area_name = column.split("_")[0]
+                        bc_name = f"DSR_{actual_area_name}_stock"
+                        cluster_name = f"{actual_area_name.lower()}_dsr 0"
+                        area_id = actual_area_name.lower()
+
+                    properties = BindingConstraintProperties(
+                        enabled=True,
+                        time_step=BindingConstraintFrequency.DAILY,
+                        operator=BindingConstraintOperator.LESS,
+                    )
+                    # TODO to change offset to 0 when issue in AntaresCraft is corrected
+                    terms = [
+                        ConstraintTerm(
+                            data=ClusterData(area=area_id, cluster=cluster_name),
+                            weight=1,
+                            offset=1,
+                        )
+                    ]
+
+                    # The matrix should be a single column DataFrame for the binding constraint
+                    less_term_matrix = df_dsr_constraints[[column]]
+                    logger.debug(f"Generated less term matrix for {bc_name}: {less_term_matrix.shape}")
+
+                    study.create_binding_constraint(
+                        name=bc_name,
+                        properties=properties,
+                        terms=terms,
+                        less_term_matrix=less_term_matrix,
+                    )
+
+                    logger.info(f"Created binding constraint {bc_name} for area {area_name}")
 
             logger.info(f"Successfully created area for {area_name}")
         except APIGenerationError as e:
