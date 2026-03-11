@@ -87,6 +87,8 @@ def generate_dsr_binding_constraints(dsr_data: Dict[str, Any], cluster_series: D
 
     results = {}
     for cluster_name, series in cluster_series.items():
+        if "DSR_0" not in cluster_name:
+            continue
         data = dsr_data.get(cluster_name, {}).get("data", {})
         max_hour_per_day = data.get("max_hour_per_day", 1)
         nb_hour_per_day = data.get("nb_hour_per_day", 1)
@@ -111,9 +113,8 @@ def generate_dsr_binding_constraints(dsr_data: Dict[str, Any], cluster_series: D
 
     if non_fr_columns:
         # If it's not a FR area, we sum all columns.
-        area_name = non_fr_columns[0].split("_")[0] if non_fr_columns else "TOTAL"
         # The column name will be used to identify the area in the constraint generation
-        final_df[f"{area_name}_DSR"] = df_results[non_fr_columns].sum(axis=1)
+        final_df[cluster_name] = df_results[non_fr_columns].sum(axis=1)
 
     logger.info(f"Generated coupling constraints matrix with shape {final_df.shape}")
     # Antares always expects 366 rows for bc_daily

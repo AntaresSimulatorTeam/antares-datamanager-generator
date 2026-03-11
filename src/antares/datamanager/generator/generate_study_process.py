@@ -27,6 +27,7 @@ from antares.craft import (
     ConstraintTerm,
     GeneralParametersUpdate,
     LinkPropertiesUpdate,
+    Month,
     StudySettingsUpdate,
 )
 from antares.craft.model.area import AreaProperties, AreaUi
@@ -51,7 +52,9 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     study_data = read_study_data_from_json(study_id)
     study = factory.create_study(study_data.name)
     study_settings = StudySettingsUpdate(
-        general_parameters=GeneralParametersUpdate(first_month_in_year=settings.study_setting_first_month)
+        general_parameters=GeneralParametersUpdate(
+            first_month_in_year=study_data.first_month, nb_years=study_data.nb_years
+        )
     )
     study.update_settings(study_settings)
 
@@ -59,7 +62,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     add_links_to_study(study, study_data.links)
     if study_data.area_thermals and study_data.enable_random_ts:
         logger.info(f"Generating timeseries for {study_data.nb_years} years")
-        study.generate_thermal_timeseries(study_data.nb_years)
+        study.generate_thermal_timeseries(settings.nb_years)
 
     if settings.generation_mode == GenerationMode.LOCAL:
         _package_and_upload_local_study(study_data.name)
@@ -86,12 +89,19 @@ def read_study_data_from_json(study_id: str) -> StudyData:
     study_name = list(data.keys())[0]
     raw_study_data = data.get(study_name, {})
 
+    first_month_val = raw_study_data.get("first_month")
+    if first_month_val:
+        first_month = Month(first_month_val)
+    else:
+        first_month = settings.study_setting_first_month
+
     study_data = StudyData(
         name=study_name,
         areas=raw_study_data.get("areas", {}),
         links=raw_study_data.get("links", {}),
         enable_random_ts=raw_study_data.get("enable_random_ts", True),
-        nb_years=raw_study_data.get("nb_years", 1),
+        nb_years=raw_study_data.get("nb_years", settings.nb_years),
+        first_month=first_month,
     )
 
     for area, area_info in study_data.areas.items():
@@ -161,9 +171,9 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
                 df = pd.read_feather(load_path)
                 area_obj.set_load(df)
 
-            generate_thermal_clusters(area_obj, thermals, first_month=settings.study_setting_first_month)
+            generate_thermal_clusters(area_obj, thermals, first_month=study_data.first_month)
             generate_sts_clusters(area_obj, sts)
-            df_dsr_constraints = generate_dsr_clusters(area_obj, dsr)
+            df_dsr_constraints = generate_dsr_clusters(area_obj, dsr, first_month=study_data.first_month)
             if not df_dsr_constraints.empty:
                 logger.info(f"DSR constraints generated for {area_name}: {df_dsr_constraints.columns.tolist()}")
                 for column in df_dsr_constraints.columns:

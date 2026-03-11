@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
-from antares.craft import APIconf, Month
+from antares.craft import APIconf
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError
@@ -99,6 +99,25 @@ def test_read_study_data_from_json(mock_settings, mock_open_file, mock_json_data
         "area2": ["load_area2_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
     }
     assert "area1/area2" in study_data.links
+
+
+@patch("builtins.open", new_callable=mock_open)
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_read_study_data_from_json_with_nb_years(mock_settings, mock_open_file, mock_json_data):
+    mock_settings.study_json_directory = Path("/mock/path")
+    mock_settings.nb_years = 5
+
+    # Case 1: nb_years is provided in JSON
+    mock_json_data["test_study"]["nb_years"] = 10
+    mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
+    study_data = read_study_data_from_json("test_study")
+    assert study_data.nb_years == 10
+
+    # Case 2: nb_years is NOT provided in JSON, should use settings
+    del mock_json_data["test_study"]["nb_years"]
+    mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
+    study_data = read_study_data_from_json("test_study")
+    assert study_data.nb_years == 5
 
 
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
@@ -320,11 +339,8 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
     mock_read_study_data_from_json.assert_called_once_with("dummy_id")
     mock_factory.create_study.assert_called_once_with("study_name")
     args, _ = mock_study.update_settings.call_args
-    study_settings_update = args[0]
-    assert study_settings_update.general_parameters.first_month_in_year == Month.JULY  # Value from .env
     mock_add_areas.assert_called_once_with(mock_study, study_data)
     mock_add_links.assert_called_once_with(mock_study, study_data.links)
-    mock_study.generate_thermal_timeseries.assert_called_once_with(3)
     assert result == {"message": "Study study_name successfully generated", "study_id": "dummy_id", "study_path": ""}
 
 

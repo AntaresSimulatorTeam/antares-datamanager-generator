@@ -13,6 +13,9 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from antares.craft import Month
+from antares.datamanager.core.settings import settings
+
 
 @dataclass
 class StudyData:
@@ -24,4 +27,5 @@ class StudyData:
     area_sts: dict[str, Any] = field(default_factory=dict)
     area_dsr: dict[str, Any] = field(default_factory=dict)
     enable_random_ts: bool = True
-    nb_years: int = 1
+    nb_years: int = field(default_factory=lambda: settings.nb_years)
+    first_month: Month = field(default_factory=lambda: settings.study_setting_first_month)

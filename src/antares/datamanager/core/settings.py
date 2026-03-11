@@ -104,6 +104,13 @@ class Settings:
         return os.getenv("STUDY_VERSION", "")
 
     @property
+    def nb_years(self) -> int:
+        value = os.getenv("NB_YEARS")
+        if value:
+            return int(value)
+        return 1
+
+    @property
     def verify_ssl(self) -> bool:
         return False
 
