@@ -25,7 +25,7 @@ configure_ecs_logger()
 logger = get_logger(__name__)
 
 
-def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any], first_month: Optional[Month] = None) -> None:
+def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any], first_month: Optional[Month] = None) -> pd.DataFrame:
     """
     Generates thermal clusters for DSR (Demand Side Response) based on provided area and DSR data.
     """
@@ -66,6 +66,63 @@ def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any], first_month: Opti
 
         create_dsr_cluster(area_obj, cluster_name, values, modulation_matrix, first_month)
 
+    # 3. Generate coupling constraints
+    return generate_dsr_binding_constraints(dsr, cluster_series)
+
+
+def generate_dsr_binding_constraints(dsr_data: Dict[str, Any], cluster_series: Dict[str, pd.Series]) -> pd.DataFrame:
+    """
+    Calculates coupling constraints for DSR.
+
+    Rules:
+    1. For each day, calculate the mean of hourly values per column (capacity modulation).
+    2. Coefficient per DSR node: coefficient = 24 * max_hour_per_day / nb_hour_per_day.
+    3. Multiply daily mean by the coefficient.
+    4. The result is a 366-day matrix.
+
+    FR Case: Do not sum sub-clusters. Keep FR_* columns separate.
+    """
+    if not cluster_series:
+        return pd.DataFrame()
+
+    results = {}
+    for cluster_name, series in cluster_series.items():
+        data = dsr_data.get(cluster_name, {}).get("data", {})
+        max_hour_per_day = data.get("max_hour_per_day", 1)
+        nb_hour_per_day = data.get("nb_hour_per_day", 1)
+
+        if nb_hour_per_day == 0:
+            logger.warning(f"nb_hour_per_day is 0 for {cluster_name}, using 1 to avoid division by zero.")
+            nb_hour_per_day = 1
+
+        coefficient = 24 * max_hour_per_day / nb_hour_per_day
+
+        daily_mean = series.groupby(series.index // 24).mean()
+
+        # 3. Multiply by coeff
+        results[cluster_name] = daily_mean * coefficient
+
+    df_results = pd.DataFrame(results)
+
+    fr_columns = [col for col in df_results.columns if col.startswith("FR_")]
+    non_fr_columns = [col for col in df_results.columns if not col.startswith("FR_")]
+
+    final_df = df_results[fr_columns].copy()
+
+    if non_fr_columns:
+        # If it's not a FR area, we sum all columns.
+        area_name = non_fr_columns[0].split("_")[0] if non_fr_columns else "TOTAL"
+        # The column name will be used to identify the area in the constraint generation
+        final_df[f"{area_name}_DSR"] = df_results[non_fr_columns].sum(axis=1)
+
+    logger.info(f"Generated coupling constraints matrix with shape {final_df.shape}")
+    # Antares always expects 366 rows for bc_daily
+    if len(final_df) == 365:
+        final_df = pd.concat(
+            [final_df, pd.DataFrame([[0] * final_df.shape[1]], columns=final_df.columns)], ignore_index=True
+        )
+    return final_df
+
 
 def create_dsr_cluster(
     area_obj: Area,
@@ -85,8 +142,7 @@ def create_dsr_cluster(
         return
 
     cluster_data = cluster_values.get("data", {})
-    unit_count = cluster_properties.unit_count
-    prepro_matrix = create_dsr_prepro_data_matrix(cluster_data, unit_count, first_month=first_month)
+    prepro_matrix = create_dsr_prepro_data_matrix(cluster_data, first_month=first_month)
 
     thermal_cluster = area_obj.create_thermal_cluster(cluster_name, cluster_properties)
     thermal_cluster.set_prepro_data(prepro_matrix)
@@ -121,9 +177,7 @@ def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None", gl
     return df
 
 
-def create_dsr_prepro_data_matrix(
-    data: Dict[str, Any], unit_count: int, first_month: Optional[Month] = None
-) -> pd.DataFrame:
+def create_dsr_prepro_data_matrix(data: Dict[str, Any], first_month: Optional[Month] = None) -> pd.DataFrame:
     """
     Generates a data matrix for preprocessed DSR values.
 
