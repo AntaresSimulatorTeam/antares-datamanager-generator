@@ -78,14 +78,14 @@ def test_create_dsr_prepro_data_matrix_monthly_expansion():
 def test_generate_contraintes_couplantes_fr():
     # Setup data for FR (multiple sub-clusters)
     dsr_data = {
-        "FR_DSR_ter": {
+        "FR_DSR_0_ter": {
             "properties": {
                 "enabled": True,
                 "nominal_capacity": 300,
             },
             "data": {"nb_hour_per_day": 13, "max_hour_per_day": 1},
         },
-        "FR_DSR_ind": {
+        "FR_DSR_0_ind": {
             "properties": {
                 "enabled": True,
                 "nominal_capacity": 500,
@@ -97,34 +97,34 @@ def test_generate_contraintes_couplantes_fr():
     # Mock cluster_series (8760 hours)
     # For ter: constant 100
     # For ind: constant 200
-    cluster_series = {"FR_DSR_ter": pd.Series([100.0] * 8760), "FR_DSR_ind": pd.Series([200.0] * 8760)}
+    cluster_series = {"FR_DSR_0_ter": pd.Series([100.0] * 8760), "FR_DSR_0_ind": pd.Series([200.0] * 8760)}
 
     df_constraints = generate_dsr_binding_constraints(dsr_data, cluster_series)
 
     # Check shape: 365 days, 2 columns (because FR should keep columns separate)
     assert df_constraints.shape == (366, 2)
-    assert "FR_DSR_ter" in df_constraints.columns
-    assert "FR_DSR_ind" in df_constraints.columns
+    assert "FR_DSR_0_ter" in df_constraints.columns
+    assert "FR_DSR_0_ind" in df_constraints.columns
 
     # Coefficient 24 * 1 / 13 = 1.84615...
     # Mean ter = 100
     # Result ter = 100 * 1.84615 = 184.615
     expected_ter = 100 * (24 * 1 / 13)
-    np.testing.assert_allclose(df_constraints["FR_DSR_ter"].iloc[0], expected_ter, rtol=1e-5)
+    np.testing.assert_allclose(df_constraints["FR_DSR_0_ter"].iloc[0], expected_ter, rtol=1e-5)
 
     # Coefficient ind = 24 * 2 / 10 = 4.8
     # Mean ind = 200
     # Result ind = 200 * 4.8 = 960
     expected_ind = 200 * (24 * 2 / 10)
-    np.testing.assert_allclose(df_constraints["FR_DSR_ind"].iloc[0], expected_ind, rtol=1e-5)
+    np.testing.assert_allclose(df_constraints["FR_DSR_0_ind"].iloc[0], expected_ind, rtol=1e-5)
 
 
 def test_generate_binding_constraints_non_fr():
-    dsr_data = {"BE_DSR": {"properties": {"enabled": True}, "data": {"nb_hour_per_day": 12, "max_hour_per_day": 1}}}
-    cluster_series = {"BE_DSR": pd.Series([100.0] * 8760)}
+    dsr_data = {"BE_DSR_0": {"properties": {"enabled": True}, "data": {"nb_hour_per_day": 12, "max_hour_per_day": 1}}}
+    cluster_series = {"BE_DSR_0": pd.Series([100.0] * 8760)}
 
     df_constraints = generate_dsr_binding_constraints(dsr_data, cluster_series)
     assert df_constraints.shape == (366, 1)
     expected_be = 100 * (24 * 1 / 12)  # 100 * 2 = 200
-    assert "BE_DSR" in df_constraints.columns
-    np.testing.assert_allclose(df_constraints["BE_DSR"].iloc[0], expected_be, rtol=1e-5)
+    assert "BE_DSR_0" in df_constraints.columns
+    np.testing.assert_allclose(df_constraints["BE_DSR_0"].iloc[0], expected_be, rtol=1e-5)
