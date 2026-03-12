@@ -87,8 +87,6 @@ def generate_dsr_binding_constraints(dsr_data: Dict[str, Any], cluster_series: D
 
     results = {}
     for cluster_name, series in cluster_series.items():
-        if "DSR_0" not in cluster_name:
-            continue
         data = dsr_data.get(cluster_name, {}).get("data", {})
         max_hour_per_day = data.get("max_hour_per_day", 1)
         nb_hour_per_day = data.get("nb_hour_per_day", 1)
