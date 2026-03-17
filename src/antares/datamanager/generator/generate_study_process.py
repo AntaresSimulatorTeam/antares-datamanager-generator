@@ -195,12 +195,11 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
                         time_step=BindingConstraintFrequency.DAILY,
                         operator=BindingConstraintOperator.LESS,
                     )
-                    # TODO to change offset to 0 when issue in AntaresCraft is corrected
                     terms = [
                         ConstraintTerm(
                             data=ClusterData(area=area_id, cluster=cluster_name),
                             weight=1,
-                            offset=1,
+                            offset=0,
                         )
                     ]
 
