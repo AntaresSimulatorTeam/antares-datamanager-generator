@@ -59,8 +59,9 @@ def test_build_misc_timeseries_matrix_maps_group_with_single_series(mock_read_fe
     matrix = build_misc_timeseries_matrix("FR", misc)
 
     assert matrix.shape == (8760, 8)
-    assert float(matrix["Waste"].iloc[0]) == 100.0
-    assert float(matrix["Waste"].iloc[-1]) == 100.0
+    # load_factor(1.0) is normalized by 1000 before multiplying capacity.
+    assert float(matrix["Waste"].iloc[0]) == 0.1
+    assert float(matrix["Waste"].iloc[-1]) == 0.1
 
 
 @patch("antares.datamanager.generator.generate_misc_timeseries.settings")
@@ -83,8 +84,8 @@ def test_build_misc_timeseries_matrix_maps_hydrokinetic_and_wave_to_other(mock_r
 
     matrix = build_misc_timeseries_matrix("FR", misc)
 
-    # Other = 0.1*100 + 0.2*50 = 20
-    assert float(matrix["Other"].iloc[42]) == 20.0
+    # Other = (0.1/1000)*100 + (0.2/1000)*50 = 0.02
+    assert float(matrix["Other"].iloc[42]) == 0.02
 
 
 @patch("antares.datamanager.generator.generate_misc_timeseries.settings")
@@ -195,3 +196,49 @@ def test_build_misc_timeseries_matrix_rejects_non_numeric_arrow_values(mock_read
 
     with pytest.raises(MiscGenerationError, match="contains invalid values"):
         build_misc_timeseries_matrix("FR", misc)
+
+
+@patch("antares.datamanager.generator.generate_misc_timeseries.settings")
+@patch("antares.datamanager.generator.generate_misc_timeseries.pd.read_feather")
+def test_build_misc_timeseries_matrix_rejects_out_of_range_normalized_load_factor(
+    mock_read_feather, mock_settings, tmp_path
+):
+    mock_settings.misc_ts_directory = tmp_path
+    (tmp_path / "waste.arrow").write_text("x", encoding="utf-8")
+
+    # 1500 / 1000 = 1.5, should fail temporary guard [0,1].
+    mock_read_feather.return_value = pd.DataFrame({"FR": [1500.0] * 8760})
+
+    misc = {
+        "waste": {
+            "properties": {"capacity": 1},
+            "series": ["waste.arrow"],
+        }
+    }
+
+    with pytest.raises(MiscGenerationError, match=r"within \[0, 1\]"):
+        build_misc_timeseries_matrix("FR", misc)
+
+
+@patch("antares.datamanager.generator.generate_misc_timeseries.settings")
+@patch("antares.datamanager.generator.generate_misc_timeseries.pd.read_feather")
+@patch("antares.datamanager.generator.generate_misc_timeseries.MISC_LOAD_FACTOR_CONVERSION_FACT", 1000.0)
+def test_build_misc_timeseries_matrix_applies_configured_capacity_conversion(
+    mock_read_feather, mock_settings, tmp_path
+):
+    mock_settings.misc_ts_directory = tmp_path
+    (tmp_path / "f1.arrow").write_text("x", encoding="utf-8")
+
+    mock_read_feather.return_value = pd.DataFrame({"FR": [1.0] * 8760})
+
+    misc = {
+        "waste": {
+            "properties": {"capacity": 100},
+            "series": ["f1.arrow"],
+        }
+    }
+
+    matrix = build_misc_timeseries_matrix("FR", misc)
+
+    # 100 / 1000 = 0.1
+    assert float(matrix["Waste"].iloc[0]) == 0.1

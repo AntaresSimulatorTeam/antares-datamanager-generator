@@ -29,6 +29,9 @@ logger = get_logger(__name__)
 MISC_COLUMNS = ["CHP", "BioMass", "Bi Gas", "Waste", "GeoThermal", "Other", "PSP", "Row balance"]
 EXPECTED_HOURS = 8760
 
+# Misc load factor scaling (for a value between 0 and 1)
+MISC_LOAD_FACTOR_CONVERSION_FACT = 1000.0
+
 # Source misc group -> Antares misc-gen column
 GROUP_TO_COLUMN = {
     "biomass": "BioMass",
@@ -74,9 +77,12 @@ def build_misc_timeseries_matrix(area_name: str, misc: dict[str, Any]) -> pd.Dat
             continue
 
         capacity = _read_capacity(validated_group_values, area_name, group_name)
+        normalized_load_factor = load_factor / MISC_LOAD_FACTOR_CONVERSION_FACT
+        # TODO: Validate load factor values are between 0 and 1 (disabled foer now)
+        # _validate_normalized_load_factor(normalized_load_factor, area_name, group_name)
 
-        # ts_values = load_factor_mean X puissance total (0 < load_factor_mean, puissance < 1)
-        matrix[target_column] += load_factor * capacity
+        # ts_values = load_factor_mean X puissance total (0 < load_factor < 1)
+        matrix[target_column] += normalized_load_factor * capacity
 
     if unmapped_groups_found:
         logger.debug(
@@ -165,6 +171,18 @@ def _read_capacity(group_values: dict[str, Any], area_name: str, group_name: str
         ) from exc
 
     return capacity
+
+
+def _validate_normalized_load_factor(load_factor: pd.Series[Any], area_name: str, group_name: str) -> None:
+    invalid_mask = ~load_factor.between(0.0, 1.0)
+    if not invalid_mask.any():
+        return
+
+    raise MiscGenerationError(
+        "Invalid MISC load factor for "
+        f"area='{area_name}', group='{group_name}': value must be betwween [0, 1], "
+        f"got min={float(load_factor.min())}, max={float(load_factor.max())}"
+    )
 
 
 def _resolve_and_validate_misc_path(base_dir: Path, filename: str) -> Path:
