@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, mock_open, patch
 from antares.craft import APIconf
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
-from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError
+from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, MiscGenerationError
 from antares.datamanager.generator.generate_study_process import (
     _package_and_upload_local_study,
     add_areas_to_study,
@@ -55,6 +55,12 @@ def mock_json_data():
                     "ui": "AreaUI class as JSON",
                     "properties": {"energy_cost_unsupplied": "4000.0", "energy_cost_spilled": "200.0"},
                     "loads": ["load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
+                    "misc": {
+                        "waste": {
+                            "properties": {"capacity": 12.0, "group": "waste"},
+                            "series": ["area1_waste.test.arrow"],
+                        }
+                    },
                 },
                 "area2": {
                     "hydro": {
@@ -98,6 +104,7 @@ def test_read_study_data_from_json(mock_settings, mock_open_file, mock_json_data
         "area1": ["load_area1_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
         "area2": ["load_area2_2030-2031.txt.1b39a7db-53be-496d-aef0-1ab4692010a3.arrow"],
     }
+    assert "waste" in study_data.area_misc["area1"]
     assert "area1/area2" in study_data.links
 
 
@@ -135,7 +142,10 @@ def test_add_areas_to_study_with_fixed_seed(mock_load_dir):
 
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
 @patch("antares.datamanager.generator.generate_study_process.pd.read_feather")
-def test_add_areas_to_study_calls_create_area_and_set_load(mock_read_feather, mock_generator_load_directory):
+@patch("antares.datamanager.generator.generate_study_process.generate_misc_timeseries")
+def test_add_areas_to_study_calls_create_area_and_set_load(
+    mock_generate_misc_timeseries, mock_read_feather, mock_generator_load_directory
+):
     mock_study = MagicMock()
     mock_area_obj = MagicMock()
     mock_study.create_area.return_value = mock_area_obj
@@ -157,6 +167,7 @@ def test_add_areas_to_study_calls_create_area_and_set_load(mock_read_feather, mo
     mock_read_feather.assert_any_call(Path("/fake/path/loadA.feather"))
     mock_read_feather.assert_any_call(Path("/fake/path/loadB.feather"))
     mock_read_feather.assert_any_call(Path("/fake/path/loadB2.feather"))
+    assert mock_generate_misc_timeseries.call_count == 2
 
 
 def test_add_links_to_study_calls_create_link():
@@ -679,3 +690,22 @@ def test_add_areas_to_study_maps_api_error_to_area_error(mock_load_dir):
 
     assert "ERR" in str(exc.value)
     assert "backend failed" in str(exc.value)
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+@patch("antares.datamanager.generator.generate_study_process.generate_misc_timeseries")
+def test_add_areas_to_study_maps_misc_error_to_area_error(mock_generate_misc, mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
+    mock_study = MagicMock()
+    mock_study.create_area.return_value = MagicMock()
+    mock_generate_misc.side_effect = MiscGenerationError("invalid misc data")
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(name="test", areas={"ERR": {}}, area_misc={"ERR": {"waste": {}}})
+
+    with pytest.raises(AreaGenerationError) as exc:
+        add_areas_to_study(mock_study, study_data)
+
+    assert "ERR" in str(exc.value)
+    assert "invalid misc data" in str(exc.value)

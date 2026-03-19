@@ -33,9 +33,15 @@ from antares.craft import (
 from antares.craft.model.area import AreaProperties, AreaUi
 from antares.craft.model.study import Study, import_study_api
 from antares.datamanager.core.settings import GenerationMode, settings
-from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
+from antares.datamanager.exceptions.exceptions import (
+    APIGenerationError,
+    AreaGenerationError,
+    LinkGenerationError,
+    MiscGenerationError,
+)
 from antares.datamanager.generator.generate_dsr_clusters import generate_dsr_clusters
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
+from antares.datamanager.generator.generate_misc_timeseries import generate_misc_timeseries
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
 from antares.datamanager.generator.generate_thermal_clusters import generate_thermal_clusters
 from antares.datamanager.generator.study_adapters import StudyFactory
@@ -124,6 +130,11 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         if sts:
             study_data.area_dsr[area] = sts
 
+        # MISC
+        misc = area_info.get("misc", {})
+        if misc:
+            study_data.area_misc[area] = misc
+
     return study_data
 
 
@@ -163,6 +174,7 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
         thermals = study_data.area_thermals.get(area_name, {})
         sts = study_data.area_sts.get(area_name, {})
         dsr = study_data.area_dsr.get(area_name, {})
+        misc = study_data.area_misc.get(area_name, {})
 
         try:
             area_obj = study.create_area(area_name=area_name, properties=area_properties, ui=area_ui)
@@ -170,6 +182,8 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
                 load_path = Path(path_to_load_directory) / load_file
                 df = pd.read_feather(load_path)
                 area_obj.set_load(df)
+
+            generate_misc_timeseries(area_obj, area_name, misc)
 
             generate_thermal_clusters(area_obj, thermals, first_month=study_data.first_month)
             generate_sts_clusters(area_obj, sts)
@@ -217,7 +231,7 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
                     logger.info(f"Created binding constraint {bc_name} for area {area_name}")
 
             logger.info(f"Successfully created area for {area_name}")
-        except APIGenerationError as e:
+        except (APIGenerationError, MiscGenerationError) as e:
             raise AreaGenerationError(area_name, e.message) from e
 
 
