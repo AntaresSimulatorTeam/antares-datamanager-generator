@@ -27,3 +27,11 @@ class LinkGenerationError(Exception):
     def __init__(self, area_from: str, area_to: str, message: str) -> None:
         self.message = f"Could not create the link {area_from} / {area_to}: " + message
         super().__init__(self.message)
+
+
+class MiscGenerationError(Exception):
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(self.message)
+
+
