@@ -193,5 +193,5 @@ def test_build_misc_timeseries_matrix_rejects_non_numeric_arrow_values(mock_read
         }
     }
 
-    with pytest.raises(MiscGenerationError, match="contains non-numeric values"):
+    with pytest.raises(MiscGenerationError, match="contains invalid values"):
         build_misc_timeseries_matrix("FR", misc)

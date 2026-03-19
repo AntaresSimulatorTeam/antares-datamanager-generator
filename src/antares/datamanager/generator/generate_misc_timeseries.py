@@ -9,6 +9,8 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
