@@ -142,33 +142,102 @@ def generator_load_directory() -> Path:
     return settings.load_output_directory
 
 
+def _build_area_ui(area_def: object) -> AreaUi:
+    # UI from JSON if provided, otherwise random
+    ui_json = area_def.get("ui") if isinstance(area_def, dict) else None
+    if isinstance(ui_json, dict):
+        try:
+            return AreaUi(**ui_json)
+        except Exception:
+            pass
+
+    x, y = generate_random_coordinate()
+    color_rgb = generate_random_color()
+    return AreaUi(x=x, y=y, color_rgb=color_rgb)
+
+
+def _build_area_properties(area_def: object) -> AreaProperties | None:
+    properties_json = area_def.get("properties") if isinstance(area_def, dict) else None
+    if not isinstance(properties_json, dict):
+        return None
+
+    has_ecu = "energy_cost_unsupplied" in properties_json
+    has_ecs = "energy_cost_spilled" in properties_json
+    if not (has_ecu or has_ecs):
+        return None
+
+    return AreaProperties(
+        energy_cost_unsupplied=properties_json.get("energy_cost_unsupplied", 0.0),
+        energy_cost_spilled=properties_json.get("energy_cost_spilled", 0.0),
+    )
+
+
+def _set_area_loads(area_obj: object, loads: list[str], path_to_load_directory: Path | str) -> None:
+    load_directory = Path(path_to_load_directory)
+    for load_file in loads:
+        load_path = load_directory / load_file
+        df = pd.read_feather(load_path)
+        area_obj.set_load(df)
+
+
+def _build_dsr_constraint_names(column: str) -> tuple[str, str, str]:
+    if column.startswith("FR_"):
+        # FR Case
+        bc_name = f"{column}_stock"
+        cluster_name = column
+        area_id = "fr"
+        return bc_name, cluster_name, area_id
+
+    # Non-FR Case
+    # Column name is expected to be {area_name}_DSR
+    actual_area_name = column.split("_")[0]
+    bc_name = f"DSR_{actual_area_name}_stock"
+    cluster_name = f"{actual_area_name.lower()}_dsr 0"
+    area_id = actual_area_name.lower()
+    return bc_name, cluster_name, area_id
+
+
+def _create_dsr_binding_constraints(study: Study, area_name: str, df_dsr_constraints: pd.DataFrame) -> None:
+    if df_dsr_constraints.empty:
+        return
+
+    logger.info(f"DSR constraints generated for {area_name}: {df_dsr_constraints.columns.tolist()}")
+    for column in df_dsr_constraints.columns:
+        bc_name, cluster_name, area_id = _build_dsr_constraint_names(column)
+
+        properties = BindingConstraintProperties(
+            enabled=True,
+            time_step=BindingConstraintFrequency.DAILY,
+            operator=BindingConstraintOperator.LESS,
+        )
+        terms = [
+            ConstraintTerm(
+                data=ClusterData(area=area_id, cluster=cluster_name),
+                weight=1,
+                offset=0,
+            )
+        ]
+
+        # The matrix should be a single column DataFrame for the binding constraint
+        less_term_matrix = df_dsr_constraints[[column]]
+        logger.debug(f"Generated less term matrix for {bc_name}: {less_term_matrix.shape}")
+
+        study.create_binding_constraint(
+            name=bc_name,
+            properties=properties,
+            terms=terms,
+            less_term_matrix=less_term_matrix,
+        )
+
+        logger.info(f"Created binding constraint {bc_name} for area {area_name}")
+
+
 def add_areas_to_study(study: Study, study_data: StudyData) -> None:
     path_to_load_directory = generator_load_directory()
     logger.info(list(study_data.areas.keys()))
     for area_name, area_def in study_data.areas.items():
-        # UI from JSON if provided, otherwise random
-        ui_json = area_def.get("ui") if isinstance(area_def, dict) else None
-        area_ui = None
-        if isinstance(ui_json, dict):
-            try:
-                area_ui = AreaUi(**ui_json)
-            except Exception:
-                area_ui = None
-        if area_ui is None:
-            x, y = generate_random_coordinate()
-            color_rgb = generate_random_color()
-            area_ui = AreaUi(x=x, y=y, color_rgb=color_rgb)
-        properties_json = area_def.get("properties") if isinstance(area_def, dict) else None
-        area_properties = None
-        if isinstance(properties_json, dict):
-            has_ecu = "energy_cost_unsupplied" in properties_json
-            has_ecs = "energy_cost_spilled" in properties_json
-
-            if has_ecu or has_ecs:
-                area_properties = AreaProperties(
-                    energy_cost_unsupplied=properties_json.get("energy_cost_unsupplied", 0.0),
-                    energy_cost_spilled=properties_json.get("energy_cost_spilled", 0.0),
-                )
+        area_ui = _build_area_ui(area_def)
+        area_properties = _build_area_properties(area_def)
 
         loads = study_data.area_loads.get(area_name, [])
         thermals = study_data.area_thermals.get(area_name, {})
@@ -178,57 +247,14 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
 
         try:
             area_obj = study.create_area(area_name=area_name, properties=area_properties, ui=area_ui)
-            for load_file in loads:
-                load_path = Path(path_to_load_directory) / load_file
-                df = pd.read_feather(load_path)
-                area_obj.set_load(df)
+            _set_area_loads(area_obj, loads, path_to_load_directory)
 
             generate_misc_timeseries(area_obj, area_name, misc)
 
             generate_thermal_clusters(area_obj, thermals, first_month=study_data.first_month)
             generate_sts_clusters(area_obj, sts)
             df_dsr_constraints = generate_dsr_clusters(area_obj, dsr, first_month=study_data.first_month)
-            if not df_dsr_constraints.empty:
-                logger.info(f"DSR constraints generated for {area_name}: {df_dsr_constraints.columns.tolist()}")
-                for column in df_dsr_constraints.columns:
-                    if column.startswith("FR_"):
-                        # FR Case
-                        bc_name = f"{column}_stock"
-                        cluster_name = column
-                        area_id = "fr"
-                    else:
-                        # Non-FR Case
-                        # Column name is expected to be {area_name}_DSR
-                        actual_area_name = column.split("_")[0]
-                        bc_name = f"DSR_{actual_area_name}_stock"
-                        cluster_name = f"{actual_area_name.lower()}_dsr 0"
-                        area_id = actual_area_name.lower()
-
-                    properties = BindingConstraintProperties(
-                        enabled=True,
-                        time_step=BindingConstraintFrequency.DAILY,
-                        operator=BindingConstraintOperator.LESS,
-                    )
-                    terms = [
-                        ConstraintTerm(
-                            data=ClusterData(area=area_id, cluster=cluster_name),
-                            weight=1,
-                            offset=0,
-                        )
-                    ]
-
-                    # The matrix should be a single column DataFrame for the binding constraint
-                    less_term_matrix = df_dsr_constraints[[column]]
-                    logger.debug(f"Generated less term matrix for {bc_name}: {less_term_matrix.shape}")
-
-                    study.create_binding_constraint(
-                        name=bc_name,
-                        properties=properties,
-                        terms=terms,
-                        less_term_matrix=less_term_matrix,
-                    )
-
-                    logger.info(f"Created binding constraint {bc_name} for area {area_name}")
+            _create_dsr_binding_constraints(study, area_name, df_dsr_constraints)
 
             logger.info(f"Successfully created area for {area_name}")
         except (APIGenerationError, MiscGenerationError) as e:

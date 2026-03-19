@@ -167,7 +167,6 @@ def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None", gl
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
-    # cm_values = np.ones(len(series))
     if global_max > 0:
         cm_values = (series / global_max).round(3)
     else:
