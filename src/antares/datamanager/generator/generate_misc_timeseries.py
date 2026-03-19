@@ -78,7 +78,7 @@ def build_misc_timeseries_matrix(area_name: str, misc: dict[str, Any]) -> pd.Dat
 
         capacity = _read_capacity(validated_group_values, area_name, group_name)
         normalized_load_factor = load_factor / MISC_LOAD_FACTOR_CONVERSION_FACT
-        # TODO: Validate load factor values are between 0 and 1 (disabled foer now)
+        # TODO: uncomment to validate load factor values are between 0 and 1 (disabled foer now)
         # _validate_normalized_load_factor(normalized_load_factor, area_name, group_name)
 
         # ts_values = load_factor_mean X puissance total (0 < load_factor < 1)
