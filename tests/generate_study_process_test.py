@@ -709,4 +709,3 @@ def test_add_areas_to_study_maps_misc_error_to_area_error(mock_generate_misc, mo
 
     assert "ERR" in str(exc.value)
     assert "invalid misc data" in str(exc.value)
-

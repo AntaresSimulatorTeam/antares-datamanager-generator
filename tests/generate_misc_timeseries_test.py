@@ -9,14 +9,18 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+import pytest
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 
 from antares.datamanager.exceptions.exceptions import MiscGenerationError
-from antares.datamanager.generator.generate_misc_timeseries import build_misc_timeseries_matrix, generate_misc_timeseries
+from antares.datamanager.generator.generate_misc_timeseries import (
+    build_misc_timeseries_matrix,
+    generate_misc_timeseries,
+)
 
 
 @patch("antares.datamanager.generator.generate_misc_timeseries.settings")
@@ -191,8 +195,3 @@ def test_build_misc_timeseries_matrix_rejects_non_numeric_arrow_values(mock_read
 
     with pytest.raises(MiscGenerationError, match="contains non-numeric values"):
         build_misc_timeseries_matrix("FR", misc)
-
-
-
-
-

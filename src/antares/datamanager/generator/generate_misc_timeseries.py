@@ -1,3 +1,14 @@
+# Copyright (c) 2024, RTE (https://www.rte-france.com)
+#
+# See AUTHORS.txt
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+#
+# This file is part of the Antares project.
 from pathlib import Path
 from typing import Any
 
@@ -5,8 +16,8 @@ import numpy as np
 import pandas as pd
 
 from antares.craft.model.area import Area
-from antares.datamanager.exceptions.exceptions import MiscGenerationError
 from antares.datamanager.core.settings import settings
+from antares.datamanager.exceptions.exceptions import MiscGenerationError
 from antares.datamanager.logs.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -26,6 +37,7 @@ GROUP_TO_COLUMN = {
     "geothermal": "GeoThermal",
     "wave": "Other",
 }
+
 
 def generate_misc_timeseries(area_obj: Area, area_name: str, misc: dict[str, Any]) -> None:
     matrix = build_misc_timeseries_matrix(area_name, misc)
@@ -88,7 +100,7 @@ def _read_load_factor_series(
     area_name: str,
     group_name: str,
     group_values: dict[str, Any],
-) -> pd.Series | None:
+) -> pd.Series[Any] | None:
     raw_series_files = group_values.get("series", [])
     if isinstance(raw_series_files, str):
         series_files = [raw_series_files]
@@ -120,7 +132,7 @@ def _extract_hourly_series(
     area_name: str,
     group_name: str,
     filename: str,
-) -> pd.Series:
+) -> pd.Series[Any]:
     if df.empty or df.shape[1] < 1:
         raise MiscGenerationError(
             f"MISC .arrow file has no time series column for area='{area_name}', group='{group_name}', file='{filename}'"
@@ -137,8 +149,7 @@ def _extract_hourly_series(
         return pd.to_numeric(first_column, errors="raise")
     except (TypeError, ValueError) as exc:
         raise MiscGenerationError(
-            f"MISC .arrow file contains invalid values for area='{area_name}', "
-            f"group='{group_name}', file='{filename}'"
+            f"MISC .arrow file contains invalid values for area='{area_name}', group='{group_name}', file='{filename}'"
         ) from exc
 
 
@@ -172,4 +183,3 @@ def _resolve_and_validate_misc_path(base_dir: Path, filename: str) -> Path:
 
 def _normalize_group_name(group_name: str) -> str:
     return str(group_name).strip().lower()
-
