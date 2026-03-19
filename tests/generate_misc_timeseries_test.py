@@ -200,7 +200,6 @@ def test_build_misc_timeseries_matrix_rejects_non_numeric_arrow_values(mock_read
 @patch("antares.datamanager.generator.generate_misc_timeseries.settings")
 @patch("antares.datamanager.generator.generate_misc_timeseries.pd.read_feather")
 @pytest.mark.skip(reason="Disabled while load factor validation is off")
-
 def test_build_misc_timeseries_matrix_allows_out_of_range_normalized_load_factor_when_guard_disabled(
     mock_read_feather, mock_settings, tmp_path
 ):
