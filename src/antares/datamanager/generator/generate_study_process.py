@@ -15,6 +15,7 @@ import os
 import shutil
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -30,7 +31,7 @@ from antares.craft import (
     Month,
     StudySettingsUpdate,
 )
-from antares.craft.model.area import AreaProperties, AreaUi
+from antares.craft.model.area import Area, AreaProperties, AreaUi
 from antares.craft.model.study import Study, import_study_api
 from antares.datamanager.core.settings import GenerationMode, settings
 from antares.datamanager.exceptions.exceptions import (
@@ -142,9 +143,9 @@ def generator_load_directory() -> Path:
     return settings.load_output_directory
 
 
-def _build_area_ui(area_def: object) -> AreaUi:
+def _build_area_ui(area_def: dict[str, Any]) -> AreaUi:
     # UI from JSON if provided, otherwise random
-    ui_json = area_def.get("ui") if isinstance(area_def, dict) else None
+    ui_json = area_def.get("ui")
     if isinstance(ui_json, dict):
         try:
             return AreaUi(**ui_json)
@@ -156,8 +157,8 @@ def _build_area_ui(area_def: object) -> AreaUi:
     return AreaUi(x=x, y=y, color_rgb=color_rgb)
 
 
-def _build_area_properties(area_def: object) -> AreaProperties | None:
-    properties_json = area_def.get("properties") if isinstance(area_def, dict) else None
+def _build_area_properties(area_def: dict[str, Any]) -> AreaProperties | None:
+    properties_json = area_def.get("properties")
     if not isinstance(properties_json, dict):
         return None
 
@@ -172,7 +173,7 @@ def _build_area_properties(area_def: object) -> AreaProperties | None:
     )
 
 
-def _set_area_loads(area_obj: object, loads: list[str], path_to_load_directory: Path | str) -> None:
+def _set_area_loads(area_obj: Area, loads: list[str], path_to_load_directory: Path | str) -> None:
     load_directory = Path(path_to_load_directory)
     for load_file in loads:
         load_path = load_directory / load_file
