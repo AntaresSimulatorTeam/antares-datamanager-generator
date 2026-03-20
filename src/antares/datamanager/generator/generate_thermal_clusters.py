@@ -100,6 +100,33 @@ def create_thermal_cluster_with_prepro(
     thermal_cluster.set_prepro_modulation(modulation_matrix)
 
 
+def _build_npo_max_daily(
+    season_manager: SeasonManager,
+    unit_count: int,
+    npo_max_summer: float,
+    npo_max_winter: float,
+    factor: float,
+) -> np.ndarray:
+    # Determine season using SeasonManager
+    season_is_winter = season_manager.is_winter()
+    season_is_summer = season_manager.is_summer()
+    npo_max_daily = np.zeros(365)
+
+    # In summer, division by NPO_SUMMER_DIVISOR and in winter by NPO_WINTER_DIVISOR
+    # to indicate that there are fewer NPO (Number of Planned Outages) in summer.
+    if npo_max_summer == 0:
+        npo_max_daily[season_is_summer] = int(unit_count / NPO_SUMMER_DIVISOR)
+    else:
+        npo_max_daily[season_is_summer] = npo_max_summer * factor
+
+    if npo_max_winter == 0:
+        npo_max_daily[season_is_winter] = int(unit_count / NPO_WINTER_DIVISOR)
+    else:
+        npo_max_daily[season_is_winter] = npo_max_winter * factor
+
+    return npo_max_daily
+
+
 def create_prepro_data_matrix(
     data: Dict[str, Any], unit_count: int, first_month: Optional[Month] = None
 ) -> pd.DataFrame:
@@ -133,9 +160,6 @@ def create_prepro_data_matrix(
     if len(fo_monthly_rate) != 12 or len(po_monthly_rate) != 12:
         raise ValueError("fo_monthly_rate and po_monthly_rate must have 12 values")
 
-    if first_month is None:
-        first_month = settings.study_setting_first_month
-
     season_manager = SeasonManager(first_month)
     month_order = season_manager.get_month_order()
     days_in_month = season_manager.get_days_per_month()
@@ -150,22 +174,13 @@ def create_prepro_data_matrix(
             fo_rate_daily.append(fo_monthly_rate[month_idx_in_data])
             po_rate_daily.append(po_monthly_rate[month_idx_in_data])
 
-    # Determine season using SeasonManager
-    season_is_winter = season_manager.is_winter()
-    season_is_summer = season_manager.is_summer()
-    npo_max_daily = np.zeros(365)
-
-    # In summer, division by NPO_SUMMER_DIVISOR and in winter by NPO_WINTER_DIVISOR
-    # to indicate that there are fewer NPO (Number of Planned Outages) in summer.
-    if npo_max_summer == 0:
-        npo_max_daily[season_is_summer] = int(unit_count / NPO_SUMMER_DIVISOR)
-    else:
-        npo_max_daily[season_is_summer] = npo_max_summer * factor
-
-    if npo_max_winter == 0:
-        npo_max_daily[season_is_winter] = int(unit_count / NPO_WINTER_DIVISOR)
-    else:
-        npo_max_daily[season_is_winter] = npo_max_winter * factor
+    npo_max_daily = _build_npo_max_daily(
+        season_manager=season_manager,
+        unit_count=unit_count,
+        npo_max_summer=npo_max_summer,
+        npo_max_winter=npo_max_winter,
+        factor=factor,
+    )
 
     # NPO_min always zero
     npo_min_daily = np.zeros(365)
