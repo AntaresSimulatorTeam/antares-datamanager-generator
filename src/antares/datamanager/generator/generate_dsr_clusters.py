@@ -42,7 +42,7 @@ def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any], first_month: Opti
         if not cluster_modulation:
             continue
 
-        cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
+        cm_file = next((f for f in cluster_modulation if "cm_" in f.lower()), None)
         if cm_file:
             cm_path = base_dir / cm_file
             if cm_path.exists():
