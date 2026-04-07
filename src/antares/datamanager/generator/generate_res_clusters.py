@@ -140,7 +140,7 @@ def compute_fr_weighted_load_factor(
     techno_series_by_zone: Mapping[str, Mapping[str, pd.Series[Any]]],
     techno_weights_by_zone: Mapping[str, Mapping[str, float]],
     zonal_weights: Mapping[str, float],
-    renormalize_missing: bool, # ignores missing zones/tech values (can be removed if not eneeded)
+    renormalize_missing: bool,  # ignores missing zones/tech values (can be removed if not eneeded)
 ) -> pd.Series[Any]:
     if not zonal_weights:
         raise RESGenerationError("zonal_weights is empty")
@@ -323,7 +323,9 @@ def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any], co
         )
 
         if not enabled:
-            logger.info("Prepared disabled RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload)
+            logger.info(
+                "Prepared disabled RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload
+            )
             if hasattr(area_obj, "register_res_payload"):
                 area_obj.register_res_payload(payload)
             continue
@@ -391,13 +393,9 @@ def _extract_res_properties(*, area_name: str, cluster_name: str, cluster_values
         )
 
     if "group" not in properties:
-        raise RESGenerationError(
-            f"Missing RES properties.group for area='{area_name}', cluster='{cluster_name}'"
-        )
+        raise RESGenerationError(f"Missing RES properties.group for area='{area_name}', cluster='{cluster_name}'")
     if "capacity" not in properties:
-        raise RESGenerationError(
-            f"Missing RES properties.capacity for area='{area_name}', cluster='{cluster_name}'"
-        )
+        raise RESGenerationError(f"Missing RES properties.capacity for area='{area_name}', cluster='{cluster_name}'")
 
     return str(properties.get("group", "")), properties.get("capacity")
 
@@ -405,8 +403,7 @@ def _extract_res_properties(*, area_name: str, cluster_name: str, cluster_values
 def _validate_cluster_key_matches_group(*, area_name: str, cluster_name: str, group_name: str) -> None:
     if str(cluster_name).strip().lower() != str(group_name).strip().lower():
         raise RESGenerationError(
-            "RES entry key must match properties.group; "
-            f"area='{area_name}', key='{cluster_name}', group='{group_name}'"
+            f"RES entry key must match properties.group; area='{area_name}', key='{cluster_name}', group='{group_name}'"
         )
 
 
@@ -459,9 +456,7 @@ def _build_fr_weighted_series_from_aggregation(
 
 def _parse_zone_weights(*, area_name: str, cluster_name: str, raw_zone_weights: Any) -> dict[str, float]:
     if not isinstance(raw_zone_weights, Mapping) or not raw_zone_weights:
-        raise RESGenerationError(
-            f"Invalid zone_weights for area='{area_name}', cluster='{cluster_name}'"
-        )
+        raise RESGenerationError(f"Invalid zone_weights for area='{area_name}', cluster='{cluster_name}'")
 
     zone_weights: dict[str, float] = {}
     for raw_zone, raw_weight in raw_zone_weights.items():
@@ -478,9 +473,7 @@ def _parse_zone_weights(*, area_name: str, cluster_name: str, raw_zone_weights: 
         zone_weights[zone] = weight
 
     if sum(zone_weights.values()) <= 0:
-        raise RESGenerationError(
-            f"Sum of zone_weights must be > 0 for area='{area_name}', cluster='{cluster_name}'"
-        )
+        raise RESGenerationError(f"Sum of zone_weights must be > 0 for area='{area_name}', cluster='{cluster_name}'")
 
     return zone_weights
 
@@ -493,9 +486,7 @@ def _parse_tech_weights_by_zone(
     expected_zones: set[str],
 ) -> dict[str, dict[str, float]]:
     if not isinstance(raw_tech_weights_by_zone, Mapping) or not raw_tech_weights_by_zone:
-        raise RESGenerationError(
-            f"Invalid tech_weights_by_zone for area='{area_name}', cluster='{cluster_name}'"
-        )
+        raise RESGenerationError(f"Invalid tech_weights_by_zone for area='{area_name}', cluster='{cluster_name}'")
 
     incoming_zones = {str(zone).strip().upper() for zone in raw_tech_weights_by_zone.keys()}
     if incoming_zones != expected_zones:
@@ -521,9 +512,7 @@ def _parse_tech_weights_by_zone(
                 )
             weight = _to_float_capacity(raw_weight)
             if weight < 0:
-                raise RESGenerationError(
-                    f"Negative technology weight for zone='{zone}', tech='{tech}'"
-                )
+                raise RESGenerationError(f"Negative technology weight for zone='{zone}', tech='{tech}'")
             parsed_zone[tech] = weight
 
         if sum(parsed_zone.values()) <= 0:
@@ -546,9 +535,7 @@ def _load_tech_series_by_zone(
     context: RESGenerationContext,
 ) -> dict[str, dict[str, pd.Series[Any]]]:
     if not isinstance(raw_series_by_zone_and_tech, Mapping) or not raw_series_by_zone_and_tech:
-        raise RESGenerationError(
-            f"Invalid series_by_zone_and_tech for area='{area_name}', cluster='{cluster_name}'"
-        )
+        raise RESGenerationError(f"Invalid series_by_zone_and_tech for area='{area_name}', cluster='{cluster_name}'")
 
     incoming_zones = {str(zone).strip().upper() for zone in raw_series_by_zone_and_tech.keys()}
     if incoming_zones != expected_zones:
@@ -602,4 +589,3 @@ def _to_float_capacity(raw_capacity: Any) -> float:
         return float(raw_capacity)
     except (TypeError, ValueError) as exc:
         raise RESGenerationError(f"Invalid installed power value: {raw_capacity}") from exc
-
