@@ -709,3 +709,41 @@ def test_add_areas_to_study_maps_misc_error_to_area_error(mock_generate_misc, mo
 
     assert "ERR" in str(exc.value)
     assert "invalid misc data" in str(exc.value)
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+@patch("antares.datamanager.generator.generate_study_process.generate_res_clusters")
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_add_areas_to_study_calls_res_generator_with_area_payload(
+    mock_settings, mock_generate_res_clusters, mock_load_dir
+):
+    mock_load_dir.return_value = Path("/mock/load/dir")
+    mock_settings.res_ts_directory = Path("/mock/res/dir")
+
+    mock_study = MagicMock()
+    mock_area_obj = MagicMock()
+    mock_study.create_area.return_value = mock_area_obj
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test",
+        areas={"FR": {}},
+        area_res={
+            "FR": {
+                "wind_offshore": {
+                    "properties": {"group": "wind_offshore", "capacity": 1200},
+                    "series": [],
+                    "fr_aggregation": {
+                        "zone_weights": {"FR01": 1.0},
+                        "tech_weights_by_zone": {"FR01": {"offshore_tech1": 1.0}},
+                        "series_by_zone_and_tech": {"FR01": {"offshore_tech1": "fr01.arrow"}},
+                    },
+                }
+            }
+        },
+    )
+
+    add_areas_to_study(mock_study, study_data)
+
+    mock_generate_res_clusters.assert_called_once_with(mock_area_obj, "FR", study_data.area_res["FR"])
