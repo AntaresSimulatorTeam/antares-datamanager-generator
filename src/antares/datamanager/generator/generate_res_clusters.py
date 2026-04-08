@@ -11,13 +11,13 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
 
+from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import RESGenerationError
 from antares.datamanager.logs.logging_setup import get_logger
 
@@ -35,13 +35,7 @@ RES_GROUP_TO_AW = {
 }
 
 
-@dataclass(frozen=True)
-class RESGenerationContext:
-    horizon: str
-    base_ts_directory: Path
-    expected_rows: int = EXPECTED_HOURS
-    value_column_index: int = 0
-    enforce_bounds: bool = False
+RES_VALUE_COLUMN_INDEX = 0
 
 
 def map_res_group_to_aw(group: str) -> str:
@@ -80,7 +74,6 @@ def read_res_hourly_series(
     filename: str,
     expected_rows: int = EXPECTED_HOURS,
     value_column_index: int = 0,
-    enforce_bounds: bool = False,
 ) -> pd.Series[Any]:
     file_path = resolve_and_validate_res_arrow_path(base_dir, filename)
     df = pd.read_feather(file_path)
@@ -99,13 +92,12 @@ def read_res_hourly_series(
     if series.isna().any():
         raise RESGenerationError(f"RES .arrow file contains non-numeric values for file='{filename}'")
 
-    if enforce_bounds:
-        out_of_bounds = (series < 0.0) | (series > 1.0)
-        if bool(out_of_bounds.any()):
-            raise RESGenerationError(
-                f"RES .arrow values out of bounds [0,1] for file='{filename}' "
-                f"(min={float(series.min())}, max={float(series.max())})"
-            )
+    out_of_bounds = (series < 0.0) | (series > 1.0)
+    if bool(out_of_bounds.any()):
+        raise RESGenerationError(
+            f"RES .arrow values out of bounds [0,1] for file='{filename}' "
+            f"(min={float(series.min())}, max={float(series.max())})"
+        )
 
     return series
 
@@ -177,7 +169,7 @@ def build_res_cluster_payload(
     }
 
 
-def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any], context: RESGenerationContext) -> None:
+def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any]) -> None:
     """
     Expected `res` json :
     {
@@ -219,7 +211,7 @@ def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any], co
     }
 
     """
-    _validate_generation_context(context)
+    base_ts_directory = _resolve_res_base_directory()
 
     if not res:
         return
@@ -235,7 +227,7 @@ def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any], co
             normalized_area_name=normalized_area_name,
             cluster_name=cluster_name,
             cluster_values=cluster_values,
-            context=context,
+            base_ts_directory=base_ts_directory,
         )
 
         logger.info("Prepared RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload)
@@ -244,11 +236,11 @@ def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any], co
         )
 
 
-def _validate_generation_context(context: RESGenerationContext) -> None:
-    if context.expected_rows <= 0:
-        raise RESGenerationError(f"expected_rows must be > 0, got {context.expected_rows}")
-    if context.value_column_index < 0:
-        raise RESGenerationError(f"value_column_index must be >= 0, got {context.value_column_index}")
+def _resolve_res_base_directory() -> Path:
+    base_ts_directory = settings.res_ts_directory
+    if not isinstance(base_ts_directory, Path):
+        raise RESGenerationError("res_ts_directory must be a Path")
+    return base_ts_directory
 
 
 def _validate_series_list(*, area_name: str, cluster_name: str, raw_series: Any) -> list[str]:
@@ -287,7 +279,7 @@ def _build_fr_weighted_series_from_aggregation(
     area_name: str,
     cluster_name: str,
     raw_fr_aggregation: Any,
-    context: RESGenerationContext,
+    base_ts_directory: Path,
 ) -> pd.Series[Any]:
     if not isinstance(raw_fr_aggregation, Mapping):
         raise RESGenerationError(
@@ -318,7 +310,7 @@ def _build_fr_weighted_series_from_aggregation(
         raw_series_by_zone_and_tech=raw_fr_aggregation.get("series_by_zone_and_tech"),
         expected_zones=set(zone_weights.keys()),
         expected_techs_by_zone={zone: set(techs.keys()) for zone, techs in tech_weights_by_zone.items()},
-        context=context,
+        base_ts_directory=base_ts_directory,
     )
 
     return compute_fr_weighted_load_factor(
@@ -390,7 +382,7 @@ def _load_tech_series_by_zone(
     raw_series_by_zone_and_tech: Any,
     expected_zones: set[str],
     expected_techs_by_zone: Mapping[str, set[str]],
-    context: RESGenerationContext,
+    base_ts_directory: Path,
 ) -> dict[str, dict[str, pd.Series[Any]]]:
     if not isinstance(raw_series_by_zone_and_tech, Mapping) or not raw_series_by_zone_and_tech:
         raise RESGenerationError(f"Invalid series_by_zone_and_tech for area='{area_name}', cluster='{cluster_name}'")
@@ -421,11 +413,10 @@ def _load_tech_series_by_zone(
         loaded_by_tech: dict[str, pd.Series[Any]] = {}
         for tech, filename in raw_series_by_tech.items():
             loaded_by_tech[str(tech).strip()] = read_res_hourly_series(
-                base_dir=context.base_ts_directory,
+                base_dir=base_ts_directory,
                 filename=str(filename),
-                expected_rows=context.expected_rows,
-                value_column_index=context.value_column_index,
-                enforce_bounds=context.enforce_bounds,
+                expected_rows=EXPECTED_HOURS,
+                value_column_index=RES_VALUE_COLUMN_INDEX,
             )
         series_by_zone[zone] = loaded_by_tech
 
@@ -583,7 +574,7 @@ def _process_res_entry(
     normalized_area_name: str,
     cluster_name: str,
     cluster_values: Any,
-    context: RESGenerationContext,
+    base_ts_directory: Path,
 ) -> tuple[dict[str, Any], pd.Series[Any] | None]:
     if not isinstance(cluster_values, Mapping):
         raise RESGenerationError(f"Invalid RES cluster payload for area='{area_name}', cluster='{cluster_name}'")
@@ -619,7 +610,7 @@ def _process_res_entry(
         cluster_name=cluster_name,
         series_files=series_files,
         fr_aggregation=fr_aggregation,
-        context=context,
+        base_ts_directory=base_ts_directory,
     )
     return payload, validated_series
 
@@ -631,7 +622,7 @@ def _compute_cluster_series(
     cluster_name: str,
     series_files: list[str],
     fr_aggregation: Any,
-    context: RESGenerationContext,
+    base_ts_directory: Path,
 ) -> pd.Series[Any]:
     if normalized_area_name == "FR":
         if series_files:
@@ -642,7 +633,7 @@ def _compute_cluster_series(
             area_name=area_name,
             cluster_name=cluster_name,
             raw_fr_aggregation=fr_aggregation,
-            context=context,
+            base_ts_directory=base_ts_directory,
         )
 
     if fr_aggregation is not None:
@@ -654,11 +645,10 @@ def _compute_cluster_series(
             f"Expected exactly one RES series file for area='{area_name}', cluster='{cluster_name}', got {len(series_files)}"
         )
     return read_res_hourly_series(
-        base_dir=context.base_ts_directory,
+        base_dir=base_ts_directory,
         filename=series_files[0],
-        expected_rows=context.expected_rows,
-        value_column_index=context.value_column_index,
-        enforce_bounds=context.enforce_bounds,
+        expected_rows=EXPECTED_HOURS,
+        value_column_index=RES_VALUE_COLUMN_INDEX,
     )
 
 

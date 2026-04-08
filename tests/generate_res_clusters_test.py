@@ -17,7 +17,6 @@ import pandas as pd
 
 from antares.datamanager.exceptions.exceptions import RESGenerationError
 from antares.datamanager.generator.generate_res_clusters import (
-    RESGenerationContext,
     generate_res_clusters,
     map_res_group_to_aw,
     read_res_hourly_series,
@@ -78,12 +77,17 @@ class _AreaForStarter:
         self.timeseries[cluster_name] = series
 
 
-def test_generate_res_clusters_starter_registers_payload(tmp_path):
+def _set_res_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    monkeypatch.setenv("PEGASE_RES_TS_OUTPUT_DIRECTORY", str(tmp_path))
+
+
+def test_generate_res_clusters_starter_registers_payload(tmp_path, monkeypatch):
     file_path = tmp_path / "series.arrow"
     pd.DataFrame({"v": [0.4] * 8760}).to_feather(file_path)
 
+    _set_res_directory(monkeypatch, tmp_path)
+
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
     res = {
         "wind_onshore": {
             "properties": {"group": "wind_onshore", "capacity": 1000},
@@ -91,7 +95,7 @@ def test_generate_res_clusters_starter_registers_payload(tmp_path):
         }
     }
 
-    generate_res_clusters(area, "AT", res, context)
+    generate_res_clusters(area, "AT", res)
 
     assert len(area.payloads) == 1
     assert area.payloads[0]["cluster"] == "wind_onshore"
@@ -100,7 +104,7 @@ def test_generate_res_clusters_starter_registers_payload(tmp_path):
     assert len(area.timeseries["wind_onshore"]) == 8760
 
 
-def test_generate_res_clusters_handles_res_from_mixed_area_payload(tmp_path):
+def test_generate_res_clusters_handles_res_from_mixed_area_payload(tmp_path, monkeypatch):
     area_data: dict[str, Any] = {
         "hydro": {"properties": "HydroProperties as JSON"},
         "thermals": {"at_ccgt": {"properties": "ThermalProperties as JSON"}},
@@ -126,10 +130,11 @@ def test_generate_res_clusters_handles_res_from_mixed_area_payload(tmp_path):
     series_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"v": [0.25] * 8760}).to_feather(series_path)
 
-    area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
 
-    generate_res_clusters(area, "AT", area_data["res"], context)
+    area = _AreaForStarter()
+
+    generate_res_clusters(area, "AT", area_data["res"])
 
     assert len(area.payloads) == 1
     assert area.payloads[0]["group"] == "Wind Onshore"
@@ -137,7 +142,7 @@ def test_generate_res_clusters_handles_res_from_mixed_area_payload(tmp_path):
     assert "wind_onshore" in area.timeseries
 
 
-def test_generate_res_clusters_mixed_payload_still_rejects_invalid_res_group(tmp_path):
+def test_generate_res_clusters_mixed_payload_still_rejects_invalid_res_group(tmp_path, monkeypatch):
     area_data: dict[str, Any] = {
         "hydro": {"properties": "HydroProperties as JSON"},
         "thermals": {"it_ccgt": {"properties": "ThermalProperties as JSON"}},
@@ -152,19 +157,19 @@ def test_generate_res_clusters_mixed_payload_still_rejects_invalid_res_group(tmp
     }
 
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
 
     with pytest.raises(RESGenerationError, match="Unsupported RES group"):
-        generate_res_clusters(area, "IT", area_data["res"], context)
+        generate_res_clusters(area, "IT", area_data["res"])
 
 
-def test_generate_res_clusters_rejects_multiple_series_for_enabled_cluster(tmp_path):
+def test_generate_res_clusters_rejects_multiple_series_for_enabled_cluster(tmp_path, monkeypatch):
     (tmp_path / "a.arrow").parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"v": [0.2] * 8760}).to_feather(tmp_path / "a.arrow")
     pd.DataFrame({"v": [0.3] * 8760}).to_feather(tmp_path / "b.arrow")
 
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
     res = {
         "wind_onshore": {
             "properties": {"group": "wind_onshore", "capacity": 500},
@@ -173,16 +178,16 @@ def test_generate_res_clusters_rejects_multiple_series_for_enabled_cluster(tmp_p
     }
 
     with pytest.raises(RESGenerationError, match="Expected exactly one RES series file"):
-        generate_res_clusters(area, "BE", res, context)
+        generate_res_clusters(area, "BE", res)
 
 
-def test_generate_res_clusters_computes_fr_weighted_series_from_aggregation(tmp_path):
+def test_generate_res_clusters_computes_fr_weighted_series_from_aggregation(tmp_path, monkeypatch):
     pd.DataFrame({"v": [0.5] * 8760}).to_feather(tmp_path / "fr01_t1.arrow")
     pd.DataFrame({"v": [0.0] * 8760}).to_feather(tmp_path / "fr01_t2.arrow")
     pd.DataFrame({"v": [1.0] * 8760}).to_feather(tmp_path / "fr02_t1.arrow")
 
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
     res = {
         "wind_offshore": {
             "properties": {"group": "wind_offshore", "capacity": 1200},
@@ -201,16 +206,16 @@ def test_generate_res_clusters_computes_fr_weighted_series_from_aggregation(tmp_
         }
     }
 
-    generate_res_clusters(area, "FR", res, context)
+    generate_res_clusters(area, "FR", res)
 
     assert len(area.payloads) == 1
     assert "wind_offshore" in area.timeseries
     assert float(area.timeseries["wind_offshore"].iloc[0]) == pytest.approx(0.825)
 
 
-def test_generate_res_clusters_missing_capacity_registers_disabled_without_timeseries(tmp_path):
+def test_generate_res_clusters_missing_capacity_registers_disabled_without_timeseries(tmp_path, monkeypatch):
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
     res = {
         "wind_onshore": {
             "properties": {"group": "wind_onshore", "capacity": None},
@@ -218,7 +223,7 @@ def test_generate_res_clusters_missing_capacity_registers_disabled_without_times
         }
     }
 
-    generate_res_clusters(area, "AT", res, context)
+    generate_res_clusters(area, "AT", res)
 
     assert len(area.payloads) == 1
     assert area.payloads[0]["enabled"] is False
@@ -232,9 +237,9 @@ def test_resolve_capacity_and_enabled_tiny_positive_value_is_enabled():
     assert enabled is True
 
 
-def test_generate_res_clusters_rejects_cluster_key_group_mismatch(tmp_path):
+def test_generate_res_clusters_rejects_cluster_key_group_mismatch(tmp_path, monkeypatch):
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
     res = {
         "wind_onshore": {
             "properties": {"group": "wind_offshore", "capacity": 100.0},
@@ -243,12 +248,12 @@ def test_generate_res_clusters_rejects_cluster_key_group_mismatch(tmp_path):
     }
 
     with pytest.raises(RESGenerationError, match="key must match properties.group"):
-        generate_res_clusters(area, "AT", res, context)
+        generate_res_clusters(area, "AT", res)
 
 
-def test_generate_res_clusters_rejects_fr_with_non_empty_series(tmp_path):
+def test_generate_res_clusters_rejects_fr_with_non_empty_series(tmp_path, monkeypatch):
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
     res = {
         "wind_offshore": {
             "properties": {"group": "wind_offshore", "capacity": 1200},
@@ -258,14 +263,14 @@ def test_generate_res_clusters_rejects_fr_with_non_empty_series(tmp_path):
     }
 
     with pytest.raises(RESGenerationError, match="expects empty series"):
-        generate_res_clusters(area, "FR", res, context)
+        generate_res_clusters(area, "FR", res)
 
 
-def test_generate_res_clusters_rejects_non_fr_with_fr_aggregation(tmp_path):
+def test_generate_res_clusters_rejects_non_fr_with_fr_aggregation(tmp_path, monkeypatch):
     pd.DataFrame({"v": [0.2] * 8760}).to_feather(tmp_path / "at.arrow")
 
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
     res = {
         "wind_onshore": {
             "properties": {"group": "wind_onshore", "capacity": 850},
@@ -275,14 +280,14 @@ def test_generate_res_clusters_rejects_non_fr_with_fr_aggregation(tmp_path):
     }
 
     with pytest.raises(RESGenerationError, match="only supported for FR"):
-        generate_res_clusters(area, "AT", res, context)
+        generate_res_clusters(area, "AT", res)
 
 
-def test_generate_res_clusters_rejects_fr_zone_key_outside_fr01_fr26(tmp_path):
+def test_generate_res_clusters_rejects_fr_zone_key_outside_fr01_fr26(tmp_path, monkeypatch):
     pd.DataFrame({"v": [0.5] * 8760}).to_feather(tmp_path / "zone.arrow")
 
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
     res = {
         "wind_offshore": {
             "properties": {"group": "wind_offshore", "capacity": 1000},
@@ -296,14 +301,14 @@ def test_generate_res_clusters_rejects_fr_zone_key_outside_fr01_fr26(tmp_path):
     }
 
     with pytest.raises(RESGenerationError, match="Invalid FR zone key"):
-        generate_res_clusters(area, "FR", res, context)
+        generate_res_clusters(area, "FR", res)
 
 
-def test_generate_res_clusters_rejects_fr_technology_key_mismatch(tmp_path):
+def test_generate_res_clusters_rejects_fr_technology_key_mismatch(tmp_path, monkeypatch):
     pd.DataFrame({"v": [0.5] * 8760}).to_feather(tmp_path / "fr01.arrow")
 
     area = _AreaForStarter()
-    context = RESGenerationContext(horizon="2031", base_ts_directory=tmp_path)
+    _set_res_directory(monkeypatch, tmp_path)
     res = {
         "wind_offshore": {
             "properties": {"group": "wind_offshore", "capacity": 1200},
@@ -317,4 +322,4 @@ def test_generate_res_clusters_rejects_fr_technology_key_mismatch(tmp_path):
     }
 
     with pytest.raises(RESGenerationError, match="Technology keys mismatch"):
-        generate_res_clusters(area, "FR", res, context)
+        generate_res_clusters(area, "FR", res)

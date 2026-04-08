@@ -27,6 +27,7 @@ class StudyData:
     area_sts: dict[str, Any] = field(default_factory=dict)
     area_dsr: dict[str, Any] = field(default_factory=dict)
     area_misc: dict[str, Any] = field(default_factory=dict)
+    area_res: dict[str, Any] = field(default_factory=dict)
     enable_random_ts: bool = True
     nb_years: int = field(default_factory=lambda: settings.nb_years)
     first_month: Month = field(default_factory=lambda: settings.study_setting_first_month)
