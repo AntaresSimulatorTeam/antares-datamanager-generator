@@ -714,7 +714,7 @@ def test_add_areas_to_study_maps_misc_error_to_area_error(mock_generate_misc, mo
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
 @patch("antares.datamanager.generator.generate_study_process.generate_res_clusters")
 @patch("antares.datamanager.generator.generate_study_process.settings")
-def test_add_areas_to_study_calls_res_generator_with_settings_directory(
+def test_add_areas_to_study_calls_res_generator_with_area_payload(
     mock_settings, mock_generate_res_clusters, mock_load_dir
 ):
     mock_load_dir.return_value = Path("/mock/load/dir")
@@ -746,9 +746,4 @@ def test_add_areas_to_study_calls_res_generator_with_settings_directory(
 
     add_areas_to_study(mock_study, study_data)
 
-    assert mock_generate_res_clusters.call_count == 1
-    args, _ = mock_generate_res_clusters.call_args
-    assert args[0] is mock_area_obj
-    assert args[1] == "FR"
-    assert args[2] == study_data.area_res["FR"]
-    assert args[3].base_ts_directory == Path("/mock/res/dir")
+    mock_generate_res_clusters.assert_called_once_with(mock_area_obj, "FR", study_data.area_res["FR"])
