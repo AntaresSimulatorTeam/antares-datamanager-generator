@@ -70,7 +70,7 @@ def resolve_res_capacity_and_enabled(
     if capacity < 0:
         raise RESGenerationError(f"Negative installed power: {capacity}")
 
-    enabled = capacity != 0.0
+    enabled = capacity > 0.0
     return capacity, enabled
 
 
@@ -140,79 +140,20 @@ def compute_fr_weighted_load_factor(
     techno_series_by_zone: Mapping[str, Mapping[str, pd.Series[Any]]],
     techno_weights_by_zone: Mapping[str, Mapping[str, float]],
     zonal_weights: Mapping[str, float],
-    renormalize_missing: bool,  # ignores missing zones/tech values (can be removed if not eneeded)
 ) -> pd.Series[Any]:
     if not zonal_weights:
         raise RESGenerationError("zonal_weights is empty")
 
-    zone_averages: dict[str, pd.Series[Any]] = {}
-    for zone, zone_weight in zonal_weights.items():
-        if zone_weight < 0:
-            raise RESGenerationError(f"Negative zonal weight for zone='{zone}': {zone_weight}")
-
-        series_by_tech = techno_series_by_zone.get(zone, {})
-        tech_weights = techno_weights_by_zone.get(zone, {})
-
-        if not tech_weights:
-            raise RESGenerationError(f"No technology weights for zone='{zone}'")
-
-        zone_series_sum = None
-        weight_sum = 0.0
-
-        for tech, tech_weight in tech_weights.items():
-            if tech_weight < 0:
-                raise RESGenerationError(f"Negative technology weight for zone='{zone}', tech='{tech}'")
-
-            series = series_by_tech.get(tech)
-            if series is None:
-                if renormalize_missing:
-                    continue
-                raise RESGenerationError(f"Missing technology series for zone='{zone}', tech='{tech}'")
-
-            numeric_series = pd.to_numeric(series, errors="coerce")
-            if numeric_series.isna().any():
-                raise RESGenerationError(f"Non numeric values for zone='{zone}', tech='{tech}'")
-
-            if zone_series_sum is None:
-                zone_series_sum = pd.Series(np.zeros(len(numeric_series), dtype=np.float64))
-            elif len(numeric_series) != len(zone_series_sum):
-                raise RESGenerationError(f"Inconsistent series length in zone='{zone}', tech='{tech}'")
-
-            zone_series_sum = zone_series_sum + (numeric_series * float(tech_weight))
-            weight_sum += float(tech_weight)
-
-        if zone_series_sum is None or weight_sum <= 0:
-            if renormalize_missing:
-                continue
-            raise RESGenerationError(f"No usable technology series for zone='{zone}'")
-
-        zone_averages[zone] = zone_series_sum / weight_sum
+    zone_averages = _compute_zone_averages(
+        techno_series_by_zone=techno_series_by_zone,
+        techno_weights_by_zone=techno_weights_by_zone,
+        zonal_weights=zonal_weights,
+    )
 
     if not zone_averages:
         raise RESGenerationError("No usable zone averages for FR weighted load factor")
 
-    global_series_sum = None
-    global_weight_sum = 0.0
-
-    for zone, zone_weight in zonal_weights.items():
-        zone_series = zone_averages.get(zone)
-        if zone_series is None:
-            if renormalize_missing:
-                continue
-            raise RESGenerationError(f"Missing zone average for zone='{zone}'")
-
-        if global_series_sum is None:
-            global_series_sum = pd.Series(np.zeros(len(zone_series), dtype=np.float64))
-        elif len(zone_series) != len(global_series_sum):
-            raise RESGenerationError(f"Inconsistent zone series length for zone='{zone}'")
-
-        global_series_sum = global_series_sum + (zone_series * float(zone_weight))
-        global_weight_sum += float(zone_weight)
-
-    if global_series_sum is None or global_weight_sum <= 0:
-        raise RESGenerationError("No usable global weighted load factor for FR")
-
-    return global_series_sum / global_weight_sum
+    return _compute_global_weighted_series(zone_averages=zone_averages, zonal_weights=zonal_weights)
 
 
 def build_res_cluster_payload(
@@ -289,84 +230,18 @@ def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any], co
     normalized_area_name = str(area_name).strip().upper()
 
     for cluster_name, cluster_values in res.items():
-        if not isinstance(cluster_values, Mapping):
-            raise RESGenerationError(f"Invalid RES cluster payload for area='{area_name}', cluster='{cluster_name}'")
-
-        group_raw, installed_power = _extract_res_properties(
+        payload, validated_series = _process_res_entry(
             area_name=area_name,
+            normalized_area_name=normalized_area_name,
             cluster_name=cluster_name,
             cluster_values=cluster_values,
+            context=context,
         )
-        _validate_cluster_key_matches_group(
-            area_name=area_name,
-            cluster_name=cluster_name,
-            group_name=group_raw,
-        )
-
-        aw_group = map_res_group_to_aw(group_raw)
-        capacity, enabled = resolve_res_capacity_and_enabled(
-            installed_power=installed_power,
-        )
-
-        series_files = _validate_series_list(
-            area_name=area_name,
-            cluster_name=cluster_name,
-            raw_series=cluster_values.get("series", []),
-        )
-
-        payload = build_res_cluster_payload(
-            area_name=area_name,
-            cluster_name=cluster_name,
-            aw_group=aw_group,
-            capacity_mw=capacity,
-            enabled=enabled,
-        )
-
-        if not enabled:
-            logger.info(
-                "Prepared disabled RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload
-            )
-            if hasattr(area_obj, "register_res_payload"):
-                area_obj.register_res_payload(payload)
-            continue
-
-        validated_series = None
-        fr_aggregation = cluster_values.get("fr_aggregation")
-        if normalized_area_name == "FR":
-            if series_files:
-                raise RESGenerationError(
-                    f"FR RES computed mode expects empty series for area='{area_name}', cluster='{cluster_name}'"
-                )
-
-            validated_series = _build_fr_weighted_series_from_aggregation(
-                area_name=area_name,
-                cluster_name=cluster_name,
-                raw_fr_aggregation=fr_aggregation,
-                context=context,
-            )
-        else:
-            if fr_aggregation is not None:
-                raise RESGenerationError(
-                    f"fr_aggregation is only supported for FR area; area='{area_name}', cluster='{cluster_name}'"
-                )
-            if len(series_files) != 1:
-                raise RESGenerationError(
-                    f"Expected exactly one RES series file for area='{area_name}', cluster='{cluster_name}', got {len(series_files)}"
-                )
-            validated_series = read_res_hourly_series(
-                base_dir=context.base_ts_directory,
-                filename=series_files[0],
-                expected_rows=context.expected_rows,
-                value_column_index=context.value_column_index,
-                enforce_bounds=context.enforce_bounds,
-            )
 
         logger.info("Prepared RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload)
-
-        if hasattr(area_obj, "register_res_payload"):
-            area_obj.register_res_payload(payload)
-        if validated_series is not None and hasattr(area_obj, "register_res_timeseries"):
-            area_obj.register_res_timeseries(cluster_name, validated_series)
+        _register_res_outputs(
+            area_obj=area_obj, cluster_name=cluster_name, payload=payload, validated_series=validated_series
+        )
 
 
 def _validate_generation_context(context: RESGenerationContext) -> None:
@@ -450,7 +325,6 @@ def _build_fr_weighted_series_from_aggregation(
         techno_series_by_zone=techno_series_by_zone,
         techno_weights_by_zone=tech_weights_by_zone,
         zonal_weights=zone_weights,
-        renormalize_missing=False,
     )
 
 
@@ -488,39 +362,23 @@ def _parse_tech_weights_by_zone(
     if not isinstance(raw_tech_weights_by_zone, Mapping) or not raw_tech_weights_by_zone:
         raise RESGenerationError(f"Invalid tech_weights_by_zone for area='{area_name}', cluster='{cluster_name}'")
 
-    incoming_zones = {str(zone).strip().upper() for zone in raw_tech_weights_by_zone.keys()}
-    if incoming_zones != expected_zones:
-        raise RESGenerationError(
-            "Mismatched zones between zone_weights and tech_weights_by_zone for "
-            f"area='{area_name}', cluster='{cluster_name}'"
-        )
+    _validate_expected_zones(
+        source_name="tech_weights_by_zone",
+        raw_zone_map=raw_tech_weights_by_zone,
+        expected_zones=expected_zones,
+        area_name=area_name,
+        cluster_name=cluster_name,
+    )
 
     parsed: dict[str, dict[str, float]] = {}
     for raw_zone, raw_tech_weights in raw_tech_weights_by_zone.items():
         zone = str(raw_zone).strip().upper()
-        if not isinstance(raw_tech_weights, Mapping) or not raw_tech_weights:
-            raise RESGenerationError(
-                f"Invalid technology weights for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
-            )
-
-        parsed_zone: dict[str, float] = {}
-        for raw_tech, raw_weight in raw_tech_weights.items():
-            tech = str(raw_tech).strip()
-            if not tech:
-                raise RESGenerationError(
-                    f"Empty technology key for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
-                )
-            weight = _to_float_capacity(raw_weight)
-            if weight < 0:
-                raise RESGenerationError(f"Negative technology weight for zone='{zone}', tech='{tech}'")
-            parsed_zone[tech] = weight
-
-        if sum(parsed_zone.values()) <= 0:
-            raise RESGenerationError(
-                f"Sum of technology weights must be > 0 for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
-            )
-
-        parsed[zone] = parsed_zone
+        parsed[zone] = _parse_single_zone_tech_weights(
+            zone=zone,
+            raw_tech_weights=raw_tech_weights,
+            area_name=area_name,
+            cluster_name=cluster_name,
+        )
 
     return parsed
 
@@ -580,8 +438,241 @@ def _is_valid_fr_zone(zone: str) -> bool:
     suffix = zone[2:]
     if not suffix.isdigit():
         return False
-    id = int(suffix)
-    return 1 <= id <= 26
+    zone_index = int(suffix)
+    return 1 <= zone_index <= 26
+
+
+def _coerce_numeric_series(*, series: pd.Series[Any], zone: str, tech: str) -> pd.Series[Any]:
+    numeric_series = pd.to_numeric(series, errors="coerce")
+    if numeric_series.isna().any():
+        raise RESGenerationError(f"Non numeric values for zone='{zone}', tech='{tech}'")
+    return numeric_series
+
+
+def _compute_zone_average(
+    *,
+    zone: str,
+    tech_weights: Mapping[str, float],
+    series_by_tech: Mapping[str, pd.Series[Any]],
+) -> pd.Series[Any]:
+    if not tech_weights:
+        raise RESGenerationError(f"No technology weights for zone='{zone}'")
+
+    weighted_sum: pd.Series[Any] | None = None
+    weight_sum = 0.0
+    for tech, tech_weight in tech_weights.items():
+        if tech_weight < 0:
+            raise RESGenerationError(f"Negative technology weight for zone='{zone}', tech='{tech}'")
+
+        series = series_by_tech.get(tech)
+        if series is None:
+            raise RESGenerationError(f"Missing technology series for zone='{zone}', tech='{tech}'")
+
+        numeric_series = _coerce_numeric_series(series=series, zone=zone, tech=tech)
+        if weighted_sum is None:
+            weighted_sum = pd.Series(np.zeros(len(numeric_series), dtype=np.float64))
+        elif len(numeric_series) != len(weighted_sum):
+            raise RESGenerationError(f"Inconsistent series length in zone='{zone}', tech='{tech}'")
+
+        weighted_sum = weighted_sum + (numeric_series * float(tech_weight))
+        weight_sum += float(tech_weight)
+
+    if weighted_sum is None or weight_sum <= 0:
+        raise RESGenerationError(f"No usable technology series for zone='{zone}'")
+
+    return weighted_sum / weight_sum
+
+
+def _compute_zone_averages(
+    *,
+    techno_series_by_zone: Mapping[str, Mapping[str, pd.Series[Any]]],
+    techno_weights_by_zone: Mapping[str, Mapping[str, float]],
+    zonal_weights: Mapping[str, float],
+) -> dict[str, pd.Series[Any]]:
+    zone_averages: dict[str, pd.Series[Any]] = {}
+    for zone, zone_weight in zonal_weights.items():
+        if zone_weight < 0:
+            raise RESGenerationError(f"Negative zonal weight for zone='{zone}': {zone_weight}")
+
+        zone_averages[zone] = _compute_zone_average(
+            zone=zone,
+            tech_weights=techno_weights_by_zone.get(zone, {}),
+            series_by_tech=techno_series_by_zone.get(zone, {}),
+        )
+
+    return zone_averages
+
+
+def _compute_global_weighted_series(
+    *,
+    zone_averages: Mapping[str, pd.Series[Any]],
+    zonal_weights: Mapping[str, float],
+) -> pd.Series[Any]:
+    global_series_sum: pd.Series[Any] | None = None
+    global_weight_sum = 0.0
+
+    for zone, zone_weight in zonal_weights.items():
+        zone_series = zone_averages.get(zone)
+        if zone_series is None:
+            raise RESGenerationError(f"Missing zone average for zone='{zone}'")
+
+        if global_series_sum is None:
+            global_series_sum = pd.Series(np.zeros(len(zone_series), dtype=np.float64))
+        elif len(zone_series) != len(global_series_sum):
+            raise RESGenerationError(f"Inconsistent zone series length for zone='{zone}'")
+
+        global_series_sum = global_series_sum + (zone_series * float(zone_weight))
+        global_weight_sum += float(zone_weight)
+
+    if global_series_sum is None or global_weight_sum <= 0:
+        raise RESGenerationError("No usable global weighted load factor for FR")
+
+    return global_series_sum / global_weight_sum
+
+
+def _validate_expected_zones(
+    *,
+    source_name: str,
+    raw_zone_map: Mapping[str, Any],
+    expected_zones: set[str],
+    area_name: str,
+    cluster_name: str,
+) -> None:
+    incoming_zones = {str(zone).strip().upper() for zone in raw_zone_map.keys()}
+    if incoming_zones != expected_zones:
+        raise RESGenerationError(
+            f"Mismatched zones between zone_weights and {source_name} for area='{area_name}', cluster='{cluster_name}'"
+        )
+
+
+def _parse_single_zone_tech_weights(
+    *,
+    zone: str,
+    raw_tech_weights: Any,
+    area_name: str,
+    cluster_name: str,
+) -> dict[str, float]:
+    if not isinstance(raw_tech_weights, Mapping) or not raw_tech_weights:
+        raise RESGenerationError(
+            f"Invalid technology weights for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
+        )
+
+    parsed_zone: dict[str, float] = {}
+    for raw_tech, raw_weight in raw_tech_weights.items():
+        tech = str(raw_tech).strip()
+        if not tech:
+            raise RESGenerationError(
+                f"Empty technology key for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
+            )
+        weight = _to_float_capacity(raw_weight)
+        if weight < 0:
+            raise RESGenerationError(f"Negative technology weight for zone='{zone}', tech='{tech}'")
+        parsed_zone[tech] = weight
+
+    if sum(parsed_zone.values()) <= 0:
+        raise RESGenerationError(
+            f"Sum of technology weights must be > 0 for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
+        )
+
+    return parsed_zone
+
+
+def _process_res_entry(
+    *,
+    area_name: str,
+    normalized_area_name: str,
+    cluster_name: str,
+    cluster_values: Any,
+    context: RESGenerationContext,
+) -> tuple[dict[str, Any], pd.Series[Any] | None]:
+    if not isinstance(cluster_values, Mapping):
+        raise RESGenerationError(f"Invalid RES cluster payload for area='{area_name}', cluster='{cluster_name}'")
+
+    group_raw, installed_power = _extract_res_properties(
+        area_name=area_name,
+        cluster_name=cluster_name,
+        cluster_values=cluster_values,
+    )
+    _validate_cluster_key_matches_group(area_name=area_name, cluster_name=cluster_name, group_name=group_raw)
+
+    aw_group = map_res_group_to_aw(group_raw)
+    capacity, enabled = resolve_res_capacity_and_enabled(installed_power=installed_power)
+    payload = build_res_cluster_payload(
+        area_name=area_name,
+        cluster_name=cluster_name,
+        aw_group=aw_group,
+        capacity_mw=capacity,
+        enabled=enabled,
+    )
+    if not enabled:
+        return payload, None
+
+    series_files = _validate_series_list(
+        area_name=area_name,
+        cluster_name=cluster_name,
+        raw_series=cluster_values.get("series", []),
+    )
+    fr_aggregation = cluster_values.get("fr_aggregation")
+    validated_series = _compute_cluster_series(
+        normalized_area_name=normalized_area_name,
+        area_name=area_name,
+        cluster_name=cluster_name,
+        series_files=series_files,
+        fr_aggregation=fr_aggregation,
+        context=context,
+    )
+    return payload, validated_series
+
+
+def _compute_cluster_series(
+    *,
+    normalized_area_name: str,
+    area_name: str,
+    cluster_name: str,
+    series_files: list[str],
+    fr_aggregation: Any,
+    context: RESGenerationContext,
+) -> pd.Series[Any]:
+    if normalized_area_name == "FR":
+        if series_files:
+            raise RESGenerationError(
+                f"FR RES computed mode expects empty series for area='{area_name}', cluster='{cluster_name}'"
+            )
+        return _build_fr_weighted_series_from_aggregation(
+            area_name=area_name,
+            cluster_name=cluster_name,
+            raw_fr_aggregation=fr_aggregation,
+            context=context,
+        )
+
+    if fr_aggregation is not None:
+        raise RESGenerationError(
+            f"fr_aggregation is only supported for FR area; area='{area_name}', cluster='{cluster_name}'"
+        )
+    if len(series_files) != 1:
+        raise RESGenerationError(
+            f"Expected exactly one RES series file for area='{area_name}', cluster='{cluster_name}', got {len(series_files)}"
+        )
+    return read_res_hourly_series(
+        base_dir=context.base_ts_directory,
+        filename=series_files[0],
+        expected_rows=context.expected_rows,
+        value_column_index=context.value_column_index,
+        enforce_bounds=context.enforce_bounds,
+    )
+
+
+def _register_res_outputs(
+    *,
+    area_obj: Any,
+    cluster_name: str,
+    payload: dict[str, Any],
+    validated_series: pd.Series[Any] | None,
+) -> None:
+    if hasattr(area_obj, "register_res_payload"):
+        area_obj.register_res_payload(payload)
+    if validated_series is not None and hasattr(area_obj, "register_res_timeseries"):
+        area_obj.register_res_timeseries(cluster_name, validated_series)
 
 
 def _to_float_capacity(raw_capacity: Any) -> float:
