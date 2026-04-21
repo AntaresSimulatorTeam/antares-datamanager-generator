@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "antares_datamanager_generator"
-version = "0.1"
+version = "1.0.0"
 description = """Antares study generator under construction"""
 readme = "README.md"
 license = {file = "LICENSE"}
