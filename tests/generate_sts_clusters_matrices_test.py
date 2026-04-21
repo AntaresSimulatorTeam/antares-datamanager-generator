@@ -155,6 +155,21 @@ def test_generate_sts_clusters_supports_nested_series_payload(tmp_path, monkeypa
     assert storage.calls["inflows"].equals(df.iloc[:, [1]])
 
 
+def test_generate_sts_clusters_invalid_series_payload_raises(area):
+    sts_data = {
+        "cluster1": {
+            "properties": {},
+            "series": "inflows.xlsx.uuid.arrow",
+        }
+    }
+
+    with pytest.raises(ValueError) as exc:
+        generate_sts_clusters(area, sts_data)
+
+    assert "Invalid STS series payload" in str(exc.value)
+    assert "cluster1" in str(exc.value)
+
+
 def test_generate_sts_clusters_creates_additional_constraints_from_rhs_series(tmp_path, monkeypatch, area):
     monkeypatch.setattr(
         "antares.datamanager.generator.generate_sts_clusters.settings",
