@@ -1,7 +1,7 @@
 python-dateutil~=2.9.0
 fastapi==0.115.8
 uvicorn[standard]==0.34.0
-antares-craft~=0.11.0
+antares-craft~=0.13.0
 dotenv~=0.9.9
 python-dotenv~=1.0.1
 annotated-types==0.7.0
