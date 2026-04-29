@@ -169,6 +169,46 @@ def build_res_cluster_payload(
 
 
 def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any]) -> None:
+    """
+    Expected `res` json :
+    {
+      "wind_onshore": {
+        "properties": {
+          "capacity": 5000,
+          "group": "wind_onshore"
+        },
+        "series": ["NAME.arrow"]
+      }
+    }
+    for FR only:
+    {
+      "wind_onshore": {
+        "properties": {
+          "capacity": 5000,
+          "group": "wind_onshore"
+        },
+        "series": []
+        "fr_aggregation": {
+            "zone_weights": {
+              "FR01": 0.2,
+              "FRO2": 0.0,
+            },
+            "tech_weights_by_zone": {
+              "FR01": {
+                "offshore_tech1": 0.6,
+                "offshore_tech2": 0.4
+              },
+            },
+            "series_by_zone_and_tech": {
+              "FR01": {
+                "offshore_tech1": "fr01_offshore_tech1.arrow",
+                "offshore_tech2": "fr01_offshore_tech2.arrow"
+              },
+            }
+          }
+      }
+    }
+    """
     base_ts_directory = _resolve_res_base_directory()
 
     if not res:

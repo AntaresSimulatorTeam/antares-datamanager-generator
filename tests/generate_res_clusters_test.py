@@ -17,6 +17,8 @@ import pandas as pd
 
 from antares.datamanager.exceptions.exceptions import RESGenerationError
 from antares.datamanager.generator.generate_res_clusters import (
+    _compute_zone_average,
+    _resolve_res_base_directory,
     generate_res_clusters,
     map_res_group_to_aw,
     read_res_hourly_series,
@@ -57,12 +59,48 @@ def test_resolve_and_validate_res_arrow_path_rejects_unsafe_path(tmp_path):
         resolve_and_validate_res_arrow_path(tmp_path, "../escape.arrow")
 
 
+def test_resolve_and_validate_res_arrow_path_empty_filename(tmp_path):
+    with pytest.raises(RESGenerationError, match="must be a non-empty string"):
+        resolve_and_validate_res_arrow_path(tmp_path, "")
+
+
+def test_resolve_and_validate_res_arrow_path_invalid_extension(tmp_path):
+    with pytest.raises(RESGenerationError, match="Unexpected RES file extension"):
+        resolve_and_validate_res_arrow_path(tmp_path, "test.txt")
+
+
+def test_resolve_and_validate_res_arrow_path_not_found(tmp_path):
+    with pytest.raises(FileNotFoundError, match="RES series file not found"):
+        resolve_and_validate_res_arrow_path(tmp_path, "missing.arrow")
+
+
 def test_read_res_hourly_series_validates_row_count(tmp_path):
     file_path = tmp_path / "ts.arrow"
     pd.DataFrame({"v": [0.1] * 10}).to_feather(file_path)
 
     with pytest.raises(RESGenerationError, match="must contain 8760 rows"):
         read_res_hourly_series(base_dir=tmp_path, filename="ts.arrow")
+
+
+def test_read_res_hourly_series_empty_dataframe(tmp_path):
+    file_path = tmp_path / "empty.arrow"
+    pd.DataFrame().to_feather(file_path)
+    with pytest.raises(RESGenerationError, match="has no value column"):
+        read_res_hourly_series(base_dir=tmp_path, filename="empty.arrow")
+
+
+def test_read_res_hourly_series_non_numeric(tmp_path):
+    file_path = tmp_path / "str.arrow"
+    pd.DataFrame({"v": ["a"] * 8760}).to_feather(file_path)
+    with pytest.raises(RESGenerationError, match="contains non-numeric values"):
+        read_res_hourly_series(base_dir=tmp_path, filename="str.arrow")
+
+
+def test_read_res_hourly_series_out_of_bounds(tmp_path):
+    file_path = tmp_path / "high.arrow"
+    pd.DataFrame({"v": [1.5] * 8760}).to_feather(file_path)
+    with pytest.raises(RESGenerationError, match="out of bounds"):
+        read_res_hourly_series(base_dir=tmp_path, filename="high.arrow")
 
 
 class _AreaForStarter:
@@ -79,6 +117,34 @@ class _AreaForStarter:
 
 def _set_res_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
     monkeypatch.setenv("PEGASE_RES_TS_OUTPUT_DIRECTORY", str(tmp_path))
+
+
+def test_generate_res_clusters_invalid_payload_type(tmp_path, monkeypatch):
+    _set_res_directory(monkeypatch, tmp_path)
+    with pytest.raises(RESGenerationError, match="expected object"):
+        generate_res_clusters(_AreaForStarter(), "FR", ["list", "not", "dict"])
+
+
+def test_generate_res_clusters_invalid_group_values(tmp_path, monkeypatch):
+    _set_res_directory(monkeypatch, tmp_path)
+    with pytest.raises(RESGenerationError, match="Invalid RES group payload"):
+        generate_res_clusters(_AreaForStarter(), "FR", {"wind_onshore": "string_not_dict"})
+
+
+def test_generate_res_clusters_missing_properties_keys(tmp_path, monkeypatch):
+    _set_res_directory(monkeypatch, tmp_path)
+    with pytest.raises(RESGenerationError, match="Missing RES properties.capacity"):
+        generate_res_clusters(_AreaForStarter(), "FR", {"wind_onshore": {"properties": {"group": "wind_onshore"}}})
+
+
+def test_generate_res_clusters_invalid_series_list(tmp_path, monkeypatch):
+    _set_res_directory(monkeypatch, tmp_path)
+    with pytest.raises(RESGenerationError, match="expected string"):
+        generate_res_clusters(
+            _AreaForStarter(),
+            "AT",
+            {"wind_onshore": {"properties": {"group": "wind_onshore", "capacity": 10}, "series": "not_a_list"}},
+        )
 
 
 def test_generate_res_clusters_starter_registers_payload(tmp_path, monkeypatch):
@@ -211,6 +277,96 @@ def test_generate_res_clusters_computes_fr_weighted_series_from_aggregation(tmp_
     assert len(area.payloads) == 1
     assert "wind_offshore" in area.timeseries
     assert float(area.timeseries["wind_offshore"].iloc[0]) == pytest.approx(0.825)
+
+
+def test_fr_aggregation_negative_zone_weight(tmp_path, monkeypatch):
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_offshore": {
+            "properties": {"group": "wind_offshore", "capacity": 10},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": -1.0},
+                "tech_weights_by_zone": {},
+                "series_by_zone_and_tech": {},
+            },
+        }
+    }
+    with pytest.raises(RESGenerationError, match="Negative zone weight"):
+        generate_res_clusters(_AreaForStarter(), "FR", res)
+
+
+def test_fr_aggregation_sum_zone_weight_zero(tmp_path, monkeypatch):
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_offshore": {
+            "properties": {"group": "wind_offshore", "capacity": 10},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": 0.0},
+                "tech_weights_by_zone": {},
+                "series_by_zone_and_tech": {},
+            },
+        }
+    }
+    with pytest.raises(RESGenerationError, match="Sum of zone_weights must be > 0"):
+        generate_res_clusters(_AreaForStarter(), "FR", res)
+
+
+def test_fr_aggregation_unknown_zone_in_tech_weights(tmp_path, monkeypatch):
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_offshore": {
+            "properties": {"group": "wind_offshore", "capacity": 10},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": 1.0},
+                "tech_weights_by_zone": {"FR02": {}},
+                "series_by_zone_and_tech": {},
+            },
+        }
+    }
+    with pytest.raises(RESGenerationError, match="not found in zone_weights"):
+        generate_res_clusters(_AreaForStarter(), "FR", res)
+
+
+def test_fr_aggregation_negative_tech_weight(tmp_path, monkeypatch):
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_offshore": {
+            "properties": {"group": "wind_offshore", "capacity": 10},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": 1.0},
+                "tech_weights_by_zone": {"FR01": {"t1": -1.0}},
+                "series_by_zone_and_tech": {},
+            },
+        }
+    }
+    with pytest.raises(RESGenerationError, match="Negative technology weight"):
+        generate_res_clusters(_AreaForStarter(), "FR", res)
+
+
+def test_compute_zone_average_inconsistent_length():
+    s1 = pd.Series([0.5] * 10)
+    s2 = pd.Series([0.5] * 5)
+    with pytest.raises(RESGenerationError, match="Inconsistent series length"):
+        _compute_zone_average(zone="FR01", tech_weights={"t1": 1.0, "t2": 1.0}, series_by_tech={"t1": s1, "t2": s2})
+
+
+def test_compute_zone_average_no_usable_series():
+    s1 = pd.Series([0.5] * 10)
+    with pytest.raises(RESGenerationError, match="No usable technology series"):
+        _compute_zone_average(zone="FR01", tech_weights={"t1": 0.0}, series_by_tech={"t1": s1})
+
+
+def test_resolve_res_base_directory_invalid_type(monkeypatch):
+    class MockSettings:
+        res_ts_directory = "not_a_path"
+
+    monkeypatch.setattr("antares.datamanager.generator.generate_res_clusters.settings", MockSettings())
+    with pytest.raises(RESGenerationError, match="must be a Path"):
+        _resolve_res_base_directory()
 
 
 def test_generate_res_clusters_missing_capacity_registers_disabled_without_timeseries(tmp_path, monkeypatch):
