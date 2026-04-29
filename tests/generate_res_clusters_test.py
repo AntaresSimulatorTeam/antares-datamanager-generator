@@ -73,8 +73,8 @@ class _AreaForStarter:
     def register_res_payload(self, payload):
         self.payloads.append(payload)
 
-    def register_res_timeseries(self, cluster_name, series):
-        self.timeseries[cluster_name] = series
+    def register_res_timeseries(self, group_key, series):
+        self.timeseries[group_key] = series
 
 
 def _set_res_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
@@ -321,5 +321,52 @@ def test_generate_res_clusters_rejects_fr_technology_key_mismatch(tmp_path, monk
         }
     }
 
-    with pytest.raises(RESGenerationError, match="Technology keys mismatch"):
+    with pytest.raises(RESGenerationError, match="Unexpected technology keys"):
         generate_res_clusters(area, "FR", res)
+
+
+def test_generate_res_clusters_rejects_active_zone_missing_tech_weights(tmp_path, monkeypatch):
+    area = _AreaForStarter()
+    _set_res_directory(monkeypatch, tmp_path)
+    pd.DataFrame({"v": [0.5] * 8760}).to_feather(tmp_path / "fr01.arrow")
+
+    res = {
+        "wind_offshore": {
+            "properties": {"group": "wind_offshore", "capacity": 1200},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": 0.5, "FR02": 0.5},
+                "tech_weights_by_zone": {
+                    "FR01": {"offshore_tech1": 1.0}
+                    # FR02 intentionally omitted to trigger validation
+                },
+                "series_by_zone_and_tech": {"FR01": {"offshore_tech1": "fr01.arrow"}},
+            },
+        }
+    }
+
+    with pytest.raises(RESGenerationError, match="Active zone 'FR02' is missing from tech_weights_by_zone"):
+        generate_res_clusters(area, "FR", res)
+
+
+def test_generate_res_clusters_accepts_fr_zone_without_leading_zero(tmp_path, monkeypatch):
+    pd.DataFrame({"v": [0.5] * 8760}).to_feather(tmp_path / "fr1.arrow")
+
+    area = _AreaForStarter()
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_offshore": {
+            "properties": {"group": "wind_offshore", "capacity": 1000},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR1": 1.0},
+                "tech_weights_by_zone": {"FR1": {"offshore_tech1": 1.0}},
+                "series_by_zone_and_tech": {"FR1": {"offshore_tech1": "fr1.arrow"}},
+            },
+        }
+    }
+
+    generate_res_clusters(area, "FR", res)
+
+    assert len(area.payloads) == 1
+    assert "wind_offshore" in area.timeseries
