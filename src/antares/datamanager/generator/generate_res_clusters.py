@@ -17,6 +17,8 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
+from antares.craft.model.area import Area
+from antares.craft.model.renewable import RenewableClusterProperties, TimeSeriesInterpretation
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import RESGenerationError
 from antares.datamanager.logs.logging_setup import get_logger
@@ -157,6 +159,7 @@ def build_res_cluster_payload(
     ts_interpretation: str = PRODUCTION_FACTOR,
     unit_count: int = 1,
 ) -> dict[str, Any]:
+    nominal = float(capacity_mw)
     return {
         "area": area_name,
         "cluster": cluster_name,
@@ -164,11 +167,11 @@ def build_res_cluster_payload(
         "enabled": bool(enabled),
         "ts_interpretation": ts_interpretation,
         "unit_count": unit_count,
-        "nominal_capacity_mw": float(capacity_mw),
+        "nominal_capacity": nominal,
     }
 
 
-def generate_res_clusters(area_obj: Any, area_name: str, res: dict[str, Any]) -> None:
+def generate_res_clusters(area_obj: Area, area_name: str, res: dict[str, Any]) -> None:
     """
     Expected `res` json :
     {
@@ -652,15 +655,28 @@ def _compute_cluster_series(
 
 def _register_res_outputs(
     *,
-    area_obj: Any,
+    area_obj: Area,
     group_key: str,
     payload: dict[str, Any],
     validated_series: pd.Series[Any] | None,
 ) -> None:
-    if hasattr(area_obj, "register_res_payload"):
-        area_obj.register_res_payload(payload)
-    if validated_series is not None and hasattr(area_obj, "register_res_timeseries"):
-        area_obj.register_res_timeseries(group_key, validated_series)
+    properties = RenewableClusterProperties(
+        enabled=bool(payload["enabled"]),
+        unit_count=int(payload["unit_count"]),
+        nominal_capacity=float(payload["nominal_capacity"]),
+        group=str(payload["group"]),
+        ts_interpretation=_parse_ts_interpretation(str(payload["ts_interpretation"])),
+    )
+    renewable_cluster = area_obj.create_renewable_cluster(group_key, properties)
+    if validated_series is not None:
+        renewable_cluster.set_series(pd.DataFrame({"value": validated_series}))
+
+
+def _parse_ts_interpretation(value: str) -> TimeSeriesInterpretation:
+    try:
+        return TimeSeriesInterpretation(value)
+    except ValueError as exc:
+        raise RESGenerationError(f"Unsupported RES ts_interpretation '{value}'") from exc
 
 
 def _to_float_capacity(raw_capacity: Any) -> float:
