@@ -16,8 +16,6 @@ from typing import Any, cast
 import pandas as pd
 
 from antares.craft.model.area import Area
-from antares.craft.model.area import Area
-from antares.craft.model.area import Area
 from antares.datamanager.exceptions.exceptions import RESGenerationError
 from antares.datamanager.generator.generate_res_clusters import (
     _compute_zone_average,
@@ -140,7 +138,6 @@ class _AreaForStarter:
 
 def _make_area() -> Area:
     return cast(Area, _AreaForStarter())
-
 
 
 def _set_res_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
