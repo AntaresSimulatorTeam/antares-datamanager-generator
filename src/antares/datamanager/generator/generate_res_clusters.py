@@ -392,7 +392,7 @@ def _load_tech_series_by_zone(
     expected_zones: set[str],
     expected_techs_by_zone: Mapping[str, set[str]],
     base_ts_directory: Path,
- ) -> dict[str, dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     if not isinstance(raw_series_by_zone_and_tech, Mapping):
         raise RESGenerationError(f"Invalid series_by_zone_and_tech for area='{area_name}', group='{group_key}'")
 
@@ -486,7 +486,10 @@ def _compute_zone_average(
             raise RESGenerationError(f"Missing technology series for zone='{zone}', tech='{tech}'")
         numeric_series = _coerce_numeric_df(df=series, zone=zone, tech=tech)
         if weighted_sum is None:
-            weighted_sum = pd.DataFrame(np.zeros((len(numeric_series), len(numeric_series.columns)), dtype=np.float64), columns=numeric_series.columns)
+            weighted_sum = pd.DataFrame(
+                np.zeros((len(numeric_series), len(numeric_series.columns)), dtype=np.float64),
+                columns=numeric_series.columns,
+            )
         else:
             if len(numeric_series) != len(weighted_sum):
                 raise RESGenerationError(f"Inconsistent series length in zone='{zone}', tech='{tech}'")
@@ -507,7 +510,7 @@ def _compute_zone_averages(
     techno_series_by_zone: Mapping[str, Mapping[str, pd.DataFrame]],
     techno_weights_by_zone: Mapping[str, Mapping[str, float]],
     zonal_weights: Mapping[str, float],
- ) -> dict[str, pd.DataFrame]:
+) -> dict[str, pd.DataFrame]:
     zone_averages: dict[str, pd.DataFrame] = {}
     for zone, zone_weight in zonal_weights.items():
         if zone_weight < 0:
@@ -552,7 +555,9 @@ def _compute_global_weighted_series(
             continue
 
         if global_series_sum is None:
-            global_series_sum = pd.DataFrame(np.zeros((len(zone_series), len(zone_series.columns)), dtype=np.float64), columns=zone_series.columns)
+            global_series_sum = pd.DataFrame(
+                np.zeros((len(zone_series), len(zone_series.columns)), dtype=np.float64), columns=zone_series.columns
+            )
         else:
             if len(zone_series) != len(global_series_sum):
                 raise RESGenerationError(f"Inconsistent zone series length for zone='{zone}'")
