@@ -75,32 +75,46 @@ def read_res_hourly_series(
     filename: str,
     expected_rows: int = EXPECTED_HOURS,
     value_column_index: int = 0,
-) -> pd.Series[Any]:
+) -> pd.DataFrame:
+    """
+    Read an .arrow file and return a DataFrame containing all TS
+    columns.
+    """
     file_path = resolve_and_validate_res_arrow_path(base_dir, filename)
     df = pd.read_feather(file_path)
 
-    if df.empty or df.shape[1] <= value_column_index:
-        raise RESGenerationError(
-            f"RES .arrow file has no value column index={value_column_index} for file='{filename}'"
-        )
+    if df.empty or df.shape[1] < 1:
+        raise RESGenerationError(f"RES .arrow file has no time series columns for file='{filename}'")
 
     if len(df.index) != expected_rows:
         raise RESGenerationError(
             f"RES .arrow file must contain {expected_rows} rows for file='{filename}', got {len(df.index)}"
         )
 
-    series = pd.to_numeric(df.iloc[:, value_column_index], errors="coerce")
-    if series.isna().any():
+    # If the first column is not TS and all remaining columns are
+    # drop the first column.
+    numeric_mask = df.apply(lambda col: pd.to_numeric(col, errors="coerce").notna().all())
+    if df.shape[1] > 1 and not bool(numeric_mask.iloc[0]) and bool(numeric_mask.iloc[1:].all()):
+        ts_df = df.iloc[:, 1:].copy()
+    else:
+        ts_df = df.loc[:, numeric_mask].copy()
+
+    if ts_df.shape[1] == 0:
+        raise RESGenerationError(f"RES .arrow file contains no numeric time series for file='{filename}'")
+
+    ts_df = ts_df.apply(lambda col: pd.to_numeric(col, errors="coerce")).astype(float)
+    if ts_df.isna().any(axis=None):
         raise RESGenerationError(f"RES .arrow file contains non-numeric values for file='{filename}'")
 
-    out_of_bounds = (series < 0.0) | (series > 1.0)
-    if bool(out_of_bounds.any()):
+    out_of_bounds_mask = (ts_df < 0.0) | (ts_df > 1.0)
+    if out_of_bounds_mask.any(axis=None):
+        min_v = float(ts_df.min().min())
+        max_v = float(ts_df.max().max())
         raise RESGenerationError(
-            f"RES .arrow values out of bounds [0,1] for file='{filename}' "
-            f"(min={float(series.min())}, max={float(series.max())})"
+            f"RES .arrow values out of bounds [0,1] for file='{filename}' (min={min_v}, max={max_v})"
         )
 
-    return series
+    return ts_df
 
 
 def resolve_and_validate_res_arrow_path(
@@ -130,10 +144,10 @@ def resolve_and_validate_res_arrow_path(
 
 def compute_fr_weighted_load_factor(
     *,
-    techno_series_by_zone: Mapping[str, Mapping[str, pd.Series[Any]]],
+    techno_series_by_zone: Mapping[str, Mapping[str, pd.DataFrame]],
     techno_weights_by_zone: Mapping[str, Mapping[str, float]],
     zonal_weights: Mapping[str, float],
-) -> pd.Series[Any]:
+) -> pd.DataFrame:
     if not zonal_weights:
         raise RESGenerationError("zonal_weights is empty")
 
@@ -279,7 +293,7 @@ def _build_fr_weighted_series_from_aggregation(
     group_key: str,
     raw_fr_aggregation: Any,
     base_ts_directory: Path,
-) -> pd.Series[Any]:
+) -> pd.DataFrame:
     if not isinstance(raw_fr_aggregation, Mapping):
         raise RESGenerationError(f"Missing or invalid fr_aggregation for FR area='{area_name}', group='{group_key}'")
 
@@ -378,7 +392,7 @@ def _load_tech_series_by_zone(
     expected_zones: set[str],
     expected_techs_by_zone: Mapping[str, set[str]],
     base_ts_directory: Path,
-) -> dict[str, dict[str, pd.Series[Any]]]:
+ ) -> dict[str, dict[str, Any]]:
     if not isinstance(raw_series_by_zone_and_tech, Mapping):
         raise RESGenerationError(f"Invalid series_by_zone_and_tech for area='{area_name}', group='{group_key}'")
 
@@ -390,7 +404,7 @@ def _load_tech_series_by_zone(
                 f"area='{area_name}', group='{group_key}'"
             )
 
-    series_by_zone: dict[str, dict[str, pd.Series[Any]]] = {}
+    series_by_zone: dict[str, dict[str, pd.DataFrame]] = {}
     for raw_zone, raw_series_by_tech in raw_series_by_zone_and_tech.items():
         zone = str(raw_zone).strip().upper()
         if not isinstance(raw_series_by_tech, Mapping):
@@ -409,7 +423,7 @@ def _load_tech_series_by_zone(
                 f"area='{area_name}', group='{group_key}'"
             )
 
-        loaded_by_tech: dict[str, pd.Series[Any]] = {}
+        loaded_by_tech: dict[str, Any] = {}
         for tech, filename in raw_series_by_tech.items():
             loaded_by_tech[str(tech).strip()] = read_res_hourly_series(
                 base_dir=base_ts_directory,
@@ -432,23 +446,29 @@ def _is_valid_fr_zone(zone: str) -> bool:
     return 1 <= zone_index <= 26
 
 
-def _coerce_numeric_series(*, series: pd.Series[Any], zone: str, tech: str) -> pd.Series[Any]:
-    numeric_series = pd.to_numeric(series, errors="coerce")
-    if numeric_series.isna().any():
+def _coerce_numeric_df(*, df: pd.DataFrame | pd.Series, zone: str, tech: str) -> pd.DataFrame:
+    if isinstance(df, pd.Series):
+        series = pd.to_numeric(df, errors="coerce")
+        if series.isna().any():
+            raise RESGenerationError(f"Non numeric values for zone='{zone}', tech='{tech}'")
+        return series.astype(float).to_frame(name=(series.name or "value"))
+
+    numeric = df.apply(lambda col: pd.to_numeric(col, errors="coerce"))
+    if numeric.isna().any(axis=None):
         raise RESGenerationError(f"Non numeric values for zone='{zone}', tech='{tech}'")
-    return numeric_series
+    return numeric.astype(float)
 
 
 def _compute_zone_average(
     *,
     zone: str,
     tech_weights: Mapping[str, float],
-    series_by_tech: Mapping[str, pd.Series[Any]],
-) -> pd.Series[Any]:
+    series_by_tech: Mapping[str, Any],
+) -> pd.DataFrame:
     if not tech_weights:
         raise RESGenerationError(f"No technology weights for zone='{zone}'")
 
-    weighted_sum: pd.Series[Any] | None = None
+    weighted_sum: pd.DataFrame | None = None
     weight_sum = 0.0
     has_positive_weight = False
 
@@ -464,12 +484,14 @@ def _compute_zone_average(
         series = series_by_tech.get(tech)
         if series is None:
             raise RESGenerationError(f"Missing technology series for zone='{zone}', tech='{tech}'")
-
-        numeric_series = _coerce_numeric_series(series=series, zone=zone, tech=tech)
+        numeric_series = _coerce_numeric_df(df=series, zone=zone, tech=tech)
         if weighted_sum is None:
-            weighted_sum = pd.Series(np.zeros(len(numeric_series), dtype=np.float64))
-        elif len(numeric_series) != len(weighted_sum):
-            raise RESGenerationError(f"Inconsistent series length in zone='{zone}', tech='{tech}'")
+            weighted_sum = pd.DataFrame(np.zeros((len(numeric_series), len(numeric_series.columns)), dtype=np.float64), columns=numeric_series.columns)
+        else:
+            if len(numeric_series) != len(weighted_sum):
+                raise RESGenerationError(f"Inconsistent series length in zone='{zone}', tech='{tech}'")
+            if list(numeric_series.columns) != list(weighted_sum.columns):
+                raise RESGenerationError(f"Inconsistent series columns in zone='{zone}', tech='{tech}'")
 
         weighted_sum = weighted_sum + (numeric_series * float(tech_weight))
         weight_sum += float(tech_weight)
@@ -482,11 +504,11 @@ def _compute_zone_average(
 
 def _compute_zone_averages(
     *,
-    techno_series_by_zone: Mapping[str, Mapping[str, pd.Series[Any]]],
+    techno_series_by_zone: Mapping[str, Mapping[str, pd.DataFrame]],
     techno_weights_by_zone: Mapping[str, Mapping[str, float]],
     zonal_weights: Mapping[str, float],
-) -> dict[str, pd.Series[Any]]:
-    zone_averages: dict[str, pd.Series[Any]] = {}
+ ) -> dict[str, pd.DataFrame]:
+    zone_averages: dict[str, pd.DataFrame] = {}
     for zone, zone_weight in zonal_weights.items():
         if zone_weight < 0:
             raise RESGenerationError(f"Negative zonal weight for zone='{zone}': {zone_weight}")
@@ -514,10 +536,10 @@ def _compute_zone_averages(
 
 def _compute_global_weighted_series(
     *,
-    zone_averages: Mapping[str, pd.Series[Any]],
+    zone_averages: Mapping[str, pd.DataFrame],
     zonal_weights: Mapping[str, float],
-) -> pd.Series[Any]:
-    global_series_sum: pd.Series[Any] | None = None
+) -> pd.DataFrame:
+    global_series_sum: pd.DataFrame | None = None
     global_weight_sum = 0.0
 
     for zone, zone_weight in zonal_weights.items():
@@ -530,9 +552,12 @@ def _compute_global_weighted_series(
             continue
 
         if global_series_sum is None:
-            global_series_sum = pd.Series(np.zeros(len(zone_series), dtype=np.float64))
-        elif len(zone_series) != len(global_series_sum):
-            raise RESGenerationError(f"Inconsistent zone series length for zone='{zone}'")
+            global_series_sum = pd.DataFrame(np.zeros((len(zone_series), len(zone_series.columns)), dtype=np.float64), columns=zone_series.columns)
+        else:
+            if len(zone_series) != len(global_series_sum):
+                raise RESGenerationError(f"Inconsistent zone series length for zone='{zone}'")
+            if list(zone_series.columns) != list(global_series_sum.columns):
+                raise RESGenerationError(f"Inconsistent zone series columns for zone='{zone}'")
 
         global_series_sum = global_series_sum + (zone_series * float(zone_weight))
         global_weight_sum += float(zone_weight)
@@ -575,7 +600,7 @@ def _process_res_entry(
     group_key: str,
     group_values: Any,
     base_ts_directory: Path,
-) -> tuple[dict[str, Any], pd.Series[Any] | None]:
+) -> tuple[dict[str, Any], pd.DataFrame | None]:
     if not isinstance(group_values, Mapping):
         raise RESGenerationError(f"Invalid RES group payload for area='{area_name}', group='{group_key}'")
 
@@ -624,7 +649,7 @@ def _compute_cluster_series(
     series_files: list[str],
     fr_aggregation: Any,
     base_ts_directory: Path,
-) -> pd.Series[Any]:
+) -> pd.DataFrame:
     if normalized_area_name == "FR":
         if series_files:
             raise RESGenerationError(
@@ -658,7 +683,7 @@ def _register_res_outputs(
     area_obj: Area,
     group_key: str,
     payload: dict[str, Any],
-    validated_series: pd.Series[Any] | None,
+    validated_series: pd.DataFrame | None,
 ) -> None:
     properties = RenewableClusterProperties(
         enabled=bool(payload["enabled"]),
@@ -669,7 +694,10 @@ def _register_res_outputs(
     )
     renewable_cluster = area_obj.create_renewable_cluster(group_key, properties)
     if validated_series is not None:
-        renewable_cluster.set_series(pd.DataFrame({"value": validated_series}))
+        if isinstance(validated_series, pd.DataFrame):
+            renewable_cluster.set_series(validated_series)
+        else:
+            renewable_cluster.set_series(pd.DataFrame({"value": validated_series}))
 
 
 def _parse_ts_interpretation(value: str) -> TimeSeriesInterpretation:

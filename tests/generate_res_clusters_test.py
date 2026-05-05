@@ -15,7 +15,6 @@ from typing import Any, cast
 
 import pandas as pd
 
-from antares.craft.model.area import Area
 from antares.datamanager.exceptions.exceptions import RESGenerationError
 from antares.datamanager.generator.generate_res_clusters import (
     _compute_zone_average,
@@ -86,14 +85,16 @@ def test_read_res_hourly_series_validates_row_count(tmp_path):
 def test_read_res_hourly_series_empty_dataframe(tmp_path):
     file_path = tmp_path / "empty.arrow"
     pd.DataFrame().to_feather(file_path)
-    with pytest.raises(RESGenerationError, match="has no value column"):
+    with pytest.raises(RESGenerationError, match="has no time series columns"):
         read_res_hourly_series(base_dir=tmp_path, filename="empty.arrow")
 
 
 def test_read_res_hourly_series_non_numeric(tmp_path):
     file_path = tmp_path / "str.arrow"
     pd.DataFrame({"v": ["a"] * 8760}).to_feather(file_path)
-    with pytest.raises(RESGenerationError, match="contains non-numeric values"):
+    # Legacy behaviour raised a different message; current implementation
+    # rejects files that contain no numeric TS columns.
+    with pytest.raises(RESGenerationError, match="contains no numeric time series"):
         read_res_hourly_series(base_dir=tmp_path, filename="str.arrow")
 
 
@@ -104,7 +105,24 @@ def test_read_res_hourly_series_out_of_bounds(tmp_path):
         read_res_hourly_series(base_dir=tmp_path, filename="high.arrow")
 
 
+def test_read_res_hourly_series_uses_first_real_ts_column_when_date_column_present(tmp_path):
+    file_path = tmp_path / "multi.arrow"
+    pd.DataFrame({"date": [0.0] * 8760, "TS1": [0.42] * 8760, "TS2": [0.99] * 8760}).to_feather(file_path)
+
+    ts_df = read_res_hourly_series(base_dir=tmp_path, filename="multi.arrow")
+
+    assert len(ts_df) == 8760
+    # Ensure the first real TS column ('TS1') was preserved and contains expected values
+    assert float(ts_df["TS1"].iloc[0]) == pytest.approx(0.42)
+    assert float(ts_df["TS1"].mean()) == pytest.approx(0.42)
+
+
 class _RenewableClusterFake:
+    name: str
+    properties: Any
+    series: pd.DataFrame | None
+    _owner: "_AreaForStarter"
+
     def __init__(self, name: str, props: Any, owner: "_AreaForStarter"):
         self.name = name
         self.properties = props
@@ -117,6 +135,10 @@ class _RenewableClusterFake:
 
 
 class _AreaForStarter:
+    payloads: list[dict[str, Any]]
+    timeseries: dict[str, Any]
+    created: list[Any]
+
     def __init__(self):
         self.payloads: list[dict[str, Any]] = []
         self.timeseries: dict[str, Any] = {}
@@ -136,8 +158,8 @@ class _AreaForStarter:
         return cluster
 
 
-def _make_area() -> Area:
-    return cast(Area, _AreaForStarter())
+def _make_area() -> _AreaForStarter:
+    return _AreaForStarter()
 
 
 def _set_res_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
@@ -329,7 +351,7 @@ def test_generate_res_clusters_computes_fr_weighted_series_from_aggregation(tmp_
 
     assert len(area.payloads) == 1
     assert "wind_offshore" in area.timeseries
-    assert float(area.timeseries["wind_offshore"].iloc[0]) == pytest.approx(0.825)
+    assert float(area.timeseries["wind_offshore"].iloc[0, 0]) == pytest.approx(0.825)
 
 
 def test_fr_aggregation_negative_zone_weight(tmp_path, monkeypatch):
