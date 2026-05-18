@@ -20,6 +20,8 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from antares.datamanager.core.app_info import AppInfoModel, get_app_info
+from antares.datamanager.core.middleware import setup_cors_middleware
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_study_process import generate_study
@@ -32,6 +34,20 @@ logger = logging.getLogger("antares.datamanager")
 app = FastAPI(
     title="datamanager-datamanager-generator", description="API to launch datamanager study generation", version="0.0.1"
 )
+
+# Configure CORS middleware
+setup_cors_middleware(app)
+
+
+@app.get("/app-info", response_model=AppInfoModel, tags=["Application"])
+def get_app_information() -> AppInfoModel:
+    """
+    Get detailed application information including version, branch, and commit details.
+
+    Returns:
+        AppInfoModel: Application information
+    """
+    return get_app_info()
 
 
 @app.post("/generate_study/")
