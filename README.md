@@ -75,6 +75,29 @@ The study ID should correspond to a JSON file in the configured load directory w
 }
 ```
 
+### Application Information
+
+Get detailed application information including version, branch, and commit details:
+
+```bash
+curl http://localhost:8094/app-info
+```
+
+Response:
+```json
+{
+  "app_name": "antares-datamanager-generator",
+  "app_description": "API to launch datamanager study generation",
+  "app_version": "0.0.1",
+  "branch": "main",
+  "commit_id": "8cc4cf7a62d...",
+  "commit_time": "2026-04-29T18:05:59+02:00"
+}
+```
+
+See [APP_INFO_ENDPOINT.md](APP_INFO_ENDPOINT.md) for detailed documentation.
+
+
 ## Features
 
 - FastAPI-based web service
