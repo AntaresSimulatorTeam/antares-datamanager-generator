@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from antares.datamanager.main import app
+from antares.datamanager.core.app_info import _read_version_from_pyproject
 
 
 @pytest.fixture
@@ -67,8 +68,9 @@ def test_app_info_endpoint_app_version(client):
     """Test that appVersion is present"""
     response = client.get("/app-info")
     data = response.json()
+    expected_version = _read_version_from_pyproject()
 
-    assert data["appVersion"] == "0.0.1"
+    assert data["appVersion"] == expected_version
 
 
 def test_app_info_endpoint_git_fields_are_optional(client):
