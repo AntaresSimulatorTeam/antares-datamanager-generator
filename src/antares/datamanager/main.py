@@ -20,7 +20,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from antares.datamanager.core.app_info import AppInfoModel, get_app_info, _read_version_from_pyproject
+from antares.datamanager.core.app_info import AppInfoModel, get_app_info
 from antares.datamanager.core.middleware import setup_cors_middleware
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
@@ -31,13 +31,8 @@ from antares.datamanager.generator.study_adapters import StudyFactory
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("antares.datamanager")
 
-# Read version from pyproject.toml
-app_version = _read_version_from_pyproject()
-
 app = FastAPI(
-    title="datamanager-datamanager-generator",
-    description="API to launch datamanager study generation",
-    version=app_version
+    title="datamanager-datamanager-generator", description="API to launch datamanager study generation", version="0.0.1"
 )
 
 # Configure CORS middleware

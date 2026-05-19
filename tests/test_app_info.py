@@ -11,17 +11,16 @@
 # This file is part of the Antares project.
 
 
-from antares.datamanager.core.app_info import get_app_info, _read_version_from_pyproject
+from antares.datamanager.core.app_info import get_app_info
 
 
 def test_get_app_info_returns_required_fields():
     """Test that get_app_info returns all required fields"""
     info = get_app_info()
-    expected_version = _read_version_from_pyproject()
 
     assert info.appName == "antares-datamanager-generator"
     assert info.appDescription == "API to launch datamanager study generation"
-    assert info.appVersion == expected_version
+    assert info.appVersion == "0.0.1"
 
 
 def test_get_app_info_optional_git_fields():
