@@ -68,7 +68,7 @@ def test_app_info_endpoint_app_version(client):
     response = client.get("/app-info")
     data = response.json()
 
-    assert data["appVersion"] == "0.0.1"
+    assert data["appVersion"] == "0.1"
 
 
 def test_app_info_endpoint_git_fields_are_optional(client):
