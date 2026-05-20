@@ -10,14 +10,20 @@
 #
 # This file is part of the Antares project.
 
-import subprocess
 import logging
-import tomllib
+import json
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+# Python 3.11+ has tomllib built-in, Python 3.10 needs tomli
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 
 logger = logging.getLogger(__name__)
@@ -33,75 +39,74 @@ class AppInfoModel(BaseModel):
     commitTime: Optional[datetime] = Field(None, description="Git commit timestamp")
 
 
-def _get_git_info() -> tuple[Optional[str], Optional[str], Optional[datetime]]:
+def _read_build_info_from_file() -> tuple[Optional[str], Optional[str], Optional[str], Optional[datetime]]:
     """
-    Get Git information (branch, commit ID, commit time).
-
+    Try to read build information from build-info.json file (located in core package).
+    
     Returns:
-        Tuple of (branch, commit_id, commit_time) or (None, None, None) if not a git repo
+        Tuple of (version, branch, commit_id, commit_time) or (None, None, None, None) if file not found
     """
     try:
-        # Get the git repository root directory
-        git_root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], stderr=subprocess.DEVNULL, text=True
-        ).strip()
-
-        # Verify we're in the right directory (antares-datamanager-generator)
-        if "antares-datamanager-generator" not in git_root:
-            return None, None, None
-
-        # Get current branch
-        try:
-            branch = subprocess.check_output(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL, text=True
-            ).strip()
-        except subprocess.CalledProcessError:
-            branch = None
-
-        # Get latest commit ID
-        try:
-            commit_id = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True
-            ).strip()
-        except subprocess.CalledProcessError:
-            commit_id = None
-
-        # Get latest commit timestamp
-        commit_time = None
-        try:
-            timestamp_str = subprocess.check_output(
-                ["git", "log", "-1", "--format=%cI"], stderr=subprocess.DEVNULL, text=True
-            ).strip()
-            if timestamp_str:
-                commit_time = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-        except (subprocess.CalledProcessError, ValueError):
-            commit_time = None
-
-        return branch, commit_id, commit_time
-
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        # Git not available or not in a git repository
-        return None, None, None
+        # Try multiple paths
+        possible_paths = [
+            Path("/conf/build-info.json"),  # Docker case (copied during build)
+            Path(__file__).parent / "build-info.json",  # Local case (same directory as app_info.py)
+        ]
+        
+        for build_info_path in possible_paths:
+            if build_info_path.exists():
+                logger.debug(f"Reading build info from: {build_info_path}")
+                with open(build_info_path, "r") as f:
+                    data = json.load(f)
+                    version = data.get("appVersion")
+                    branch = data.get("appBranch")
+                    commit_id = data.get("commitId")
+                    commit_time_str = data.get("commitTime")
+                    
+                    # Parse commit time if present
+                    commit_time = None
+                    if commit_time_str:
+                        try:
+                            commit_time = datetime.fromisoformat(commit_time_str.replace("Z", "+00:00"))
+                        except ValueError as e:
+                            logger.warning(f"Failed to parse commit time '{commit_time_str}': {e}")
+                    
+                    logger.debug(f"Successfully read build info from {build_info_path}")
+                    return version, branch, commit_id, commit_time
+    except Exception as e:
+        logger.debug(f"Could not read build info from file: {e}")
+    
+    return None, None, None, None
 
 
 def get_app_info() -> AppInfoModel:
     """
-    Get complete application information.
+    Get complete application information from build-info.json and pyproject.toml.
+    
+    The build-info.json file is created before Docker build with:
+    - Git branch, commit ID, and commit time captured at build time
+    
+    The appVersion is always read from pyproject.toml.
 
     Returns:
         AppInfoModel with all application details
     """
-    branch, commit_id, commit_time = _get_git_info()
-    app_version = _read_version_from_pyproject()
+    # Read from build-info.json (Git info)
+    _, branch, commit_id, commit_time = _read_build_info_from_file()
+    
+    # Always read version from pyproject.toml
+    version = _read_version_from_pyproject()
 
     return AppInfoModel(
         appName="antares-datamanager-generator",
         appDescription="API to launch datamanager study generation",
-        appVersion=app_version,
+        appVersion=version,
         appBranch=branch,
         commitId=commit_id,
         commitTime=commit_time,
     )
+
+
 def _read_version_from_pyproject() -> str:
     """
     Read the application version from pyproject.toml.
@@ -112,9 +117,7 @@ def _read_version_from_pyproject() -> str:
     try:
         # Find pyproject.toml from the package root
         # The package is in src/antares/datamanager/, so we need to go up several levels
-        package_dir = Path(__file__).parent.parent.parent.parent  # src/
-        project_root = package_dir.parent  # project root
-        pyproject_path = project_root / "pyproject.toml"
+        pyproject_path =Path("/conf/pyproject.toml")
 
         if pyproject_path.exists():
             with open(pyproject_path, "rb") as f:
@@ -129,3 +132,4 @@ def _read_version_from_pyproject() -> str:
     except Exception as e:
         logger.warning(f"Failed to read version from pyproject.toml: {e}")
         return "unknown"
+

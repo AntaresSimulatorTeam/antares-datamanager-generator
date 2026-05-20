@@ -8,7 +8,10 @@ RUN echo "alias ll='/bin/ls -l --color=auto'" >> /root/.bashrc
 WORKDIR /code/antares/datamanager
 
 COPY ./requirements.txt /conf/
+COPY ./pyproject.toml /conf/
 COPY ./src/antares/datamanager /code/antares/datamanager
+COPY ./build-info.json /conf/
+
 # Configure Python RTE mirrors
 RUN echo "[global]" >> /etc/pip.conf &&\
     echo "   index = https://devin-depot.rte-france.com/repository/pypi-all" >> /etc/pip.conf &&\
