@@ -41,6 +41,7 @@ from antares.datamanager.exceptions.exceptions import (
     MiscGenerationError,
 )
 from antares.datamanager.generator.generate_dsr_clusters import generate_dsr_clusters
+from antares.datamanager.generator.generate_hydro import generate_hydro
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
 from antares.datamanager.generator.generate_misc_timeseries import generate_misc_timeseries
 from antares.datamanager.generator.generate_res_clusters import generate_res_clusters
@@ -141,6 +142,11 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         res = area_info.get("res", {})
         if res:
             study_data.area_res[area] = res
+
+        # HYDRO
+        hydro = area_info.get("hydro", {})
+        if hydro:
+            study_data.area_hydro[area] = hydro
 
     return study_data
 
@@ -252,6 +258,7 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
         dsr = study_data.area_dsr.get(area_name, {})
         misc = study_data.area_misc.get(area_name, {})
         res = study_data.area_res.get(area_name, {})
+        hydro = study_data.area_hydro.get(area_name, {})
 
         try:
             area_obj = study.create_area(area_name=area_name, properties=area_properties, ui=area_ui)
@@ -264,6 +271,8 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
             df_dsr_constraints = generate_dsr_clusters(area_obj, dsr, first_month=study_data.first_month)
             _create_dsr_binding_constraints(study, area_name, df_dsr_constraints)
             generate_res_clusters(area_obj, area_name, res)
+
+            generate_hydro(area_obj, hydro)
 
             logger.info(f"Successfully created area for {area_name}")
         except (APIGenerationError, MiscGenerationError) as e:

@@ -10,7 +10,6 @@
 #
 # This file is part of the Antares project.
 
-import pytest
 
 from antares.datamanager.core.app_info import get_app_info
 
@@ -47,4 +46,3 @@ def test_get_app_info_model_structure():
     assert info.commitId is None or isinstance(info.commitId, str)
     # commitTime is datetime or None
     assert info.commitTime is None or hasattr(info.commitTime, "isoformat")
-

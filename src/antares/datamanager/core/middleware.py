@@ -30,4 +30,3 @@ def setup_cors_middleware(app: FastAPI) -> None:
         allow_methods=["*"],  # Allow all methods (GET, POST, PUT, DELETE, etc.)
         allow_headers=["*"],  # Allow all headers
     )
-
