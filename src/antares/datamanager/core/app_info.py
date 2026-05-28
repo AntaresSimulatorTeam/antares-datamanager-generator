@@ -11,8 +11,8 @@
 # This file is part of the Antares project.
 
 import subprocess
+
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -97,4 +97,3 @@ def get_app_info() -> AppInfoModel:
         commitId=commit_id,
         commitTime=commit_time,
     )
-

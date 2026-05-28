@@ -11,6 +11,7 @@
 # This file is part of the Antares project.
 
 import pytest
+
 from fastapi.testclient import TestClient
 
 from antares.datamanager.main import app
@@ -87,4 +88,3 @@ def test_app_info_endpoint_is_documented(client):
     openapi_schema = response.json()
 
     assert "/app-info" in openapi_schema["paths"]
-

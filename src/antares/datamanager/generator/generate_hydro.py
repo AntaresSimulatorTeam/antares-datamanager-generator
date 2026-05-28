@@ -10,7 +10,6 @@
 #
 # This file is part of the Antares project.
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,12 @@ import pandas as pd
 
 from antares.craft import HydroAllocation, HydroPropertiesUpdate
 from antares.datamanager.core.settings import settings
+from antares.datamanager.logs.logging_setup import get_logger
+
+logger = get_logger(__name__)
+
+# Default value for maxpower series (columns 2 and 4 in the study file, but columns 1 and 3 here)
+DEFAULT_MAXPOWER_VALUE = 24
 
 
 def generate_hydro(area_obj: Any, hydro: dict[str, Any]) -> None:
@@ -50,11 +55,11 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any]) -> None:
     allocation_data = hydro.get("allocation")
     if not allocation_data:
         allocation_data = properties.get("allocation", {})
-    
+
     if allocation_data:
         # Deduplicate allocation data by keeping the last occurrence of each area_id.
         # We lowercase the area_id to avoid duplicates due to casing differences.
-        # We also exclude the current area itself because Antares automatically 
+        # We also exclude the current area itself because Antares automatically
         # includes it in the allocation list.
         current_area_id = area_obj.name.lower()
         unique_allocations = {}
@@ -64,7 +69,7 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any]) -> None:
                 unique_allocations[target_area_lower] = HydroAllocation(
                     area_id=target_area_lower, coefficient=coefficient
                 )
-        
+
         area_obj.hydro.set_allocation(list(unique_allocations.values()))
 
     # Set series
@@ -85,9 +90,19 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any]) -> None:
         elif "_reservoir" in series_file:
             area_obj.hydro.set_reservoir(df)
         elif "_maxpower" in series_file:
-            area_obj.hydro.set_maxpower(df)
+            # maxpower series should have 4 columns:
+            # Col 0: Original data from arrow file
+            # Col 1: DEFAULT_MAXPOWER_VALUE (24)
+            # Col 2: 0 #TO MODIFY FOR PUMPING THE VALUE COMES from maxpower_df
+            # Col 3: DEFAULT_MAXPOWER_VALUE (24)
+            # We assume the input df has only 1 column. If it has more, we only use the first one.
+            maxpower_df = pd.DataFrame()
+            maxpower_df["0"] = df.iloc[:, 0]
+            maxpower_df["1"] = DEFAULT_MAXPOWER_VALUE
+            maxpower_df["2"] = 0
+            maxpower_df["3"] = DEFAULT_MAXPOWER_VALUE
+            area_obj.hydro.set_maxpower(maxpower_df)
 
 
 def _resolve_hydro_base_directory() -> Path:
     return settings.hydro_ts_directory
-
