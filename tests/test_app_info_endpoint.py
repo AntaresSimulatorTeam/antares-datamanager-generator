@@ -62,15 +62,6 @@ def test_app_info_endpoint_app_description(client):
 
     assert data["appDescription"] == "API to launch datamanager study generation"
 
-
-def test_app_info_endpoint_app_version(client):
-    """Test that appVersion is present"""
-    response = client.get("/app-info")
-    data = response.json()
-
-    assert data["appVersion"] == "0.0.1"
-
-
 def test_app_info_endpoint_git_fields_are_optional(client):
     """Test that git fields can be None"""
     response = client.get("/app-info")

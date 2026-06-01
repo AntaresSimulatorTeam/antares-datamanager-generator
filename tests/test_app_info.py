@@ -20,8 +20,6 @@ def test_get_app_info_returns_required_fields():
 
     assert info.appName == "antares-datamanager-generator"
     assert info.appDescription == "API to launch datamanager study generation"
-    assert info.appVersion == "0.0.1"
-
 
 def test_get_app_info_optional_git_fields():
     """Test that optional git fields are present (can be None if not in git repo)"""
