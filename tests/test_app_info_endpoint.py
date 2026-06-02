@@ -62,6 +62,7 @@ def test_app_info_endpoint_app_description(client):
 
     assert data["appDescription"] == "API to launch datamanager study generation"
 
+
 def test_app_info_endpoint_git_fields_are_optional(client):
     """Test that git fields can be None"""
     response = client.get("/app-info")

@@ -21,8 +21,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from antares.datamanager.core.app_info import AppInfoModel, get_app_info
-from antares.datamanager.core.middleware import setup_cors_middleware
 from antares.datamanager.core.dependencies import get_study_factory
+from antares.datamanager.core.middleware import setup_cors_middleware
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_study_process import generate_study
 from antares.datamanager.generator.study_adapters import StudyFactory
