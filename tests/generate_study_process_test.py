@@ -518,8 +518,9 @@ def test_package_and_upload_local_study_success(mock_settings, mock_os, mock_shu
 @patch("antares.datamanager.generator.generate_study_process.shutil")
 @patch("antares.datamanager.generator.generate_study_process.os")
 @patch("antares.datamanager.generator.generate_study_process.settings")
-def test_package_and_upload_local_study_failure_and_cleanup_errors(mock_settings, mock_os, mock_shutil,
-                                                                   mock_import_api):
+def test_package_and_upload_local_study_failure_and_cleanup_errors(
+    mock_settings, mock_os, mock_shutil, mock_import_api
+):
     mock_settings.nas_path = Path("/mock/nas")
     mock_settings.api_host = "http://mock-api"
     mock_settings.api_token = "mock-token"
