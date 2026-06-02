@@ -314,11 +314,7 @@ def _package_and_upload_local_study(study_id_name: str) -> None:
         logger.info(f"Study compressed to: {archive_path}")
 
         # upload
-        api_conf = APIconf(
-            api_host=settings.api_host,
-            token=settings.api_token,
-            verify=settings.verify_ssl
-        )
+        api_conf = APIconf(api_host=settings.api_host, token=settings.api_token, verify=settings.verify_ssl)
 
         import_study_api(api_conf, Path(archive_path))
         logger.info("Study uploaded to Antares Web.")
