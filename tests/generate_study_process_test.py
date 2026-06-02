@@ -514,6 +514,33 @@ def test_package_and_upload_local_study_success(mock_settings, mock_os, mock_shu
     mock_shutil.rmtree.assert_called_once_with(expected_study_path)
 
 
+@patch("antares.datamanager.generator.generate_study_process.import_study_api")
+@patch("antares.datamanager.generator.generate_study_process.shutil")
+@patch("antares.datamanager.generator.generate_study_process.os")
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_package_and_upload_local_study_failure_and_cleanup_errors(mock_settings, mock_os, mock_shutil,
+                                                                   mock_import_api):
+    mock_settings.nas_path = Path("/mock/nas")
+    mock_settings.api_host = "http://mock-api"
+    mock_settings.api_token = "mock-token"
+    mock_settings.verify_ssl = False
+
+    study_name = "test_study_123"
+    mock_shutil.make_archive.return_value = "/mock/nas/test_study_123.zip"
+    mock_import_api.side_effect = Exception("API Error")
+
+    mock_os.path.exists.return_value = True
+    mock_os.remove.side_effect = OSError("Permission denied")
+    mock_shutil.rmtree.side_effect = OSError("Directory locked")
+
+    with pytest.raises(APIGenerationError):
+        with patch("pathlib.Path.exists", return_value=True):
+            _package_and_upload_local_study(study_name)
+
+    mock_os.remove.assert_called_once_with("/mock/nas/test_study_123.zip")
+    mock_shutil.rmtree.assert_called_once_with(Path("/mock/nas") / study_name)
+
+
 class TestInfrastructure:
     """
     Tests for main, adapters, config
