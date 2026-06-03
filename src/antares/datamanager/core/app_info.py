@@ -10,9 +10,10 @@
 #
 # This file is part of the Antares project.
 
-import logging
 import json
+import logging
 import sys
+
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -28,6 +29,7 @@ else:
 
 logger = logging.getLogger(__name__)
 
+
 class AppInfoModel(BaseModel):
     """Application information model"""
 
@@ -42,7 +44,7 @@ class AppInfoModel(BaseModel):
 def _read_build_info_from_file() -> tuple[Optional[str], Optional[str], Optional[str], Optional[datetime]]:
     """
     Try to read build information from build-info.json file (located in core package).
-    
+
     Returns:
         Tuple of (version, branch, commit_id, commit_time) or (None, None, None, None) if file not found
     """
@@ -52,7 +54,7 @@ def _read_build_info_from_file() -> tuple[Optional[str], Optional[str], Optional
             Path("/conf/build-info.json"),  # Docker case (copied during build)
             Path(__file__).parent / "build-info.json",  # Local case (same directory as app_info.py)
         ]
-        
+
         for build_info_path in possible_paths:
             if build_info_path.exists():
                 logger.debug(f"Reading build info from: {build_info_path}")
@@ -62,7 +64,7 @@ def _read_build_info_from_file() -> tuple[Optional[str], Optional[str], Optional
                     branch = data.get("appBranch")
                     commit_id = data.get("commitId")
                     commit_time_str = data.get("commitTime")
-                    
+
                     # Parse commit time if present
                     commit_time = None
                     if commit_time_str:
@@ -70,22 +72,22 @@ def _read_build_info_from_file() -> tuple[Optional[str], Optional[str], Optional
                             commit_time = datetime.fromisoformat(commit_time_str.replace("Z", "+00:00"))
                         except ValueError as e:
                             logger.warning(f"Failed to parse commit time '{commit_time_str}': {e}")
-                    
+
                     logger.debug(f"Successfully read build info from {build_info_path}")
                     return version, branch, commit_id, commit_time
     except Exception as e:
         logger.debug(f"Could not read build info from file: {e}")
-    
+
     return None, None, None, None
 
 
 def get_app_info() -> AppInfoModel:
     """
     Get complete application information from build-info.json and pyproject.toml.
-    
+
     The build-info.json file is created before Docker build with:
     - Git branch, commit ID, and commit time captured at build time
-    
+
     The appVersion is always read from pyproject.toml.
 
     Returns:
@@ -93,7 +95,7 @@ def get_app_info() -> AppInfoModel:
     """
     # Read from build-info.json (Git info)
     _, branch, commit_id, commit_time = _read_build_info_from_file()
-    
+
     # Always read version from pyproject.toml
     version = _read_version_from_pyproject()
 
@@ -117,7 +119,7 @@ def _read_version_from_pyproject() -> str:
     try:
         # Find pyproject.toml from the package root
         # The package is in src/antares/datamanager/, so we need to go up several levels
-        pyproject_path =Path("/conf/pyproject.toml")
+        pyproject_path = Path("/conf/pyproject.toml")
 
         if pyproject_path.exists():
             with open(pyproject_path, "rb") as f:
@@ -132,4 +134,3 @@ def _read_version_from_pyproject() -> str:
     except Exception as e:
         logger.warning(f"Failed to read version from pyproject.toml: {e}")
         return "unknown"
-

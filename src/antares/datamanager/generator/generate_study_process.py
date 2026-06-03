@@ -299,25 +299,38 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]]) -> None:
 
 
 def _package_and_upload_local_study(study_id_name: str) -> None:
+    study_path = settings.nas_path / study_id_name
+    if not study_path.exists():
+        logger.info(f"Study directory not found at {study_path}")
+        return
+
+    # archive
+    archive_path: str | None = None
     try:
         logger.info("Starting compression and upload of local study...")
 
-        study_path = settings.nas_path / study_id_name
-        if not study_path.exists():
-            logger.info(f"Study directory not found at {study_path}")
-            return
-
-        # archive
         zip_base_name = str(study_path)
         archive_path = shutil.make_archive(zip_base_name, "zip", root_dir=study_path)
         logger.info(f"Study compressed to: {archive_path}")
 
-        api_conf = APIconf(api_host=settings.api_host, token=settings.api_token, verify=settings.verify_ssl)
         # upload
+        api_conf = APIconf(api_host=settings.api_host, token=settings.api_token, verify=settings.verify_ssl)
+
         import_study_api(api_conf, Path(archive_path))
         logger.info("Study uploaded to Antares Web.")
 
-        os.remove(archive_path)
-        shutil.rmtree(study_path)
     except Exception as e:
         raise APIGenerationError(f"Failed to archive or upload local study {study_id_name}: {str(e)}") from e
+
+    finally:
+        if archive_path and os.path.exists(archive_path):
+            try:
+                os.remove(archive_path)
+            except OSError as e:
+                logger.error(f"Failed to remove archive file {archive_path}: {e}")
+
+        if study_path.exists():
+            try:
+                shutil.rmtree(study_path)
+            except OSError as e:
+                logger.error(f"Failed to remove study directory {study_path}: {e}")
