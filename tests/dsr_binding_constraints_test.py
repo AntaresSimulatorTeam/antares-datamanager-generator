@@ -25,16 +25,13 @@ from antares.datamanager.models.study_data_json_model import StudyData
 @patch("antares.datamanager.generator.generate_study_process.generate_sts_clusters")
 @patch("antares.datamanager.generator.generate_study_process.generate_dsr_clusters")
 def test_add_areas_to_study_creates_binding_constraints(
-    mock_generate_dsr,
-    mock_generate_sts,
-    mock_generate_thermal,
-    mock_load_dir,
+    mock_generate_dsr, mock_generate_sts, mock_generate_thermal, mock_load_dir
 ):
     mock_load_dir.return_value = Path("/tmp")
     mock_study = MagicMock()
     mock_area_obj = MagicMock()
     mock_study.create_area.return_value = mock_area_obj
-
+    used_files = set()
     # 1. Test Non-FR area
     study_data_non_fr = StudyData(
         name="test_study",
@@ -49,7 +46,7 @@ def test_add_areas_to_study_creates_binding_constraints(
     # Mock Step 1 result for BE
     mock_generate_dsr.return_value = pd.DataFrame({"BE_DSR": [100.0] * 365})
 
-    add_areas_to_study(mock_study, study_data_non_fr)
+    add_areas_to_study(mock_study, study_data_non_fr, used_files)
 
     # Check if create_binding_constraint was called for BE
     mock_study.create_binding_constraint.assert_called_once()
@@ -82,7 +79,7 @@ def test_add_areas_to_study_creates_binding_constraints(
     # Mock Step 1 result for FR
     mock_generate_dsr.return_value = pd.DataFrame({"FR_DSR_tertiaire": [184.6] * 365})
 
-    add_areas_to_study(mock_study, study_data_fr)
+    add_areas_to_study(mock_study, study_data_fr, used_files)
 
     # Check if create_binding_constraint was called for FR
     mock_study.create_binding_constraint.assert_called_once()

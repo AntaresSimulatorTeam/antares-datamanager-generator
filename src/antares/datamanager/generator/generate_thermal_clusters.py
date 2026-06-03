@@ -10,7 +10,7 @@
 #
 # This file is part of the Antares project.
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -31,13 +31,18 @@ NPO_WINTER_DIVISOR = 4
 
 
 def calculate_min_stable_power(
-    min_stable_power: float, cluster_modulation: list[str], base_dir: Optional[Path] = None
+    min_stable_power: float,
+    cluster_modulation: list[str],
+    base_dir: Optional[Path] = None,
+    used_files: Optional[Set[Path]] = None,
 ) -> Any:
     cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
     if cm_file is not None:
         if base_dir is None:
             base_dir = generator_param_modulation_directory()
         cm_path = base_dir / cm_file
+        if used_files is not None:
+            used_files.add(cm_path)
         df_cm = pd.read_feather(cm_path)
         cm_values = df_cm.iloc[:, 0]
         logger.info(f"CM file '{cm_file}' size: {len(cm_values)}")
@@ -46,7 +51,12 @@ def calculate_min_stable_power(
     return round(min_stable_power, 2)
 
 
-def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any], first_month: Optional[Month] = None) -> None:
+def generate_thermal_clusters(
+    area_obj: Area,
+    thermals: Dict[str, Any],
+    first_month: Optional[Month] = None,
+    used_files: Optional[Set[Path]] = None,
+) -> None:
     # Use global setting if not provided explicitly
     if first_month is None:
         first_month = settings.study_setting_first_month
@@ -56,10 +66,16 @@ def generate_thermal_clusters(area_obj: Area, thermals: Dict[str, Any], first_mo
         logger.info(f"Creating thermal cluster: {cluster_name}")
 
         cluster_modulation = values.get("modulation", {})
-        modulation_matrix = create_modulation_matrix(cluster_modulation)
+        modulation_matrix = create_modulation_matrix(cluster_modulation, used_files=used_files)
 
         create_thermal_cluster_with_prepro(
-            area_obj, cluster_name, values, create_prepro_data_matrix, modulation_matrix, first_month
+            area_obj,
+            cluster_name,
+            values,
+            create_prepro_data_matrix,
+            modulation_matrix,
+            first_month,
+            used_files=used_files,
         )
 
 
@@ -71,6 +87,7 @@ def create_thermal_cluster_with_prepro(
     modulation_matrix: Optional[pd.DataFrame] = None,
     first_month: Optional[Month] = None,
     base_dir: Optional[Path] = None,
+    used_files: Optional[Set[Path]] = None,
 ) -> None:
     """
     Creates a thermal cluster, generates its prepro matrix, and sets it.
@@ -84,11 +101,11 @@ def create_thermal_cluster_with_prepro(
 
     cluster_modulation = cluster_values.get("modulation", {})
     min_stable_power_final = calculate_min_stable_power(
-        cluster_properties.min_stable_power, cluster_modulation, base_dir=base_dir
+        cluster_properties.min_stable_power, cluster_modulation, base_dir=base_dir, used_files=used_files
     )
 
     if modulation_matrix is None:
-        modulation_matrix = create_modulation_matrix(cluster_modulation, base_dir=base_dir)
+        modulation_matrix = create_modulation_matrix(cluster_modulation, base_dir=base_dir, used_files=used_files)
 
     cluster_data = cluster_values.get("data", {})
     unit_count = cluster_properties.unit_count
@@ -209,7 +226,9 @@ def generator_param_modulation_directory() -> Path:
     return settings.param_modulation_directory
 
 
-def create_modulation_matrix(cluster_modulation: list[str], base_dir: Optional[Path] = None) -> pd.DataFrame:
+def create_modulation_matrix(
+    cluster_modulation: list[str], base_dir: Optional[Path] = None, used_files: Optional[Set[Path]] = None
+) -> pd.DataFrame:
     """
     cluster_modulation: list of filenames
     Returns a 4-column DataFrame without column names:
@@ -242,6 +261,8 @@ def create_modulation_matrix(cluster_modulation: list[str], base_dir: Optional[P
     # Read CM if present
     if cm_file is not None:
         cm_path = base_dir / cm_file
+        if used_files is not None:
+            used_files.add(cm_path)
         df_cm = pd.read_feather(cm_path)
         cm_values = df_cm.iloc[:, 0]
         logger.info(f"CM file '{cm_file}' size: {len(cm_values)}")
@@ -249,6 +270,8 @@ def create_modulation_matrix(cluster_modulation: list[str], base_dir: Optional[P
     # Read MR if present
     if mr_file is not None:
         mr_path = base_dir / mr_file
+        if used_files is not None:
+            used_files.add(mr_path)
         df_mr = pd.read_feather(mr_path)
         mr_values = df_mr.iloc[:, 0]
         logger.info(f"MR file '{mr_file}' size: {len(mr_values)}")

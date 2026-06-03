@@ -15,7 +15,7 @@ import os
 import shutil
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Set
 
 import pandas as pd
 
@@ -58,29 +58,61 @@ logger = get_logger(__name__)
 
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
-    study_data = read_study_data_from_json(study_id)
-    study = factory.create_study(study_data.name)
-    study_settings = StudySettingsUpdate(
-        general_parameters=GeneralParametersUpdate(
-            first_month_in_year=study_data.first_month, nb_years=study_data.nb_years
+    used_files: Set[Path] = set()
+    study = None
+    try:
+        study_data = read_study_data_from_json(study_id)
+        study = factory.create_study(study_data.name)
+        study_settings = StudySettingsUpdate(
+            general_parameters=GeneralParametersUpdate(
+                first_month_in_year=study_data.first_month, nb_years=study_data.nb_years
+            )
         )
-    )
-    study.update_settings(study_settings)
+        study.update_settings(study_settings)
 
-    add_areas_to_study(study, study_data)
-    add_links_to_study(study, study_data.links)
-    if study_data.area_thermals and study_data.enable_random_ts:
-        logger.info(f"Generating timeseries for {study_data.nb_years} years")
-        study.generate_thermal_timeseries(settings.nb_years)
+        add_areas_to_study(study, study_data, used_files)
+        add_links_to_study(study, study_data.links)
+        if study_data.area_thermals and study_data.enable_random_ts:
+            logger.info(f"Generating timeseries for {study_data.nb_years} years")
+            study.generate_thermal_timeseries(settings.nb_years)
 
-    if settings.generation_mode == GenerationMode.LOCAL:
-        _package_and_upload_local_study(study_data.name)
+        if settings.generation_mode == GenerationMode.LOCAL:
+            _package_and_upload_local_study(study_data.name)
 
-    return {
-        "message": f"Study {study_data.name} successfully generated",
-        "study_id": study_id,
-        "study_path": str(study.path) if study.path else "",
-    }
+        return {
+            "message": f"Study {study_data.name} successfully generated",
+            "study_id": study_id,
+            "study_path": str(study.path) if study.path else "",
+        }
+    except Exception:
+        if study:
+            try:
+                if settings.generation_mode == GenerationMode.LOCAL and study.path and study.path.exists():
+                    logger.info(f"Removing failed local study: {study.path}")
+                    shutil.rmtree(study.path)
+                elif settings.generation_mode == GenerationMode.API:
+                    # In API mode, we should delete the study from the API
+                    # The craft Study object has a delete method
+                    logger.info(f"Removing failed API study: {study_data.name}")
+                    study.delete()
+            except Exception as e:
+                logger.error(f"Failed to cleanup failed study: {e}")
+        raise
+    finally:
+        _cleanup_arrow_files(used_files)
+
+
+def _cleanup_arrow_files(used_files: Set[Path]) -> None:
+    """
+    Remove used .arrow files from the output directories after the study generation process.
+    """
+    for file in used_files:
+        if file.exists() and file.suffix == ".arrow":
+            logger.info(f"Removing arrow file: {file}")
+            try:
+                file.unlink()
+            except Exception as e:
+                logger.error(f"Failed to remove arrow file {file}: {e}")
 
 
 def read_study_data_from_json(study_id: str) -> StudyData:
@@ -185,10 +217,13 @@ def _build_area_properties(area_def: dict[str, Any]) -> AreaProperties | None:
     )
 
 
-def _set_area_loads(area_obj: Area, loads: list[str], path_to_load_directory: Path | str) -> None:
+def _set_area_loads(
+    area_obj: Area, loads: list[str], path_to_load_directory: Path | str, used_files: Set[Path]
+) -> None:
     load_directory = Path(path_to_load_directory)
     for load_file in loads:
         load_path = load_directory / load_file
+        used_files.add(load_path)
         df = pd.read_feather(load_path)
         area_obj.set_load(df)
 
@@ -245,7 +280,7 @@ def _create_dsr_binding_constraints(study: Study, area_name: str, df_dsr_constra
         logger.info(f"Created binding constraint {bc_name} for area {area_name}")
 
 
-def add_areas_to_study(study: Study, study_data: StudyData) -> None:
+def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path]) -> None:
     path_to_load_directory = generator_load_directory()
     logger.info(list(study_data.areas.keys()))
     for area_name, area_def in study_data.areas.items():
@@ -262,17 +297,19 @@ def add_areas_to_study(study: Study, study_data: StudyData) -> None:
 
         try:
             area_obj = study.create_area(area_name=area_name, properties=area_properties, ui=area_ui)
-            _set_area_loads(area_obj, loads, path_to_load_directory)
+            _set_area_loads(area_obj, loads, path_to_load_directory, used_files)
 
-            generate_misc_timeseries(area_obj, area_name, misc)
+            generate_misc_timeseries(area_obj, area_name, misc, used_files)
 
-            generate_thermal_clusters(area_obj, thermals, first_month=study_data.first_month)
-            generate_sts_clusters(area_obj, sts)
-            df_dsr_constraints = generate_dsr_clusters(area_obj, dsr, first_month=study_data.first_month)
+            generate_thermal_clusters(area_obj, thermals, first_month=study_data.first_month, used_files=used_files)
+            generate_sts_clusters(area_obj, sts, used_files)
+            df_dsr_constraints = generate_dsr_clusters(
+                area_obj, dsr, first_month=study_data.first_month, used_files=used_files
+            )
             _create_dsr_binding_constraints(study, area_name, df_dsr_constraints)
-            generate_res_clusters(area_obj, area_name, res)
+            generate_res_clusters(area_obj, area_name, res, used_files)
 
-            generate_hydro(area_obj, hydro)
+            generate_hydro(area_obj, hydro, used_files)
 
             logger.info(f"Successfully created area for {area_name}")
         except (APIGenerationError, MiscGenerationError) as e:

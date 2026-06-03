@@ -11,7 +11,7 @@
 # This file is part of the Antares project.
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Set
 
 import pandas as pd
 
@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 DEFAULT_MAXPOWER_VALUE = 24
 
 
-def generate_hydro(area_obj: Any, hydro: dict[str, Any]) -> None:
+def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Set[Path]] = None) -> None:
     if not hydro:
         return
 
@@ -76,8 +76,10 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any]) -> None:
     base_dir = _resolve_hydro_base_directory()
     for series_file in series_list:
         file_path = base_dir / series_file
+        if used_files is not None:
+            used_files.add(file_path)
         if not file_path.exists():
-            continue
+            raise FileNotFoundError(f"ERROR: file {file_path} doesn't exist")
 
         df = pd.read_feather(file_path)
 

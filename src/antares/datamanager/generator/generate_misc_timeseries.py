@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -44,8 +44,10 @@ GROUP_TO_COLUMN = {
 }
 
 
-def generate_misc_timeseries(area_obj: Area, area_name: str, misc: dict[str, Any]) -> None:
-    matrix = build_misc_timeseries_matrix(area_name, misc)
+def generate_misc_timeseries(
+    area_obj: Area, area_name: str, misc: dict[str, Any], used_files: Optional[Set[Path]] = None
+) -> None:
+    matrix = build_misc_timeseries_matrix(area_name, misc, used_files=used_files)
     if matrix.shape[1] != len(MISC_COLUMNS):
         raise ValueError(
             f"Invalid MISC matrix width for area='{area_name}': expected {len(MISC_COLUMNS)}, got {matrix.shape[1]}"
@@ -53,7 +55,9 @@ def generate_misc_timeseries(area_obj: Area, area_name: str, misc: dict[str, Any
     area_obj.set_misc_gen(matrix)
 
 
-def build_misc_timeseries_matrix(area_name: str, misc: dict[str, Any]) -> pd.DataFrame:
+def build_misc_timeseries_matrix(
+    area_name: str, misc: dict[str, Any], used_files: Optional[Set[Path]] = None
+) -> pd.DataFrame:
     matrix = pd.DataFrame(np.zeros((EXPECTED_HOURS, len(MISC_COLUMNS)), dtype=np.float64), columns=MISC_COLUMNS)
 
     if not misc:
@@ -72,7 +76,9 @@ def build_misc_timeseries_matrix(area_name: str, misc: dict[str, Any]) -> pd.Dat
             unmapped_groups_found.add(normalized_group)
             continue
 
-        load_factor = _read_load_factor_series(base_dir, area_name, group_name, validated_group_values)
+        load_factor = _read_load_factor_series(
+            base_dir, area_name, group_name, validated_group_values, used_files=used_files
+        )
         if load_factor is None:
             continue
 
@@ -108,6 +114,7 @@ def _read_load_factor_series(
     area_name: str,
     group_name: str,
     group_values: dict[str, Any],
+    used_files: Optional[Set[Path]] = None,
 ) -> pd.Series[Any] | None:
     raw_series_files = group_values.get("series", [])
     if isinstance(raw_series_files, str):
@@ -131,6 +138,8 @@ def _read_load_factor_series(
 
     filename = series_files[0]
     file_path = _resolve_and_validate_misc_path(base_dir, filename)
+    if used_files is not None:
+        used_files.add(file_path)
     df = pd.read_feather(file_path)
     return _extract_hourly_series(df, area_name, group_name, filename)
 
