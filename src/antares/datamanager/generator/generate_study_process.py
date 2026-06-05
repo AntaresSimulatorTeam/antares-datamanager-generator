@@ -87,7 +87,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     except Exception:
         if study:
             try:
-                if settings.generation_mode == GenerationMode.LOCAL and study.path and study.path.exists():
+                if settings.generation_mode == GenerationMode.LOCAL and study.path and Path(study.path).exists():
                     logger.info(f"Removing failed local study: {study.path}")
                     shutil.rmtree(study.path)
                 elif settings.generation_mode == GenerationMode.API:
