@@ -131,12 +131,13 @@ def test_read_study_data_from_json_with_nb_years(mock_settings, mock_open_file, 
 def test_add_areas_to_study_with_fixed_seed(mock_load_dir):
     mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()
+    used_files = set()
 
     from antares.datamanager.models.study_data_json_model import StudyData
 
     study_data = StudyData(name="test", areas={"area1": {}, "area2": {}})
 
-    add_areas_to_study(mock_study, study_data)
+    add_areas_to_study(mock_study, study_data, used_files)
     assert mock_study.create_area.call_count == 2
 
 
@@ -151,6 +152,7 @@ def test_add_areas_to_study_calls_create_area_and_set_load(
     mock_study.create_area.return_value = mock_area_obj
     mock_generator_load_directory.return_value = "/fake/path"
     mock_read_feather.return_value = "fake_df"
+    used_files = set()
 
     from antares.datamanager.models.study_data_json_model import StudyData
 
@@ -160,7 +162,7 @@ def test_add_areas_to_study_calls_create_area_and_set_load(
         area_loads={"A": ["loadA.feather"], "B": ["loadB.feather", "loadB2.feather"]},
     )
 
-    add_areas_to_study(mock_study, study_data)
+    add_areas_to_study(mock_study, study_data, used_files)
 
     assert mock_study.create_area.call_count == 2
     assert mock_area_obj.set_load.call_count == 3
@@ -328,7 +330,7 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
     mock_study = MagicMock()
     mock_study.service.study_id = "dummy_id"
     mock_study.path = ""
-
+    used_files = set()
     mock_factory = MagicMock()
     mock_factory.create_study.return_value = mock_study
 
@@ -350,7 +352,7 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
     mock_read_study_data_from_json.assert_called_once_with("dummy_id")
     mock_factory.create_study.assert_called_once_with("study_name")
     args, _ = mock_study.update_settings.call_args
-    mock_add_areas.assert_called_once_with(mock_study, study_data)
+    mock_add_areas.assert_called_once_with(mock_study, study_data, used_files)
     mock_add_links.assert_called_once_with(mock_study, study_data.links)
     assert result == {"message": "Study study_name successfully generated", "study_id": "dummy_id", "study_path": ""}
 
@@ -386,7 +388,7 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
             side_effect=lambda **kwargs: kwargs,
         ),
     ):
-        add_areas_to_study(mock_study, study_data)
+        add_areas_to_study(mock_study, study_data, used_files=set())
 
         assert mock_area_obj.create_thermal_cluster.call_count == 2
         mock_area_obj.create_thermal_cluster.assert_any_call("cluster1", {"enabled": True, "nominal_capacity": 2.0})
@@ -417,7 +419,7 @@ def test_add_areas_to_study_creates_sts_clusters(mock_generator_load_directory):
         "antares.datamanager.generator.generate_sts_clusters.STStorageProperties",
         side_effect=lambda **kwargs: kwargs,
     ):
-        add_areas_to_study(mock_study, study_data)
+        add_areas_to_study(mock_study, study_data, used_files=set())
 
         assert mock_area_obj.create_st_storage.call_count == 1
         mock_area_obj.create_st_storage.assert_any_call("sts1", {"enabled": True, "group": "battery"})
@@ -473,7 +475,7 @@ def test_add_areas_to_study_with_unit_count_and_data_sets_prepro(mock_load_dir):
             return_value=sentinel_matrix,
         ) as mock_create_matrix,
     ):
-        add_areas_to_study(mock_study, study_data)
+        add_areas_to_study(mock_study, study_data, used_files=set())
 
         # create_thermal_cluster called once with DummyProps instance
         assert mock_area_obj.create_thermal_cluster.call_count == 1
@@ -627,6 +629,7 @@ class TestInfrastructure:
 def test_add_areas_to_study_uses_ui_and_properties_from_json(mock_load_dir):
     mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()
+    used_files = set()
 
     from antares.datamanager.models.study_data_json_model import StudyData
 
@@ -647,7 +650,7 @@ def test_add_areas_to_study_uses_ui_and_properties_from_json(mock_load_dir):
             self.color_rgb = kwargs.get("color_rgb")
 
     with patch("antares.datamanager.generator.generate_study_process.AreaUi", side_effect=lambda **kw: DummyUI(**kw)):
-        add_areas_to_study(mock_study, study_data)
+        add_areas_to_study(mock_study, study_data, used_files)
 
     # Verify create_area called once with matching UI and parsed properties
     assert mock_study.create_area.call_count == 1
@@ -669,6 +672,7 @@ def test_add_areas_to_study_uses_ui_and_properties_from_json(mock_load_dir):
 def test_add_areas_to_study_invalid_ui_falls_back_to_random(mock_coord, mock_color, mock_load_dir):
     mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()
+    used_files = set()
 
     from antares.datamanager.models.study_data_json_model import StudyData
 
@@ -690,7 +694,7 @@ def test_add_areas_to_study_invalid_ui_falls_back_to_random(mock_coord, mock_col
         return DummyUI(**kwargs)
 
     with patch("antares.datamanager.generator.generate_study_process.AreaUi", side_effect=area_ui_constructor):
-        add_areas_to_study(mock_study, study_data)
+        add_areas_to_study(mock_study, study_data, used_files)
 
     assert mock_study.create_area.call_count == 1
     _, kwargs = mock_study.create_area.call_args
@@ -707,6 +711,7 @@ def test_add_areas_to_study_maps_api_error_to_area_error(mock_load_dir):
     mock_study = MagicMock()
     # Simulate API error when creating the area
     mock_study.create_area.side_effect = APIGenerationError("backend failed")
+    used_files = set()
 
     from antares.datamanager.models.study_data_json_model import StudyData
 
@@ -716,7 +721,7 @@ def test_add_areas_to_study_maps_api_error_to_area_error(mock_load_dir):
     )
 
     with pytest.raises(AreaGenerationError) as exc:
-        add_areas_to_study(mock_study, study_data)
+        add_areas_to_study(mock_study, study_data, used_files)
 
     assert "ERR" in str(exc.value)
     assert "backend failed" in str(exc.value)
@@ -729,13 +734,13 @@ def test_add_areas_to_study_maps_misc_error_to_area_error(mock_generate_misc, mo
     mock_study = MagicMock()
     mock_study.create_area.return_value = MagicMock()
     mock_generate_misc.side_effect = MiscGenerationError("invalid misc data")
-
+    used_files = set()
     from antares.datamanager.models.study_data_json_model import StudyData
 
     study_data = StudyData(name="test", areas={"ERR": {}}, area_misc={"ERR": {"waste": {}}})
 
     with pytest.raises(AreaGenerationError) as exc:
-        add_areas_to_study(mock_study, study_data)
+        add_areas_to_study(mock_study, study_data, used_files)
 
     assert "ERR" in str(exc.value)
     assert "invalid misc data" in str(exc.value)
@@ -753,6 +758,7 @@ def test_add_areas_to_study_calls_res_generator_with_area_payload(
     mock_study = MagicMock()
     mock_area_obj = MagicMock()
     mock_study.create_area.return_value = mock_area_obj
+    used_files = set()
 
     from antares.datamanager.models.study_data_json_model import StudyData
 
@@ -774,6 +780,6 @@ def test_add_areas_to_study_calls_res_generator_with_area_payload(
         },
     )
 
-    add_areas_to_study(mock_study, study_data)
+    add_areas_to_study(mock_study, study_data, used_files)
 
-    mock_generate_res_clusters.assert_called_once_with(mock_area_obj, "FR", study_data.area_res["FR"])
+    mock_generate_res_clusters.assert_called_once_with(mock_area_obj, "FR", study_data.area_res["FR"], used_files)

@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -27,7 +27,9 @@ configure_ecs_logger()
 logger = get_logger(__name__)
 
 
-def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any], first_month: Optional[Month] = None) -> pd.DataFrame:
+def generate_dsr_clusters(
+    area_obj: Area, dsr: Dict[str, Any], first_month: Optional[Month] = None, used_files: Optional[Set[Path]] = None
+) -> pd.DataFrame:
     """
     Generates thermal clusters for DSR (Demand Side Response) based on provided area and DSR data.
     """
@@ -45,6 +47,8 @@ def generate_dsr_clusters(area_obj: Area, dsr: Dict[str, Any], first_month: Opti
         cm_file = next((f for f in cluster_modulation if "cm_" in f.lower()), None)
         if cm_file:
             cm_path = base_dir / cm_file
+            if used_files is not None:
+                used_files.add(cm_path)
             if cm_path.exists():
                 df_cm = pd.read_feather(cm_path)
                 series = df_cm.iloc[:, 0]

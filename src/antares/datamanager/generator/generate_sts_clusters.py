@@ -10,7 +10,7 @@
 #
 # This file is part of the Antares project.
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Set
 
 import pandas as pd
 
@@ -153,7 +153,9 @@ def _extract_constraint_name_from_series_file(filename: str) -> str | None:
     return basename[:marker_index].lower()
 
 
-def _create_sts_additional_constraints(storage: Any, values: Dict[str, Any], base_dir: Path, cluster_name: str) -> None:
+def _create_sts_additional_constraints(
+    storage: Any, values: Dict[str, Any], base_dir: Path, cluster_name: str, used_files: Optional[Set[Path]] = None
+) -> None:
     raw_constraints = values.get("constraintParameters")
     if raw_constraints is None:
         return
@@ -203,11 +205,13 @@ def _create_sts_additional_constraints(storage: Any, values: Dict[str, Any], bas
             )
 
         rhs_path = _resolve_sts_file_path(base_dir, rhs_filename, cluster_name, "constraint RHS matrix")
+        if used_files is not None:
+            used_files.add(rhs_path)
         rhs_df = pd.read_feather(rhs_path)
         storage.set_constraint_term(constraint_name, _extract_matrix(rhs_df))
 
 
-def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any]) -> None:
+def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optional[Set[Path]] = None) -> None:
     # Short-term storage clusters
     for cluster_name, values in sts.items():
         logger.info("Creating sts cluster : ", cluster_name)
@@ -234,9 +238,11 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any]) -> None:
                 continue
 
             file_path = _resolve_sts_file_path(base_dir, filename, cluster_name, "matrix")
+            if used_files is not None:
+                used_files.add(file_path)
 
             df = pd.read_feather(file_path)
             matrix = _extract_matrix(df)
             setter(matrix)
 
-        _create_sts_additional_constraints(storage, values, base_dir, cluster_name)
+        _create_sts_additional_constraints(storage, values, base_dir, cluster_name, used_files=used_files)

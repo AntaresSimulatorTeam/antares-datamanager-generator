@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, Mapping, Optional, Set, cast
 
 import numpy as np
 import pandas as pd
@@ -75,12 +75,15 @@ def read_res_hourly_series(
     filename: str,
     expected_rows: int = EXPECTED_HOURS,
     value_column_index: int = 0,
+    used_files: Optional[Set[Path]] = None,
 ) -> pd.DataFrame:
     """
     Read an .arrow file and return a DataFrame containing all TS
     columns.
     """
     file_path = resolve_and_validate_res_arrow_path(base_dir, filename)
+    if used_files is not None:
+        used_files.add(file_path)
     df = pd.read_feather(file_path)
 
     if df.empty or df.shape[1] < 1:
@@ -133,10 +136,8 @@ def resolve_and_validate_res_arrow_path(
     if not isinstance(filename, str) or not filename:
         raise RESGenerationError("RES series filename must be a non-empty string")
 
-    if not filename.endswith(allowed_extensions):
-        raise RESGenerationError(
-            f"Unexpected RES file extension for '{filename}', expected one of {allowed_extensions}"
-        )
+    if not filename.endswith(".arrow"):
+        raise RESGenerationError(f"Unexpected RES file extension for '{filename}', expected .arrow")
 
     base_resolved = base_dir.resolve()
     file_path = (base_resolved / filename).resolve()
@@ -193,7 +194,9 @@ def build_res_cluster_payload(
     }
 
 
-def generate_res_clusters(area_obj: Area, area_name: str, res: dict[str, Any]) -> None:
+def generate_res_clusters(
+    area_obj: Area, area_name: str, res: dict[str, Any], used_files: Optional[Set[Path]] = None
+) -> None:
     """
     Expected `res` json :
     {
@@ -251,6 +254,7 @@ def generate_res_clusters(area_obj: Area, area_name: str, res: dict[str, Any]) -
             group_key=group_key,
             group_values=group_values,
             base_ts_directory=base_ts_directory,
+            used_files=used_files,
         )
 
         logger.info("Prepared RES cluster payload area=%s group=%s payload=%s", area_name, group_key, payload)
@@ -301,6 +305,7 @@ def _build_fr_weighted_series_from_aggregation(
     group_key: str,
     raw_fr_aggregation: Any,
     base_ts_directory: Path,
+    used_files: Optional[Set[Path]] = None,
 ) -> pd.DataFrame:
     if not isinstance(raw_fr_aggregation, Mapping):
         raise RESGenerationError(f"Missing or invalid fr_aggregation for FR area='{area_name}', group='{group_key}'")
@@ -332,6 +337,7 @@ def _build_fr_weighted_series_from_aggregation(
         expected_zones=set(zone_weights.keys()),
         expected_techs_by_zone={zone: set(techs.keys()) for zone, techs in tech_weights_by_zone.items()},
         base_ts_directory=base_ts_directory,
+        used_files=used_files,
     )
 
     return compute_fr_weighted_load_factor(
@@ -400,6 +406,7 @@ def _load_tech_series_by_zone(
     expected_zones: set[str],
     expected_techs_by_zone: Mapping[str, set[str]],
     base_ts_directory: Path,
+    used_files: Optional[Set[Path]] = None,
 ) -> dict[str, dict[str, pd.DataFrame]]:
     if not isinstance(raw_series_by_zone_and_tech, Mapping):
         raise RESGenerationError(f"Invalid series_by_zone_and_tech for area='{area_name}', group='{group_key}'")
@@ -438,6 +445,7 @@ def _load_tech_series_by_zone(
                 filename=str(filename),
                 expected_rows=EXPECTED_HOURS,
                 value_column_index=RES_VALUE_COLUMN_INDEX,
+                used_files=used_files,
             )
         series_by_zone[zone] = loaded_by_tech
 
@@ -613,6 +621,7 @@ def _process_res_entry(
     group_key: str,
     group_values: Any,
     base_ts_directory: Path,
+    used_files: Optional[Set[Path]] = None,
 ) -> tuple[dict[str, Any], pd.DataFrame | None]:
     if not isinstance(group_values, Mapping):
         raise RESGenerationError(f"Invalid RES group payload for area='{area_name}', group='{group_key}'")
@@ -650,6 +659,7 @@ def _process_res_entry(
         series_files=series_files,
         fr_aggregation=fr_aggregation,
         base_ts_directory=base_ts_directory,
+        used_files=used_files,
     )
     return payload, validated_series
 
@@ -662,6 +672,7 @@ def _compute_cluster_series(
     series_files: list[str],
     fr_aggregation: Any,
     base_ts_directory: Path,
+    used_files: Optional[Set[Path]] = None,
 ) -> pd.DataFrame:
     if normalized_area_name == "FR":
         if series_files:
@@ -673,6 +684,7 @@ def _compute_cluster_series(
             group_key=group_key,
             raw_fr_aggregation=fr_aggregation,
             base_ts_directory=base_ts_directory,
+            used_files=used_files,
         )
 
     if fr_aggregation is not None:
@@ -688,6 +700,7 @@ def _compute_cluster_series(
         filename=series_files[0],
         expected_rows=EXPECTED_HOURS,
         value_column_index=RES_VALUE_COLUMN_INDEX,
+        used_files=used_files,
     )
 
 

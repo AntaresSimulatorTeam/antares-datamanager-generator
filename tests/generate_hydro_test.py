@@ -10,6 +10,8 @@
 #
 # This file is part of the Antares project.
 
+import pytest
+
 import pandas as pd
 
 from antares.datamanager.generator.generate_hydro import generate_hydro
@@ -115,9 +117,9 @@ def test_generate_hydro_missing_file(tmp_path, monkeypatch):
     area_obj = MockArea(name="at")
     hydro_data = {"series": ["non_existent.arrow"]}
 
-    # Should skip the missing file and not raise error
-    generate_hydro(area_obj, hydro_data)
-    assert area_obj.hydro.series == {}
+    # Should raise error when file is missing
+    with pytest.raises(FileNotFoundError, match="ERROR: file .* doesn't exist"):
+        generate_hydro(area_obj, hydro_data)
 
 
 def test_generate_hydro_with_duplicate_allocations(tmp_path, monkeypatch):
