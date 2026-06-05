@@ -136,9 +136,9 @@ def resolve_and_validate_res_arrow_path(
     if not isinstance(filename, str) or not filename:
         raise RESGenerationError("RES series filename must be a non-empty string")
 
-    if not filename.endswith(allowed_extensions):
+    if not filename.endswith(".arrow"):
         raise RESGenerationError(
-            f"Unexpected RES file extension for '{filename}', expected one of {allowed_extensions}"
+            f"Unexpected RES file extension for '{filename}', expected .arrow"
         )
 
     base_resolved = base_dir.resolve()

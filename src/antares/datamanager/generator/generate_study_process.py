@@ -107,7 +107,7 @@ def _cleanup_arrow_files(used_files: Set[Path]) -> None:
     Remove used .arrow files from the output directories after the study generation process.
     """
     for file in used_files:
-        if file.exists() and file.suffix == ".arrow":
+        if file.exists() and file.name.endswith(".arrow"):
             logger.info(f"Removing arrow file: {file}")
             try:
                 file.unlink()
