@@ -12,7 +12,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from antares.datamanager.generator.generate_study_process import _cleanup_arrow_files, generate_study
+from antares.datamanager.generator.generate_study_process import generate_study
+from antares.datamanager.utils.arrow_cleanup_utils import ArrowCleanupUtils
 
 
 def test_cleanup_arrow_files_basic(tmp_path):
@@ -31,7 +32,7 @@ def test_cleanup_arrow_files_basic(tmp_path):
     used_files = {file1, file2, file3}  # file3 is .txt, should be ignored by logic
 
     # Action
-    _cleanup_arrow_files(used_files)
+    ArrowCleanupUtils.cleanup_arrow_files(used_files)
 
     # Assert
     assert not file1.exists()
@@ -46,7 +47,7 @@ def test_cleanup_arrow_files_non_existent(tmp_path):
     used_files = {file_path}
 
     # Action & Assert: Should not raise any error
-    _cleanup_arrow_files(used_files)
+    ArrowCleanupUtils.cleanup_arrow_files(used_files)
 
 
 def test_cleanup_arrow_files_error_handling(tmp_path):
@@ -55,14 +56,14 @@ def test_cleanup_arrow_files_error_handling(tmp_path):
     file_path.touch()
 
     with patch.object(Path, "unlink", side_effect=OSError("Permission denied")):
-        # Action & Assert: Should not raise error due to try-except in _cleanup_arrow_files
-        _cleanup_arrow_files({file_path})
+        # Action & Assert: Should not raise error due to try-except in cleanup_arrow_files
+        ArrowCleanupUtils.cleanup_arrow_files({file_path})
 
     assert file_path.exists()
 
 
 @patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
-@patch("antares.datamanager.generator.generate_study_process._cleanup_arrow_files")
+@patch("antares.datamanager.utils.arrow_cleanup_utils.ArrowCleanupUtils.cleanup_arrow_files")
 def test_generate_study_calls_cleanup(mock_cleanup, mock_read_json):
     # Setup
     mock_factory = MagicMock()
@@ -85,7 +86,7 @@ def test_generate_study_calls_cleanup(mock_cleanup, mock_read_json):
 
 @patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
 @patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
-@patch("antares.datamanager.generator.generate_study_process._cleanup_arrow_files")
+@patch("antares.datamanager.utils.arrow_cleanup_utils.ArrowCleanupUtils.cleanup_arrow_files")
 def test_generate_study_cleanup_on_failure(mock_cleanup, mock_add_areas, mock_read_json):
     # Setup
     mock_factory = MagicMock()

@@ -51,6 +51,7 @@ from antares.datamanager.generator.study_adapters import StudyFactory
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
 from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.area_ui_utils import generate_random_color, generate_random_coordinate
+from antares.datamanager.utils.arrow_cleanup_utils import ArrowCleanupUtils
 
 # Configurer le logger au démarrage du module (ou appeler configure_ecs_logger() dans le main)
 configure_ecs_logger()
@@ -62,6 +63,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     study = None
     try:
         study_data = read_study_data_from_json(study_id)
+        used_files.update(ArrowCleanupUtils.collect_all_arrow_files(study_data))
         study = factory.create_study(study_data.name)
         study_settings = StudySettingsUpdate(
             general_parameters=GeneralParametersUpdate(
@@ -99,20 +101,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
                 logger.error(f"Failed to cleanup failed study: {e}")
         raise
     finally:
-        _cleanup_arrow_files(used_files)
-
-
-def _cleanup_arrow_files(used_files: Set[Path]) -> None:
-    """
-    Remove used .arrow files from the output directories after the study generation process.
-    """
-    for file in used_files:
-        if file.exists() and file.name.endswith(".arrow"):
-            logger.info(f"Removing arrow file: {file}")
-            try:
-                file.unlink()
-            except Exception as e:
-                logger.error(f"Failed to remove arrow file {file}: {e}")
+        ArrowCleanupUtils.cleanup_arrow_files(used_files)
 
 
 def read_study_data_from_json(study_id: str) -> StudyData:
