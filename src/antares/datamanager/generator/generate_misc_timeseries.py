@@ -195,7 +195,8 @@ def _validate_normalized_load_factor(load_factor: pd.Series[Any], area_name: str
 
 
 def _resolve_and_validate_misc_path(base_dir: Path, filename: str) -> Path:
-    if not filename.endswith(".arrow"):
+    filename = filename.strip()
+    if not filename.lower().endswith(".arrow"):
         raise MiscGenerationError(f"Unexpected MISC file extension for '{filename}'")
 
     base_resolved = base_dir.resolve()

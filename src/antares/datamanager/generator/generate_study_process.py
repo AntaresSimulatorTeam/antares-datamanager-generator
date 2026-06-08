@@ -211,6 +211,7 @@ def _set_area_loads(
 ) -> None:
     load_directory = Path(path_to_load_directory)
     for load_file in loads:
+        load_file = load_file.strip()
         load_path = load_directory / load_file
         used_files.add(load_path)
         df = pd.read_feather(load_path)

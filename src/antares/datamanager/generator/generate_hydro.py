@@ -75,6 +75,7 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Se
     # Set series
     base_dir = _resolve_hydro_base_directory()
     for series_file in series_list:
+        series_file = series_file.strip()
         file_path = base_dir / series_file
         if used_files is not None:
             used_files.add(file_path)
@@ -83,15 +84,16 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Se
 
         df = pd.read_feather(file_path)
 
-        if "_mod" in series_file:
+        lower_series_file = series_file.lower()
+        if "_mod" in lower_series_file:
             area_obj.hydro.set_mod_series(df)
-        elif "_ror" in series_file:
+        elif "_ror" in lower_series_file:
             area_obj.hydro.set_ror_series(df)
-        elif "_mingen" in series_file:
+        elif "_mingen" in lower_series_file:
             area_obj.hydro.set_mingen(df)
-        elif "_reservoir" in series_file:
+        elif "_reservoir" in lower_series_file:
             area_obj.hydro.set_reservoir(df)
-        elif "_maxpower" in series_file:
+        elif "_maxpower" in lower_series_file:
             # maxpower series should have 4 columns:
             # Col 0: Original data from arrow file
             # Col 1: DEFAULT_MAXPOWER_VALUE (24)

@@ -40,6 +40,7 @@ def _resolve_sts_file_path(base_dir: Path, filename: str, cluster_name: str, fil
     if not isinstance(filename, str) or not filename.strip():
         raise ValueError(f"Invalid {file_kind} filename for cluster '{cluster_name}': {filename!r}")
 
+    filename = filename.strip()
     file_name_path = Path(filename)
     if file_name_path.is_absolute() or ".." in file_name_path.parts:
         raise ValueError(f"Unsafe {file_kind} filename for cluster '{cluster_name}': {filename!r}")
@@ -232,7 +233,7 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optio
         base_dir = settings.sts_ts_directory
 
         for filename in sts_series:
-            prefix = filename.split(".")[0]
+            prefix = filename.split(".")[0].lower()
             setter = matrix_setter_map.get(prefix)
             if not setter:
                 continue

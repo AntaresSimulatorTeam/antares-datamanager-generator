@@ -27,7 +27,7 @@ class ArrowCleanupUtils:
         Remove used .arrow files from the output directories after the study generation process.
         """
         for file in used_files:
-            if file.exists() and file.name.endswith(".arrow"):
+            if file.exists() and file.name.lower().endswith(".arrow"):
                 logger.info(f"Removing arrow file: {file}")
                 try:
                     file.unlink()
@@ -45,8 +45,8 @@ class ArrowCleanupUtils:
         load_dir = Path(settings.load_output_directory)
         for loads in study_data.area_loads.values():
             for f in loads:
-                if f.endswith(".arrow"):
-                    all_files.add((load_dir / f).resolve())
+                if f.strip().lower().endswith(".arrow"):
+                    all_files.add((load_dir / f.strip()).resolve())
 
         # Thermals
         thermal_dir = Path(settings.param_modulation_directory)
@@ -55,8 +55,8 @@ class ArrowCleanupUtils:
                 props = thermal_values.get("properties", {})
                 modulation = props.get("cluster_modulation", [])
                 for f in modulation:
-                    if f.endswith(".arrow"):
-                        all_files.add((thermal_dir / f).resolve())
+                    if f.strip().lower().endswith(".arrow"):
+                        all_files.add((thermal_dir / f.strip()).resolve())
 
         # RES
         res_dir = Path(settings.res_ts_directory)
@@ -64,33 +64,33 @@ class ArrowCleanupUtils:
             for res_entry in res_map.values():
                 # Standard series
                 for f in res_entry.get("series", []):
-                    if f.endswith(".arrow"):
-                        all_files.add((res_dir / f).resolve())
+                    if f.strip().lower().endswith(".arrow"):
+                        all_files.add((res_dir / f.strip()).resolve())
                 # FR aggregation
                 fr_agg = res_entry.get("fr_aggregation", {})
                 series_by_zone_and_tech = fr_agg.get("series_by_zone_and_tech", {})
                 for tech_map in series_by_zone_and_tech.values():
                     for f in tech_map.values():
-                        if f.endswith(".arrow"):
-                            all_files.add((res_dir / f).resolve())
+                        if f.strip().lower().endswith(".arrow"):
+                            all_files.add((res_dir / f.strip()).resolve())
 
         # STS
         sts_dir = Path(settings.sts_ts_directory)
         for sts_map in study_data.area_sts.values():
             for sts_values in sts_map.values():
                 for f in sts_values.get("series", []):
-                    if f.endswith(".arrow"):
-                        all_files.add((sts_dir / f).resolve())
+                    if f.strip().lower().endswith(".arrow"):
+                        all_files.add((sts_dir / f.strip()).resolve())
                 for f in sts_values.get("stsConstraintsSeriesList", []):
-                    if f.endswith(".arrow"):
-                        all_files.add((sts_dir / f).resolve())
+                    if f.strip().lower().endswith(".arrow"):
+                        all_files.add((sts_dir / f.strip()).resolve())
 
         # Hydro
         hydro_dir = Path(settings.hydro_ts_directory)
         for hydro_values in study_data.area_hydro.values():
             for f in hydro_values.get("series", []):
-                if f.endswith(".arrow"):
-                    all_files.add((hydro_dir / f).resolve())
+                if f.strip().lower().endswith(".arrow"):
+                    all_files.add((hydro_dir / f.strip()).resolve())
 
         # Misc
         misc_dir = Path(settings.misc_ts_directory)
@@ -100,7 +100,7 @@ class ArrowCleanupUtils:
                 if isinstance(series, str):
                     series = [series]
                 for f in series:
-                    if f.endswith(".arrow"):
-                        all_files.add((misc_dir / f).resolve())
+                    if f.strip().lower().endswith(".arrow"):
+                        all_files.add((misc_dir / f.strip()).resolve())
 
         return all_files
