@@ -755,3 +755,86 @@ def test_generate_res_clusters_backward_compat_cluster_name_equals_group_name(tm
     assert cluster.name == "wind_onshore"
     assert cluster.properties.group == "Wind Onshore"
     assert float(cluster.series.iloc[0, 0]) == pytest.approx(0.7)
+
+
+def test_generate_res_clusters_empty_res_is_a_no_op(tmp_path, monkeypatch):
+    area = _make_area()
+    _set_res_directory(monkeypatch, tmp_path)
+    generate_res_clusters(area, "AT", {})
+    assert len(area.created) == 0
+
+
+@pytest.mark.parametrize(
+    "bad_props,expected_match",
+    [
+        ("not_a_dict", "Invalid RES properties"),
+        ({"capacity": 1000}, "Missing RES properties.group"),
+    ],
+)
+def test_generate_res_clusters_rejects_invalid_properties(tmp_path, monkeypatch, bad_props, expected_match):
+    _set_res_directory(monkeypatch, tmp_path)
+    with pytest.raises(RESGenerationError, match=expected_match):
+        generate_res_clusters(_make_area(), "AT", {"wind_onshore": {"properties": bad_props, "series": []}})
+
+
+@pytest.mark.parametrize(
+    "fr_aggregation,expected_match",
+    [
+        (None, "Missing or invalid fr_aggregation"),
+        ({"zone_weights": {"FR01": 1.0}}, "Missing FR aggregation keys"),
+        ({"zone_weights": {"DE01": 1.0}, "tech_weights_by_zone": {}, "series_by_zone_and_tech": {}}, "Invalid FR zone key"),
+        ({"zone_weights": {"FRxx": 1.0}, "tech_weights_by_zone": {}, "series_by_zone_and_tech": {}}, "Invalid FR zone key"),
+        (
+            {
+                "zone_weights": {"FR01": 1.0},
+                "tech_weights_by_zone": {"FR01": {"t1": 1.0}},
+                "series_by_zone_and_tech": {"FR01": "not_a_dict"},
+            },
+            "Invalid technology series map",
+        ),
+    ],
+)
+def test_fr_aggregation_rejects_invalid_structure(tmp_path, monkeypatch, fr_aggregation, expected_match):
+    _set_res_directory(monkeypatch, tmp_path)
+    cluster_values: dict = {"properties": {"group": "wind_offshore", "capacity": 10}, "series": []}
+    if fr_aggregation is not None:
+        cluster_values["fr_aggregation"] = fr_aggregation
+    with pytest.raises(RESGenerationError, match=expected_match):
+        generate_res_clusters(_make_area(), "FR", {"wind_offshore": cluster_values})
+
+
+def test_fr_aggregation_rejects_missing_series_for_nonzero_weight_tech(tmp_path, monkeypatch):
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.5] * 8760}).to_feather(tmp_path / "t1.arrow")
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_offshore": {
+            "properties": {"group": "wind_offshore", "capacity": 10},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": 1.0},
+                "tech_weights_by_zone": {"FR01": {"t1": 0.5, "t2": 0.5}},
+                "series_by_zone_and_tech": {"FR01": {"t1": "t1.arrow"}},
+            },
+        }
+    }
+    with pytest.raises(RESGenerationError, match="Missing technology series"):
+        generate_res_clusters(_make_area(), "FR", res)
+
+
+def test_fr_aggregation_zero_weight_zone_is_excluded_from_computation(tmp_path, monkeypatch):
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.6] * 8760}).to_feather(tmp_path / "fr02.arrow")
+    area = _make_area()
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_offshore": {
+            "properties": {"group": "wind_offshore", "capacity": 1000},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": 0.0, "FR02": 1.0},
+                "tech_weights_by_zone": {"FR02": {"t1": 1.0}},
+                "series_by_zone_and_tech": {"FR02": {"t1": "fr02.arrow"}},
+            },
+        }
+    }
+    generate_res_clusters(area, "FR", res)
+    assert float(area.timeseries["wind_offshore"].iloc[0, 0]) == pytest.approx(0.6)
