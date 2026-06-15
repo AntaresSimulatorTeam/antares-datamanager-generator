@@ -174,7 +174,7 @@ def test_generate_res_clusters_invalid_payload_type(tmp_path, monkeypatch):
 
 def test_generate_res_clusters_invalid_group_values(tmp_path, monkeypatch):
     _set_res_directory(monkeypatch, tmp_path)
-    with pytest.raises(RESGenerationError, match="Invalid RES group payload"):
+    with pytest.raises(RESGenerationError, match="Invalid RES cluster payload"):
         generate_res_clusters(_make_area(), "FR", {"wind_onshore": "string_not_dict"})
 
 
