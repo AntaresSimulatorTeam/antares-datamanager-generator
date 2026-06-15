@@ -782,8 +782,14 @@ def test_generate_res_clusters_rejects_invalid_properties(tmp_path, monkeypatch,
     [
         (None, "Missing or invalid fr_aggregation"),
         ({"zone_weights": {"FR01": 1.0}}, "Missing FR aggregation keys"),
-        ({"zone_weights": {"DE01": 1.0}, "tech_weights_by_zone": {}, "series_by_zone_and_tech": {}}, "Invalid FR zone key"),
-        ({"zone_weights": {"FRxx": 1.0}, "tech_weights_by_zone": {}, "series_by_zone_and_tech": {}}, "Invalid FR zone key"),
+        (
+            {"zone_weights": {"DE01": 1.0}, "tech_weights_by_zone": {}, "series_by_zone_and_tech": {}},
+            "Invalid FR zone key",
+        ),
+        (
+            {"zone_weights": {"FRxx": 1.0}, "tech_weights_by_zone": {}, "series_by_zone_and_tech": {}},
+            "Invalid FR zone key",
+        ),
         (
             {
                 "zone_weights": {"FR01": 1.0},
