@@ -468,20 +468,6 @@ def test_resolve_capacity_and_enabled_tiny_positive_value_is_enabled():
     assert enabled is True
 
 
-def test_generate_res_clusters_rejects_cluster_key_group_mismatch(tmp_path, monkeypatch):
-    area = _make_area()
-    _set_res_directory(monkeypatch, tmp_path)
-    res = {
-        "wind_onshore": {
-            "properties": {"group": "wind_offshore", "capacity": 100.0},
-            "series": ["dummy.arrow"],
-        }
-    }
-
-    with pytest.raises(RESGenerationError, match="key must match properties.group"):
-        generate_res_clusters(area, "AT", res)
-
-
 def test_generate_res_clusters_rejects_fr_with_non_empty_series(tmp_path, monkeypatch):
     area = _make_area()
     _set_res_directory(monkeypatch, tmp_path)
@@ -601,3 +587,171 @@ def test_generate_res_clusters_accepts_fr_zone_without_leading_zero(tmp_path, mo
 
     assert len(area.payloads) == 1
     assert "wind_offshore" in area.timeseries
+
+
+# tests multi clusters
+
+
+def test_generate_res_clusters_cluster_name_differs_from_group_is_accepted(tmp_path, monkeypatch):
+    file_path = tmp_path / "series.arrow"
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.3] * 8760}).to_feather(file_path)
+
+    area = _make_area()
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "solar_pv_cluster_A": {
+            "properties": {"group": "solar_pv", "capacity": 500},
+            "series": ["series.arrow"],
+        }
+    }
+
+    generate_res_clusters(area, "DE", res)
+
+    assert len(area.payloads) == 1
+    assert area.payloads[0]["cluster"] == "solar_pv_cluster_A"
+    assert area.payloads[0]["group"] == "Solar PV"
+
+
+def test_generate_res_clusters_two_clusters_same_group_produce_two_independent_entries(tmp_path, monkeypatch):
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.2] * 8760}).to_feather(tmp_path / "cluster_a.arrow")
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.8] * 8760}).to_feather(tmp_path / "cluster_b.arrow")
+
+    area = _make_area()
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "cluster_A": {
+            "properties": {"group": "solar_pv", "capacity": 300},
+            "series": ["cluster_a.arrow"],
+        },
+        "cluster_B": {
+            "properties": {"group": "solar_pv", "capacity": 700},
+            "series": ["cluster_b.arrow"],
+        },
+    }
+
+    generate_res_clusters(area, "DE", res)
+
+    assert len(area.created) == 2
+
+    clusters_by_name = {c.name: c for c in area.created}
+    assert set(clusters_by_name.keys()) == {"cluster_A", "cluster_B"}
+
+    assert clusters_by_name["cluster_A"].properties.group == "Solar PV"
+    assert clusters_by_name["cluster_A"].properties.nominal_capacity == 300.0
+    assert float(clusters_by_name["cluster_A"].series.iloc[0, 0]) == pytest.approx(0.2)
+
+    assert clusters_by_name["cluster_B"].properties.group == "Solar PV"
+    assert clusters_by_name["cluster_B"].properties.nominal_capacity == 700.0
+    assert float(clusters_by_name["cluster_B"].series.iloc[0, 0]) == pytest.approx(0.8)
+
+
+def test_generate_res_clusters_two_clusters_same_group_series_are_independent(tmp_path, monkeypatch):
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.1] * 8760}).to_feather(tmp_path / "s1.arrow")
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.9] * 8760}).to_feather(tmp_path / "s2.arrow")
+
+    area = _make_area()
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_onshore_north": {
+            "properties": {"group": "wind_onshore", "capacity": 1000},
+            "series": ["s1.arrow"],
+        },
+        "wind_onshore_south": {
+            "properties": {"group": "wind_onshore", "capacity": 1000},
+            "series": ["s2.arrow"],
+        },
+    }
+
+    generate_res_clusters(area, "DE", res)
+
+    ts_north = area.timeseries["wind_onshore_north"]
+    ts_south = area.timeseries["wind_onshore_south"]
+
+    assert float(ts_north.iloc[0, 0]) == pytest.approx(0.1)
+    assert float(ts_south.iloc[0, 0]) == pytest.approx(0.9)
+    assert not ts_north.equals(ts_south)
+
+
+def test_generate_res_clusters_multiple_clusters_one_disabled_one_enabled(tmp_path, monkeypatch):
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.5] * 8760}).to_feather(tmp_path / "active.arrow")
+
+    area = _make_area()
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "cluster_active": {
+            "properties": {"group": "wind_offshore", "capacity": 800},
+            "series": ["active.arrow"],
+        },
+        "cluster_inactive": {
+            "properties": {"group": "wind_offshore", "capacity": 0},
+            "series": [],
+        },
+    }
+
+    generate_res_clusters(area, "BE", res)
+
+    assert len(area.created) == 2
+    clusters_by_name = {c.name: c for c in area.created}
+
+    assert clusters_by_name["cluster_active"].properties.enabled is True
+    assert clusters_by_name["cluster_active"].series is not None
+
+    assert clusters_by_name["cluster_inactive"].properties.enabled is False
+    assert clusters_by_name["cluster_inactive"].series is None
+
+
+def test_generate_res_clusters_two_fr_clusters_same_group_each_get_own_aggregation(tmp_path, monkeypatch):
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.4] * 8760}).to_feather(tmp_path / "fr01_a.arrow")
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.6] * 8760}).to_feather(tmp_path / "fr01_b.arrow")
+
+    area = _make_area()
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "solar_pv_cluster_A": {
+            "properties": {"group": "solar_pv", "capacity": 500},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": 1.0},
+                "tech_weights_by_zone": {"FR01": {"pv_utility": 1.0}},
+                "series_by_zone_and_tech": {"FR01": {"pv_utility": "fr01_a.arrow"}},
+            },
+        },
+        "solar_pv_cluster_B": {
+            "properties": {"group": "solar_pv", "capacity": 200},
+            "series": [],
+            "fr_aggregation": {
+                "zone_weights": {"FR01": 1.0},
+                "tech_weights_by_zone": {"FR01": {"pv_utility": 1.0}},
+                "series_by_zone_and_tech": {"FR01": {"pv_utility": "fr01_b.arrow"}},
+            },
+        },
+    }
+
+    generate_res_clusters(area, "FR", res)
+
+    assert len(area.created) == 2
+    clusters_by_name = {c.name: c for c in area.created}
+
+    assert float(clusters_by_name["solar_pv_cluster_A"].series.iloc[0, 0]) == pytest.approx(0.4)
+    assert float(clusters_by_name["solar_pv_cluster_B"].series.iloc[0, 0]) == pytest.approx(0.6)
+
+
+def test_generate_res_clusters_backward_compat_cluster_name_equals_group_name(tmp_path, monkeypatch):
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.7] * 8760}).to_feather(tmp_path / "series.arrow")
+
+    area = _make_area()
+    _set_res_directory(monkeypatch, tmp_path)
+    res = {
+        "wind_onshore": {
+            "properties": {"group": "wind_onshore", "capacity": 1500},
+            "series": ["series.arrow"],
+        }
+    }
+
+    generate_res_clusters(area, "AT", res)
+
+    assert len(area.created) == 1
+    cluster = area.created[0]
+    assert cluster.name == "wind_onshore"
+    assert cluster.properties.group == "Wind Onshore"
+    assert float(cluster.series.iloc[0, 0]) == pytest.approx(0.7)

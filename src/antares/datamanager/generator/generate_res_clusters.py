@@ -184,9 +184,9 @@ def generate_res_clusters(
     area_obj: Area, area_name: str, res: dict[str, Any], used_files: Optional[Set[Path]] = None
 ) -> None:
     """
-    Expected `res` json :
+    Expected RES JSON
     {
-      "wind_onshore": {
+      "cluster_name": {
         "properties": {
           "capacity": 5000,
           "group": "wind_onshore"
@@ -196,28 +196,28 @@ def generate_res_clusters(
     }
     for FR only:
     {
-      "wind_onshore": {
+      "cluster_name": {
         "properties": {
           "capacity": 5000,
           "group": "wind_onshore"
         },
-        "series": []
+        "series": [],
         "fr_aggregation": {
             "zone_weights": {
               "FR01": 0.2,
-              "FRO2": 0.0,
+              "FR02": 0.0
             },
             "tech_weights_by_zone": {
               "FR01": {
                 "offshore_tech1": 0.6,
                 "offshore_tech2": 0.4
-              },
+              }
             },
             "series_by_zone_and_tech": {
               "FR01": {
                 "offshore_tech1": "fr01_offshore_tech1.arrow",
                 "offshore_tech2": "fr01_offshore_tech2.arrow"
-              },
+              }
             }
           }
       }
@@ -243,7 +243,7 @@ def generate_res_clusters(
             used_files=used_files,
         )
 
-        logger.info("Prepared RES cluster payload area=%s group=%s payload=%s", area_name, group_key, payload)
+        logger.info("Prepared RES cluster payload area=%s cluster=%s payload=%s", area_name, group_key, payload)
         _register_res_outputs(
             area_obj=area_obj, group_key=group_key, payload=payload, validated_series=validated_series
         )
@@ -276,13 +276,6 @@ def _extract_res_properties(*, area_name: str, group_key: str, group_values: Map
         raise RESGenerationError(f"Missing RES properties.capacity for area='{area_name}', group='{group_key}'")
 
     return str(properties.get("group", "")), properties.get("capacity")
-
-
-def _validate_group_key_matches_group(*, area_name: str, group_key: str, group_name: str) -> None:
-    if str(group_key).strip().lower() != str(group_name).strip().lower():
-        raise RESGenerationError(
-            f"RES entry key must match properties.group; area='{area_name}', key='{group_key}', group='{group_name}'"
-        )
 
 
 def _build_fr_weighted_series_from_aggregation(
@@ -616,7 +609,6 @@ def _process_res_entry(
         group_key=group_key,
         group_values=group_values,
     )
-    _validate_group_key_matches_group(area_name=area_name, group_key=group_key, group_name=group_raw)
 
     aw_group = map_res_group_to_aw(group_raw)
     capacity, enabled = resolve_res_capacity_and_enabled(installed_power=installed_power)
