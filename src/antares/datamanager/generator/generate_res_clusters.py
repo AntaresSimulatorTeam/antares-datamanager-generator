@@ -36,8 +36,6 @@ RES_GROUP_TO_AW = {
     "solar_thermo": "Solar Thermal",
 }
 
-RES_VALUE_COLUMN_INDEX = 0
-
 
 def map_res_group_to_aw(group: str) -> str:
     normalized = str(group).strip().lower()
@@ -74,7 +72,6 @@ def read_res_hourly_series(
     base_dir: Path,
     filename: str,
     expected_rows: int = EXPECTED_HOURS,
-    value_column_index: int = 0,
     used_files: Optional[Set[Path]] = None,
 ) -> pd.DataFrame:
     """
@@ -87,43 +84,32 @@ def read_res_hourly_series(
     df = pd.read_feather(file_path)
 
     if df.empty or df.shape[1] < 1:
-        raise RESGenerationError(f"RES .arrow file has no time series columns for file='{filename}'")
+        raise RESGenerationError(f"RES series file has no time series columns for file='{filename}'")
 
     if len(df.index) != expected_rows:
         raise RESGenerationError(
-            f"RES .arrow file must contain {expected_rows} rows for file='{filename}', got {len(df.index)}"
+            f"RES series file must contain {expected_rows} rows for file='{filename}', got {len(df.index)}"
         )
 
-    # If the first column is not TS and all remaining columns are
-    # drop the first column.
-    numeric_mask = pd.Series(
-        [pd.to_numeric(df[column], errors="coerce").notna().all() for column in df.columns],
-        index=df.columns,
-        dtype=bool,
-    )
-    selected_columns = [column for column, keep in numeric_mask.items() if bool(keep)]
-    if df.shape[1] > 1 and not bool(numeric_mask.iloc[0]) and bool(numeric_mask.iloc[1:].all()):
-        selected_columns = [column for column in df.columns[1:] if bool(numeric_mask[column])]
-
-    ts_df: pd.DataFrame = df.loc[:, selected_columns].copy()
+    # First column is always a date, skip.
+    ts_df: pd.DataFrame = df.iloc[:, 1:].copy()
 
     if ts_df.shape[1] == 0:
-        raise RESGenerationError(f"RES .arrow file contains no numeric time series for file='{filename}'")
+        raise RESGenerationError(f"RES series file contains no numeric time series for file='{filename}'")
 
     ts_df = pd.DataFrame({column: pd.to_numeric(ts_df[column], errors="coerce") for column in ts_df.columns}).astype(
         float
     )
     if ts_df.isna().any(axis=None):
-        raise RESGenerationError(f"RES .arrow file contains non-numeric values for file='{filename}'")
+        raise RESGenerationError(f"RES series file contains non-numeric values for file='{filename}'")
 
-    # TODO: uncomment the value check when load factor data is validated (solar_pv)
-    # out_of_bounds_mask = (ts_df < 0.0) | (ts_df > 1.0)
-    # if out_of_bounds_mask.any(axis=None):
-    #     min_v = float(ts_df.min().min())
-    #     max_v = float(ts_df.max().max())
-    #     raise RESGenerationError(
-    #         f"RES .arrow values out of bounds [0,1] for file='{filename}' (min={min_v}, max={max_v})"
-    #     )
+    out_of_bounds_mask = (ts_df < 0.0) | (ts_df > 1.0)
+    if out_of_bounds_mask.any(axis=None):
+        min_v = float(ts_df.min().min())
+        max_v = float(ts_df.max().max())
+        raise RESGenerationError(
+            f"RES series values out of bounds [0,1] for file='{filename}' (min={min_v}, max={max_v})"
+        )
 
     return ts_df
 
@@ -444,7 +430,6 @@ def _load_tech_series_by_zone(
                 base_dir=base_ts_directory,
                 filename=str(filename),
                 expected_rows=EXPECTED_HOURS,
-                value_column_index=RES_VALUE_COLUMN_INDEX,
                 used_files=used_files,
             )
         series_by_zone[zone] = loaded_by_tech
@@ -699,7 +684,6 @@ def _compute_cluster_series(
         base_dir=base_ts_directory,
         filename=series_files[0],
         expected_rows=EXPECTED_HOURS,
-        value_column_index=RES_VALUE_COLUMN_INDEX,
         used_files=used_files,
     )
 

@@ -98,11 +98,9 @@ def test_read_res_hourly_series_non_numeric(tmp_path):
         read_res_hourly_series(base_dir=tmp_path, filename="str.arrow")
 
 
-# TODO: remove skip when load_factor data is validated (solar_pv)
-@pytest.mark.skip(reason="no way of currently testing this")
 def test_read_res_hourly_series_out_of_bounds(tmp_path):
     file_path = tmp_path / "high.arrow"
-    pd.DataFrame({"v": [1.5] * 8760}).to_feather(file_path)
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [1.5] * 8760}).to_feather(file_path)
     with pytest.raises(RESGenerationError, match="out of bounds"):
         read_res_hourly_series(base_dir=tmp_path, filename="high.arrow")
 
@@ -198,7 +196,7 @@ def test_generate_res_clusters_invalid_series_list(tmp_path, monkeypatch):
 
 def test_generate_res_clusters_starter_registers_payload(tmp_path, monkeypatch):
     file_path = tmp_path / "series.arrow"
-    pd.DataFrame({"v": [0.4] * 8760}).to_feather(file_path)
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.4] * 8760}).to_feather(file_path)
 
     _set_res_directory(monkeypatch, tmp_path)
 
@@ -221,7 +219,7 @@ def test_generate_res_clusters_starter_registers_payload(tmp_path, monkeypatch):
 
 def test_generate_res_clusters_uses_craft_renewable_api_when_available(tmp_path, monkeypatch):
     file_path = tmp_path / "series.arrow"
-    pd.DataFrame({"v": [0.4] * 8760}).to_feather(file_path)
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.4] * 8760}).to_feather(file_path)
 
     _set_res_directory(monkeypatch, tmp_path)
 
@@ -271,7 +269,7 @@ def test_generate_res_clusters_handles_res_from_mixed_area_payload(tmp_path, mon
     series_rel_path = series_list[0]
     series_path = tmp_path / series_rel_path
     series_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame({"v": [0.25] * 8760}).to_feather(series_path)
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.25] * 8760}).to_feather(series_path)
 
     _set_res_directory(monkeypatch, tmp_path)
 
@@ -325,9 +323,9 @@ def test_generate_res_clusters_rejects_multiple_series_for_enabled_cluster(tmp_p
 
 
 def test_generate_res_clusters_computes_fr_weighted_series_from_aggregation(tmp_path, monkeypatch):
-    pd.DataFrame({"v": [0.5] * 8760}).to_feather(tmp_path / "fr01_t1.arrow")
-    pd.DataFrame({"v": [0.0] * 8760}).to_feather(tmp_path / "fr01_t2.arrow")
-    pd.DataFrame({"v": [1.0] * 8760}).to_feather(tmp_path / "fr02_t1.arrow")
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.5] * 8760}).to_feather(tmp_path / "fr01_t1.arrow")
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.0] * 8760}).to_feather(tmp_path / "fr01_t2.arrow")
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [1.0] * 8760}).to_feather(tmp_path / "fr02_t1.arrow")
 
     area = _make_area()
     _set_res_directory(monkeypatch, tmp_path)
@@ -561,7 +559,7 @@ def test_generate_res_clusters_rejects_fr_technology_key_mismatch(tmp_path, monk
 def test_generate_res_clusters_rejects_active_zone_missing_tech_weights(tmp_path, monkeypatch):
     area = _make_area()
     _set_res_directory(monkeypatch, tmp_path)
-    pd.DataFrame({"v": [0.5] * 8760}).to_feather(tmp_path / "fr01.arrow")
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.5] * 8760}).to_feather(tmp_path / "fr01.arrow")
 
     res = {
         "wind_offshore": {
@@ -583,7 +581,7 @@ def test_generate_res_clusters_rejects_active_zone_missing_tech_weights(tmp_path
 
 
 def test_generate_res_clusters_accepts_fr_zone_without_leading_zero(tmp_path, monkeypatch):
-    pd.DataFrame({"v": [0.5] * 8760}).to_feather(tmp_path / "fr1.arrow")
+    pd.DataFrame({"date": ["2020-01-01"] * 8760, "v": [0.5] * 8760}).to_feather(tmp_path / "fr1.arrow")
 
     area = _make_area()
     _set_res_directory(monkeypatch, tmp_path)
