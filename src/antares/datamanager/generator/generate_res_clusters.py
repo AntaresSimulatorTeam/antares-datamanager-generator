@@ -36,8 +36,6 @@ RES_GROUP_TO_AW = {
     "solar_thermo": "Solar Thermal",
 }
 
-RES_VALUE_COLUMN_INDEX = 0
-
 
 def map_res_group_to_aw(group: str) -> str:
     normalized = str(group).strip().lower()
@@ -74,7 +72,6 @@ def read_res_hourly_series(
     base_dir: Path,
     filename: str,
     expected_rows: int = EXPECTED_HOURS,
-    value_column_index: int = 0,
     used_files: Optional[Set[Path]] = None,
 ) -> pd.DataFrame:
     """
@@ -87,43 +84,32 @@ def read_res_hourly_series(
     df = pd.read_feather(file_path)
 
     if df.empty or df.shape[1] < 1:
-        raise RESGenerationError(f"RES .arrow file has no time series columns for file='{filename}'")
+        raise RESGenerationError(f"RES series file has no time series columns for file='{filename}'")
 
     if len(df.index) != expected_rows:
         raise RESGenerationError(
-            f"RES .arrow file must contain {expected_rows} rows for file='{filename}', got {len(df.index)}"
+            f"RES series file must contain {expected_rows} rows for file='{filename}', got {len(df.index)}"
         )
 
-    # If the first column is not TS and all remaining columns are
-    # drop the first column.
-    numeric_mask = pd.Series(
-        [pd.to_numeric(df[column], errors="coerce").notna().all() for column in df.columns],
-        index=df.columns,
-        dtype=bool,
-    )
-    selected_columns = [column for column, keep in numeric_mask.items() if bool(keep)]
-    if df.shape[1] > 1 and not bool(numeric_mask.iloc[0]) and bool(numeric_mask.iloc[1:].all()):
-        selected_columns = [column for column in df.columns[1:] if bool(numeric_mask[column])]
-
-    ts_df: pd.DataFrame = df.loc[:, selected_columns].copy()
+    # First column is always a date, skip.
+    ts_df: pd.DataFrame = df.iloc[:, 1:].copy()
 
     if ts_df.shape[1] == 0:
-        raise RESGenerationError(f"RES .arrow file contains no numeric time series for file='{filename}'")
+        raise RESGenerationError(f"RES series file contains no numeric time series for file='{filename}'")
 
     ts_df = pd.DataFrame({column: pd.to_numeric(ts_df[column], errors="coerce") for column in ts_df.columns}).astype(
         float
     )
     if ts_df.isna().any(axis=None):
-        raise RESGenerationError(f"RES .arrow file contains non-numeric values for file='{filename}'")
+        raise RESGenerationError(f"RES series file contains non-numeric values for file='{filename}'")
 
-    # TODO: uncomment the value check when load factor data is validated (solar_pv)
-    # out_of_bounds_mask = (ts_df < 0.0) | (ts_df > 1.0)
-    # if out_of_bounds_mask.any(axis=None):
-    #     min_v = float(ts_df.min().min())
-    #     max_v = float(ts_df.max().max())
-    #     raise RESGenerationError(
-    #         f"RES .arrow values out of bounds [0,1] for file='{filename}' (min={min_v}, max={max_v})"
-    #     )
+    out_of_bounds_mask = (ts_df < 0.0) | (ts_df > 1.0)
+    if out_of_bounds_mask.any(axis=None):
+        min_v = float(ts_df.min().min())
+        max_v = float(ts_df.max().max())
+        raise RESGenerationError(
+            f"RES series values out of bounds [0,1] for file='{filename}' (min={min_v}, max={max_v})"
+        )
 
     return ts_df
 
@@ -198,9 +184,9 @@ def generate_res_clusters(
     area_obj: Area, area_name: str, res: dict[str, Any], used_files: Optional[Set[Path]] = None
 ) -> None:
     """
-    Expected `res` json :
+    Expected RES JSON
     {
-      "wind_onshore": {
+      "cluster_name": {
         "properties": {
           "capacity": 5000,
           "group": "wind_onshore"
@@ -210,28 +196,28 @@ def generate_res_clusters(
     }
     for FR only:
     {
-      "wind_onshore": {
+      "cluster_name": {
         "properties": {
           "capacity": 5000,
           "group": "wind_onshore"
         },
-        "series": []
+        "series": [],
         "fr_aggregation": {
             "zone_weights": {
               "FR01": 0.2,
-              "FRO2": 0.0,
+              "FR02": 0.0
             },
             "tech_weights_by_zone": {
               "FR01": {
                 "offshore_tech1": 0.6,
                 "offshore_tech2": 0.4
-              },
+              }
             },
             "series_by_zone_and_tech": {
               "FR01": {
                 "offshore_tech1": "fr01_offshore_tech1.arrow",
                 "offshore_tech2": "fr01_offshore_tech2.arrow"
-              },
+              }
             }
           }
       }
@@ -247,19 +233,19 @@ def generate_res_clusters(
 
     normalized_area_name = str(area_name).strip().upper()
 
-    for group_key, group_values in res.items():
+    for cluster_name, cluster_values in res.items():
         payload, validated_series = _process_res_entry(
             area_name=area_name,
             normalized_area_name=normalized_area_name,
-            group_key=group_key,
-            group_values=group_values,
+            cluster_name=cluster_name,
+            cluster_values=cluster_values,
             base_ts_directory=base_ts_directory,
             used_files=used_files,
         )
 
-        logger.info("Prepared RES cluster payload area=%s group=%s payload=%s", area_name, group_key, payload)
+        logger.info("Prepared RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload)
         _register_res_outputs(
-            area_obj=area_obj, group_key=group_key, payload=payload, validated_series=validated_series
+            area_obj=area_obj, cluster_name=cluster_name, payload=payload, validated_series=validated_series
         )
 
 
@@ -270,69 +256,66 @@ def _resolve_res_base_directory() -> Path:
     return base_ts_directory
 
 
-def _validate_series_list(*, area_name: str, group_key: str, raw_series: Any) -> list[str]:
+def _validate_series_list(*, area_name: str, cluster_name: str, raw_series: Any) -> list[str]:
     if not isinstance(raw_series, list) or any(not isinstance(item, str) for item in raw_series):
         raise RESGenerationError(
-            f"Invalid RES series list for area='{area_name}', group='{group_key}': expected string[]"
+            f"Invalid RES series list for area='{area_name}', cluster='{cluster_name}': expected string[]"
         )
 
     return raw_series
 
 
-def _extract_res_properties(*, area_name: str, group_key: str, group_values: Mapping[str, Any]) -> tuple[str, Any]:
-    properties = group_values.get("properties")
+def _extract_res_properties(*, area_name: str, cluster_name: str, cluster_values: Mapping[str, Any]) -> tuple[str, Any]:
+    properties = cluster_values.get("properties")
     if not isinstance(properties, Mapping):
-        raise RESGenerationError(f"Invalid RES properties for area='{area_name}', group='{group_key}': expected object")
+        raise RESGenerationError(
+            f"Invalid RES properties for area='{area_name}', cluster='{cluster_name}': expected object"
+        )
 
     if "group" not in properties:
-        raise RESGenerationError(f"Missing RES properties.group for area='{area_name}', group='{group_key}'")
+        raise RESGenerationError(f"Missing RES properties.group for area='{area_name}', cluster='{cluster_name}'")
     if "capacity" not in properties:
-        raise RESGenerationError(f"Missing RES properties.capacity for area='{area_name}', group='{group_key}'")
+        raise RESGenerationError(f"Missing RES properties.capacity for area='{area_name}', cluster='{cluster_name}'")
 
     return str(properties.get("group", "")), properties.get("capacity")
-
-
-def _validate_group_key_matches_group(*, area_name: str, group_key: str, group_name: str) -> None:
-    if str(group_key).strip().lower() != str(group_name).strip().lower():
-        raise RESGenerationError(
-            f"RES entry key must match properties.group; area='{area_name}', key='{group_key}', group='{group_name}'"
-        )
 
 
 def _build_fr_weighted_series_from_aggregation(
     *,
     area_name: str,
-    group_key: str,
+    cluster_name: str,
     raw_fr_aggregation: Any,
     base_ts_directory: Path,
     used_files: Optional[Set[Path]] = None,
 ) -> pd.DataFrame:
     if not isinstance(raw_fr_aggregation, Mapping):
-        raise RESGenerationError(f"Missing or invalid fr_aggregation for FR area='{area_name}', group='{group_key}'")
+        raise RESGenerationError(
+            f"Missing or invalid fr_aggregation for FR area='{area_name}', cluster='{cluster_name}'"
+        )
 
     required_keys = {"zone_weights", "tech_weights_by_zone", "series_by_zone_and_tech"}
     missing_keys = sorted(key for key in required_keys if key not in raw_fr_aggregation)
     if missing_keys:
         raise RESGenerationError(
-            f"Missing FR aggregation keys {missing_keys} for area='{area_name}', group='{group_key}'"
+            f"Missing FR aggregation keys {missing_keys} for area='{area_name}', cluster='{cluster_name}'"
         )
 
     zone_weights = _parse_zone_weights(
         area_name=area_name,
-        group_key=group_key,
+        cluster_name=cluster_name,
         raw_zone_weights=raw_fr_aggregation.get("zone_weights"),
     )
 
     tech_weights_by_zone = _parse_tech_weights_by_zone(
         area_name=area_name,
-        group_key=group_key,
+        cluster_name=cluster_name,
         raw_tech_weights_by_zone=raw_fr_aggregation.get("tech_weights_by_zone", {}),
         expected_zones=set(zone_weights.keys()),
     )
 
     techno_series_by_zone = _load_tech_series_by_zone(
         area_name=area_name,
-        group_key=group_key,
+        cluster_name=cluster_name,
         raw_series_by_zone_and_tech=raw_fr_aggregation.get("series_by_zone_and_tech", {}),
         expected_zones=set(zone_weights.keys()),
         expected_techs_by_zone={zone: set(techs.keys()) for zone, techs in tech_weights_by_zone.items()},
@@ -347,22 +330,26 @@ def _build_fr_weighted_series_from_aggregation(
     )
 
 
-def _parse_zone_weights(*, area_name: str, group_key: str, raw_zone_weights: Any) -> dict[str, float]:
+def _parse_zone_weights(*, area_name: str, cluster_name: str, raw_zone_weights: Any) -> dict[str, float]:
     if not isinstance(raw_zone_weights, Mapping) or not raw_zone_weights:
-        raise RESGenerationError(f"Invalid zone_weights for area='{area_name}', group='{group_key}'")
+        raise RESGenerationError(f"Invalid zone_weights for area='{area_name}', cluster='{cluster_name}'")
 
     zone_weights: dict[str, float] = {}
     for raw_zone, raw_weight in raw_zone_weights.items():
         zone = str(raw_zone).strip().upper()
         if not _is_valid_fr_zone(zone):
-            raise RESGenerationError(f"Invalid FR zone key '{raw_zone}' for area='{area_name}', group='{group_key}'")
+            raise RESGenerationError(
+                f"Invalid FR zone key '{raw_zone}' for area='{area_name}', cluster='{cluster_name}'"
+            )
         weight = _to_float_capacity(raw_weight)
         if weight < 0:
-            raise RESGenerationError(f"Negative zone weight for zone='{zone}', area='{area_name}', group='{group_key}'")
+            raise RESGenerationError(
+                f"Negative zone weight for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
+            )
         zone_weights[zone] = weight
 
     if sum(zone_weights.values()) <= 0:
-        raise RESGenerationError(f"Sum of zone_weights must be > 0 for area='{area_name}', group='{group_key}'")
+        raise RESGenerationError(f"Sum of zone_weights must be > 0 for area='{area_name}', cluster='{cluster_name}'")
 
     return zone_weights
 
@@ -370,19 +357,19 @@ def _parse_zone_weights(*, area_name: str, group_key: str, raw_zone_weights: Any
 def _parse_tech_weights_by_zone(
     *,
     area_name: str,
-    group_key: str,
+    cluster_name: str,
     raw_tech_weights_by_zone: Any,
     expected_zones: set[str],
 ) -> dict[str, dict[str, float]]:
     if not isinstance(raw_tech_weights_by_zone, Mapping):
-        raise RESGenerationError(f"Invalid tech_weights_by_zone for area='{area_name}', group='{group_key}'")
+        raise RESGenerationError(f"Invalid tech_weights_by_zone for area='{area_name}', cluster='{cluster_name}'")
 
     incoming_zones = {str(zone).strip().upper() for zone in raw_tech_weights_by_zone.keys()}
     for zone in incoming_zones:
         if zone not in expected_zones:
             raise RESGenerationError(
                 f"Zone '{zone}' in tech_weights_by_zone not found in zone_weights for "
-                f"area='{area_name}', group='{group_key}'"
+                f"area='{area_name}', cluster='{cluster_name}'"
             )
 
     parsed: dict[str, dict[str, float]] = {}
@@ -392,7 +379,7 @@ def _parse_tech_weights_by_zone(
             zone=zone,
             raw_tech_weights=raw_tech_weights,
             area_name=area_name,
-            group_key=group_key,
+            cluster_name=cluster_name,
         )
 
     return parsed
@@ -401,7 +388,7 @@ def _parse_tech_weights_by_zone(
 def _load_tech_series_by_zone(
     *,
     area_name: str,
-    group_key: str,
+    cluster_name: str,
     raw_series_by_zone_and_tech: Any,
     expected_zones: set[str],
     expected_techs_by_zone: Mapping[str, set[str]],
@@ -409,14 +396,14 @@ def _load_tech_series_by_zone(
     used_files: Optional[Set[Path]] = None,
 ) -> dict[str, dict[str, pd.DataFrame]]:
     if not isinstance(raw_series_by_zone_and_tech, Mapping):
-        raise RESGenerationError(f"Invalid series_by_zone_and_tech for area='{area_name}', group='{group_key}'")
+        raise RESGenerationError(f"Invalid series_by_zone_and_tech for area='{area_name}', cluster='{cluster_name}'")
 
     incoming_zones = {str(zone).strip().upper() for zone in raw_series_by_zone_and_tech.keys()}
     for zone in incoming_zones:
         if zone not in expected_zones:
             raise RESGenerationError(
                 f"Zone '{zone}' in series_by_zone_and_tech not found in zone_weights for "
-                f"area='{area_name}', group='{group_key}'"
+                f"area='{area_name}', cluster='{cluster_name}'"
             )
 
     series_by_zone: dict[str, dict[str, pd.DataFrame]] = {}
@@ -424,7 +411,7 @@ def _load_tech_series_by_zone(
         zone = str(raw_zone).strip().upper()
         if not isinstance(raw_series_by_tech, Mapping):
             raise RESGenerationError(
-                f"Invalid technology series map for zone='{zone}', area='{area_name}', group='{group_key}'"
+                f"Invalid technology series map for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
             )
 
         tech_keys = {str(key).strip() for key in raw_series_by_tech.keys()}
@@ -435,7 +422,7 @@ def _load_tech_series_by_zone(
             unexpected_techs = tech_keys - expected_techs
             raise RESGenerationError(
                 f"Unexpected technology keys {unexpected_techs} in series_by_zone_and_tech for zone='{zone}', "
-                f"area='{area_name}', group='{group_key}'"
+                f"area='{area_name}', cluster='{cluster_name}'"
             )
 
         loaded_by_tech: dict[str, pd.DataFrame] = {}
@@ -444,7 +431,6 @@ def _load_tech_series_by_zone(
                 base_dir=base_ts_directory,
                 filename=str(filename),
                 expected_rows=EXPECTED_HOURS,
-                value_column_index=RES_VALUE_COLUMN_INDEX,
                 used_files=used_files,
             )
         series_by_zone[zone] = loaded_by_tech
@@ -594,18 +580,20 @@ def _parse_single_zone_tech_weights(
     zone: str,
     raw_tech_weights: Any,
     area_name: str,
-    group_key: str,
+    cluster_name: str,
 ) -> dict[str, float]:
     if not isinstance(raw_tech_weights, Mapping) or not raw_tech_weights:
         raise RESGenerationError(
-            f"Invalid technology weights for zone='{zone}', area='{area_name}', group='{group_key}'"
+            f"Invalid technology weights for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
         )
 
     parsed_zone: dict[str, float] = {}
     for raw_tech, raw_weight in raw_tech_weights.items():
         tech = str(raw_tech).strip()
         if not tech:
-            raise RESGenerationError(f"Empty technology key for zone='{zone}', area='{area_name}', group='{group_key}'")
+            raise RESGenerationError(
+                f"Empty technology key for zone='{zone}', area='{area_name}', cluster='{cluster_name}'"
+            )
         weight = _to_float_capacity(raw_weight)
         if weight < 0:
             raise RESGenerationError(f"Negative technology weight for zone='{zone}', tech='{tech}'")
@@ -618,27 +606,26 @@ def _process_res_entry(
     *,
     area_name: str,
     normalized_area_name: str,
-    group_key: str,
-    group_values: Any,
+    cluster_name: str,
+    cluster_values: Any,
     base_ts_directory: Path,
     used_files: Optional[Set[Path]] = None,
 ) -> tuple[dict[str, Any], pd.DataFrame | None]:
-    if not isinstance(group_values, Mapping):
-        raise RESGenerationError(f"Invalid RES group payload for area='{area_name}', group='{group_key}'")
+    if not isinstance(cluster_values, Mapping):
+        raise RESGenerationError(f"Invalid RES cluster payload for area='{area_name}', cluster='{cluster_name}'")
 
     group_raw, installed_power = _extract_res_properties(
         area_name=area_name,
-        group_key=group_key,
-        group_values=group_values,
+        cluster_name=cluster_name,
+        cluster_values=cluster_values,
     )
-    _validate_group_key_matches_group(area_name=area_name, group_key=group_key, group_name=group_raw)
 
     aw_group = map_res_group_to_aw(group_raw)
     capacity, enabled = resolve_res_capacity_and_enabled(installed_power=installed_power)
 
     payload = build_res_cluster_payload(
         area_name=area_name,
-        cluster_name=group_key,
+        cluster_name=cluster_name,
         aw_group=aw_group,
         capacity_mw=capacity,
         enabled=enabled,
@@ -648,14 +635,14 @@ def _process_res_entry(
 
     series_files = _validate_series_list(
         area_name=area_name,
-        group_key=group_key,
-        raw_series=group_values.get("series", []),
+        cluster_name=cluster_name,
+        raw_series=cluster_values.get("series", []),
     )
-    fr_aggregation = group_values.get("fr_aggregation")
+    fr_aggregation = cluster_values.get("fr_aggregation")
     validated_series = _compute_cluster_series(
         normalized_area_name=normalized_area_name,
         area_name=area_name,
-        group_key=group_key,
+        cluster_name=cluster_name,
         series_files=series_files,
         fr_aggregation=fr_aggregation,
         base_ts_directory=base_ts_directory,
@@ -668,7 +655,7 @@ def _compute_cluster_series(
     *,
     normalized_area_name: str,
     area_name: str,
-    group_key: str,
+    cluster_name: str,
     series_files: list[str],
     fr_aggregation: Any,
     base_ts_directory: Path,
@@ -677,11 +664,11 @@ def _compute_cluster_series(
     if normalized_area_name == "FR":
         if series_files:
             raise RESGenerationError(
-                f"FR RES computed mode expects empty series for area='{area_name}', group='{group_key}'"
+                f"FR RES computed mode expects empty series for area='{area_name}', cluster='{cluster_name}'"
             )
         return _build_fr_weighted_series_from_aggregation(
             area_name=area_name,
-            group_key=group_key,
+            cluster_name=cluster_name,
             raw_fr_aggregation=fr_aggregation,
             base_ts_directory=base_ts_directory,
             used_files=used_files,
@@ -689,17 +676,16 @@ def _compute_cluster_series(
 
     if fr_aggregation is not None:
         raise RESGenerationError(
-            f"fr_aggregation is only supported for FR area; area='{area_name}', group='{group_key}'"
+            f"fr_aggregation is only supported for FR area; area='{area_name}', cluster='{cluster_name}'"
         )
     if len(series_files) != 1:
         raise RESGenerationError(
-            f"Expected exactly one RES series file for area='{area_name}', group='{group_key}', got {len(series_files)}"
+            f"Expected exactly one RES series file for area='{area_name}', cluster='{cluster_name}', got {len(series_files)}"
         )
     return read_res_hourly_series(
         base_dir=base_ts_directory,
         filename=series_files[0],
         expected_rows=EXPECTED_HOURS,
-        value_column_index=RES_VALUE_COLUMN_INDEX,
         used_files=used_files,
     )
 
@@ -707,7 +693,7 @@ def _compute_cluster_series(
 def _register_res_outputs(
     *,
     area_obj: Area,
-    group_key: str,
+    cluster_name: str,
     payload: dict[str, Any],
     validated_series: pd.DataFrame | None,
 ) -> None:
@@ -718,7 +704,7 @@ def _register_res_outputs(
         group=str(payload["group"]),
         ts_interpretation=_parse_ts_interpretation(str(payload["ts_interpretation"])),
     )
-    renewable_cluster = area_obj.create_renewable_cluster(group_key, properties)
+    renewable_cluster = area_obj.create_renewable_cluster(cluster_name, properties)
     if validated_series is not None:
         if isinstance(validated_series, pd.DataFrame):
             renewable_cluster.set_series(validated_series)
