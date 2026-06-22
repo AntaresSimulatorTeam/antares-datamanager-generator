@@ -109,6 +109,7 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Se
 
 def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bool) -> tuple[pd.Series, pd.Series]:
     if not is_psp:
+        # We assume the input df has only 1 column. If it has more, we only use the first one.
         return df.iloc[:, 0], pd.Series(0, index=df.index)
 
     generating_col = f"{area_name.lower()}_generating"
@@ -118,7 +119,7 @@ def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bo
     if generating_col in columns_lower and pumping_col in columns_lower:
         return df[columns_lower[generating_col]], df[columns_lower[pumping_col]]
 
-    # fallback if names don't mathc
+    # fallback if retrieval by name didn't work (we assume it has 2 cols)
     return df.iloc[:, 0], df.iloc[:, 1]
 
 
