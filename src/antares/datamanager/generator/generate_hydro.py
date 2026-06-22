@@ -34,6 +34,7 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Se
         properties = properties[0] if properties else {}
 
     series_list = hydro.get("series", [])
+    is_psp = bool(hydro.get("psp", False))
 
     # Update properties
     # Mapping intra_daily_modulation from input JSON's inter_daily_modulation
@@ -93,17 +94,32 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Se
             area_obj.hydro.set_reservoir(df)
         elif "_maxpower" in series_file:
             # maxpower series should have 4 columns:
-            # Col 0: Original data from arrow file
+            # Col 0: _generating max power from arrow file
             # Col 1: DEFAULT_MAXPOWER_VALUE (24)
-            # Col 2: 0 #TO MODIFY FOR PUMPING THE VALUE COMES from maxpower_df
+            # Col 2: _pumping max power (0 for regular hydro, extracted from the arrow file for PSP)
             # Col 3: DEFAULT_MAXPOWER_VALUE (24)
-            # We assume the input df has only 1 column. If it has more, we only use the first one.
+            generating, pumping = _extract_generating_and_pumping(df, area_obj.name, is_psp)
             maxpower_df = pd.DataFrame()
-            maxpower_df["0"] = df.iloc[:, 0]
+            maxpower_df["0"] = generating
             maxpower_df["1"] = DEFAULT_MAXPOWER_VALUE
-            maxpower_df["2"] = 0
+            maxpower_df["2"] = pumping
             maxpower_df["3"] = DEFAULT_MAXPOWER_VALUE
             area_obj.hydro.set_maxpower(maxpower_df)
+
+
+def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bool) -> tuple[pd.Series, pd.Series]:
+    if not is_psp:
+        return df.iloc[:, 0], pd.Series(0, index=df.index)
+
+    generating_col = f"{area_name.lower()}_generating"
+    pumping_col = f"{area_name.lower()}_pumping"
+    columns_lower = {str(col).lower(): col for col in df.columns}
+
+    if generating_col in columns_lower and pumping_col in columns_lower:
+        return df[columns_lower[generating_col]], df[columns_lower[pumping_col]]
+
+    # fallback if names don't mathc
+    return df.iloc[:, 0], df.iloc[:, 1]
 
 
 def _resolve_hydro_base_directory() -> Path:
