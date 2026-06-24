@@ -83,7 +83,7 @@ def read_res_hourly_series(
         used_files.add(file_path)
     df = pd.read_feather(file_path)
 
-    if df.shape[1] < 1:
+    if df.empty or df.shape[1] < 1:
         raise RESGenerationError(f"RES series file has no time series columns for file='{filename}'")
 
     if len(df.index) != expected_rows:
