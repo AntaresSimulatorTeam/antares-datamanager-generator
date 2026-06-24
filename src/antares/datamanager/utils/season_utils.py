@@ -9,7 +9,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
-from typing import List
+from typing import Any, List
 
 import numpy as np
 
@@ -31,7 +31,7 @@ class SeasonManager:
 
         self.month_order: List[int] = []
         self.days_per_month: List[int] = []
-        self.month_of_day: np.ndarray = np.array([], dtype=int)
+        self.month_of_day: np.ndarray[Any, np.dtype[np.int_]] = np.array([], dtype=int)
 
         self._initialize_mappings()
 
@@ -54,7 +54,7 @@ class SeasonManager:
                 month_of_day_list.append(self.month_order[i])
         self.month_of_day = np.array(month_of_day_list)
 
-    def is_winter(self) -> np.ndarray:
+    def is_winter(self) -> np.ndarray[Any, np.dtype[np.bool_]]:
         """
         Identify winter days.
         Winter is defined as months Jan, Feb, Mar, Oct, Nov, Dec.
@@ -62,7 +62,7 @@ class SeasonManager:
         """
         return (self.month_of_day <= 3) | (self.month_of_day >= 10)
 
-    def is_summer(self) -> np.ndarray:
+    def is_summer(self) -> np.ndarray[Any, np.dtype[np.bool_]]:
         """
         Identify summer days.
         Summer is defined as months Apr, May, Jun, Jul, Aug, Sep.
@@ -78,6 +78,6 @@ class SeasonManager:
         """Returns the number of days in each month in the order starting from first_month."""
         return self.days_per_month
 
-    def get_month_of_day(self) -> np.ndarray:
+    def get_month_of_day(self) -> np.ndarray[Any, np.dtype[np.int_]]:
         """Returns an array of length 365 mapping each day to its month (1-12)."""
         return self.month_of_day

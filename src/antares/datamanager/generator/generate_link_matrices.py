@@ -16,14 +16,10 @@ import numpy as np
 import pandas as pd
 
 from antares.datamanager.core.settings import settings
-from antares.datamanager.generator.seed_factory import SeedFactory
+from antares.datamanager.utils.seed_factory import SeedFactory
 from antares.tsgen.duration_generator import ProbabilityLaw
 from antares.tsgen.random_generator import MersenneTwisterRNG
-from antares.tsgen.ts_generator import (
-    LinkCapacity,
-    OutageGenerationParameters,
-    TimeseriesGenerator,
-)
+from antares.tsgen.ts_generator import LinkCapacity, OutageGenerationParameters, TimeseriesGenerator
 
 
 def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_link: int, link_name: str) -> pd.DataFrame:

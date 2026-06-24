@@ -76,7 +76,9 @@ def generate_dsr_clusters(
     return generate_dsr_binding_constraints(dsr, cluster_series)
 
 
-def generate_dsr_binding_constraints(dsr_data: Dict[str, Any], cluster_series: Dict[str, pd.Series]) -> pd.DataFrame:
+def generate_dsr_binding_constraints(
+    dsr_data: Dict[str, Any], cluster_series: Dict[str, pd.Series[Any]]
+) -> pd.DataFrame:
     """
     Calculates coupling constraints for DSR.
 
