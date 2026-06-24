@@ -353,7 +353,7 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
     mock_factory.create_study.assert_called_once_with("study_name")
     args, _ = mock_study.update_settings.call_args
     mock_add_areas.assert_called_once_with(mock_study, study_data, used_files)
-    mock_add_links.assert_called_once_with(mock_study, study_data.links)
+    mock_add_links.assert_called_once_with(mock_study, study_data.links, study_data.seed_tsgen_link)
     assert result == {"message": "Study study_name successfully generated", "study_id": "dummy_id", "study_path": ""}
 
 

@@ -30,5 +30,7 @@ class StudyData:
     area_res: dict[str, Any] = field(default_factory=dict)
     area_hydro: dict[str, Any] = field(default_factory=dict)
     enable_random_ts: bool = True
+    # TODO JSON must contain this field, mean while it is default to 0
+    seed_tsgen_link: int = 0
     nb_years: int = field(default_factory=lambda: settings.nb_years)
     first_month: Month = field(default_factory=lambda: settings.study_setting_first_month)
