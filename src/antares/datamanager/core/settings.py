@@ -126,5 +126,12 @@ class Settings:
     def verify_ssl(self) -> bool:
         return False
 
+    @property
+    def number_of_timeseries(self) -> int:
+        value = os.getenv("NUMBER_OF_TS_FOR_LINKS")
+        if value:
+            return int(value)
+        return 60
+
 
 settings = Settings()

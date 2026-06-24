@@ -52,7 +52,6 @@ from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_log
 from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.area_ui_utils import generate_random_color, generate_random_coordinate
 
-# Configurer le logger au démarrage du module (ou appeler configure_ecs_logger() dans le main)
 configure_ecs_logger()
 logger = get_logger(__name__)
 
@@ -71,7 +70,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         study.update_settings(study_settings)
 
         add_areas_to_study(study, study_data, used_files)
-        add_links_to_study(study, study_data.links)
+        add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
         if study_data.area_thermals and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study_data.nb_years} years")
             study.generate_thermal_timeseries(settings.nb_years)
@@ -141,6 +140,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         areas=raw_study_data.get("areas", {}),
         links=raw_study_data.get("links", {}),
         enable_random_ts=raw_study_data.get("enable_random_ts", True),
+        seed_tsgen_link=raw_study_data.get("global_seed", 0),
         nb_years=raw_study_data.get("nb_years", settings.nb_years),
         first_month=first_month,
     )
@@ -316,18 +316,28 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
             raise AreaGenerationError(area_name, e.message) from e
 
 
-def add_links_to_study(study: Study, links: dict[str, dict[str, int]]) -> None:
+def add_links_to_study(study: Study, links: dict[str, dict[str, int]], global_seed: int = 0) -> None:
     for key, link_data in links.items():
-        area_from, area_to = key.split("/")
-        df_capacity_direct = generate_link_capacity_df(link_data, "direct")
-        df_capacity_indirect = generate_link_capacity_df(link_data, "indirect")
+        area_from, area_to = key.lower().split("/")
+
+        # Make link_data case-insensitive by creating a lowercase copy
+        link_data_lower = {k.lower(): v for k, v in link_data.items()}
+
+        df_capacity_direct = generate_link_capacity_df(
+            link_data, "direct", seed_tsgen_link=global_seed, link_name=f"{area_from}-{area_to}"
+        )
+        df_capacity_indirect = generate_link_capacity_df(
+            link_data, "indirect", seed_tsgen_link=global_seed, link_name=f"{area_from}-{area_to}"
+        )
 
         try:
             link = study.create_link(area_from=area_from, area_to=area_to)
             link.set_capacity_direct(df_capacity_direct)
             link.set_capacity_indirect(df_capacity_indirect)
-            if link_data["hurdleCost"] is not None:
-                df_parameters = generate_link_parameters_df(link_data["hurdleCost"])
+
+            hurdle_cost = link_data_lower.get("hurdlecost")
+            if hurdle_cost is not None:
+                df_parameters = generate_link_parameters_df(hurdle_cost)
                 link.update_properties(LinkPropertiesUpdate(hurdles_cost=True))
                 link.set_parameters(df_parameters)
             logger.info(f"Called create_link for: {area_from} and {area_to}")

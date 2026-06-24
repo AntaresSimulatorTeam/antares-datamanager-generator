@@ -84,8 +84,13 @@ def test_read_res_hourly_series_validates_row_count(tmp_path):
 
 def test_read_res_hourly_series_empty_dataframe(tmp_path):
     file_path = tmp_path / "empty.arrow"
-    pd.DataFrame().to_feather(file_path)
-    with pytest.raises(RESGenerationError, match="has no time series columns"):
+
+    # No numeric time series columns (only metadata column)
+    df = pd.DataFrame({"date": ["2026-01-01"] * 8760})
+
+    df.to_feather(file_path)
+
+    with pytest.raises(RESGenerationError, match="contains no numeric time series"):
         read_res_hourly_series(base_dir=tmp_path, filename="empty.arrow")
 
 

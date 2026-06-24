@@ -123,7 +123,7 @@ def _build_npo_max_daily(
     npo_max_summer: float,
     npo_max_winter: float,
     factor: float,
-) -> np.ndarray:
+) -> np.ndarray[Any, np.dtype[np.float64]]:
     # Determine season using SeasonManager
     season_is_winter = season_manager.is_winter()
     season_is_summer = season_manager.is_summer()

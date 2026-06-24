@@ -106,3 +106,105 @@ def test_generate_link_parameters_df_with_nan() -> None:
     assert df.shape == (8760, 6)
     assert float(df.values.max()) == 0.0
     assert float(df.values.min()) == 0.0
+
+
+def test_generate_link_capacity_df_hvdc() -> None:
+    """
+    Test link capacity generation with HVDC data.
+    """
+    global_seed = 1234
+    link_name = "area1-area2"
+    # 1. Full HVDC case: capacity equals HVDC value -> random TS generation (60 columns)
+    link_data_full_hvdc = {
+        "winterHcDirectMw": 1000,
+        "winterHpDirectMw": 1000,
+        "summerHcDirectMw": 1000,
+        "summerHpDirectMw": 1000,
+        "hvdcMwDirect": 1000,
+        "hvdcNbDirect": 2,
+        "hvdcFoRateDirect": 0.1,
+        "winterHcIndirectMw": 2000,
+        "winterHpIndirectMw": 2000,
+        "summerHcIndirectMw": 2000,
+        "summerHpIndirectMw": 2000,
+        "hvdcMwIndirect": 2000,
+        "hvdcNbIndirect": 1,
+        "hvdcFoRateIndirect": 0.05,
+    }
+    df_direct = generate_link_capacity_df(
+        link_data_full_hvdc, "direct", seed_tsgen_link=global_seed, link_name=link_name
+    )
+    assert df_direct.shape == (8760, 60)
+    # Since fo_rate is 0.1, we expect some values to be less than 1000
+    assert (df_direct.values <= 1000).all()
+    assert (df_direct.values >= 0).all()
+
+    df_indirect = generate_link_capacity_df(
+        link_data_full_hvdc, "indirect", seed_tsgen_link=global_seed, link_name=link_name
+    )
+    assert df_indirect.shape == (8760, 60)
+    assert (df_indirect.values <= 2000).all()
+
+    # 2. Hybrid case: hvac + random hvdc TS (60 columns)
+    link_data_hybrid = {
+        "winterHcDirectMw": 1500,
+        "winterHpDirectMw": 1500,
+        "summerHcDirectMw": 1500,
+        "summerHpDirectMw": 1500,
+        "hvdcMwDirect": 1000,
+        "hvdcNbDirect": 1,
+        "hvdcFoRateDirect": 0.0,  # 0.0 fo_rate means hvdc TS will be constant 1000
+        "winterHcIndirectMw": 2500,
+        "winterHpIndirectMw": 2500,
+        "summerHcIndirectMw": 2500,
+        "summerHpIndirectMw": 2500,
+        "hvdcMwIndirect": 1000,
+        "hvdcNbIndirect": 1,
+        "hvdcFoRateIndirect": 0.0,
+    }
+    df_direct_hybrid = generate_link_capacity_df(
+        link_data_hybrid, "direct", seed_tsgen_link=global_seed, link_name=link_name
+    )
+    assert df_direct_hybrid.shape == (8760, 60)
+    # 1500 (total) - 1000 (hvdc) = 500 (hvac)
+    # 500 (hvac) + 1000 (hvdc TS) = 1500
+    assert (df_direct_hybrid.values == 1500).all()
+
+    df_indirect_hybrid = generate_link_capacity_df(
+        link_data_hybrid, "indirect", seed_tsgen_link=global_seed, link_name=link_name
+    )
+    assert df_indirect_hybrid.shape == (8760, 60)
+    # 2500 (total) - 1000 (hvdc) = 1500 (hvac)
+    # 1500 (hvac) + 1000 (hvdc TS) = 2500
+    assert (df_indirect_hybrid.values == 2500).all()
+
+
+def test_generate_link_capacity_df_case_insensitivity() -> None:
+    """
+    Test that keys in link_data can be provided in any case.
+    """
+    global_seed = 1234
+    link_name = "area1-area2"
+    link_data = {
+        "WINTERHCDIRECTMW": 1000,
+        "winterhpdirectmw": 1100,
+        "SummerHcDirectMw": 1200,
+        "SUMMERHPDIRECTMW": 1300,
+        "HvdcMwDirect": 500,
+        "HvdcNbDirect": 1,
+        "HvdcFoRateDirect": 0.0,
+    }
+    df = generate_link_capacity_df(link_data, "direct", seed_tsgen_link=global_seed, link_name=link_name)
+
+    # Check some values
+    # Winter HC: (1000 - 500) + 500 = 1000
+    # Winter HP: (1100 - 500) + 500 = 1100
+    # Summer HC: (1200 - 500) + 500 = 1200
+    # Summer HP: (1300 - 500) + 500 = 1300
+
+    assert df.iloc[0, 0] == 1000  # Jan 1st, 00:00 -> Winter HC
+    assert df.iloc[8, 0] == 1100  # Jan 1st, 08:00 -> Winter HP
+
+    # Summer: Day 100 (April)
+    assert df.iloc[100 * 24, 0] == 1200  # April, 00:00 -> Summer HC
+    assert df.iloc[100 * 24 + 8, 0] == 1300  # April, 08:00 -> Summer HP
