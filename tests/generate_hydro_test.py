@@ -221,6 +221,59 @@ def test_generate_hydro_with_new_json_structure(tmp_path, monkeypatch):
     assert "maxpower" in area_obj.hydro.series
 
 
+def test_generate_hydro_psp_maxpower_uses_named_columns(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_TS_OUTPUT_DIRECTORY", str(tmp_path))
+
+    df = pd.DataFrame({"AT_generating": [1.0] * 8760, "AT_pumping": [2.0] * 8760})
+    df.to_feather(tmp_path / "AT_psp_maxpower.arrow")
+
+    area_obj = MockArea(name="AT")
+    hydro_data = {"psp": True, "series": ["AT_psp_maxpower.arrow"]}
+
+    generate_hydro(area_obj, hydro_data)
+
+    maxpower_df = area_obj.hydro.series["maxpower"]
+    assert (maxpower_df["0"] == 1.0).all()
+    assert (maxpower_df["2"] == 2.0).all()
+    assert (maxpower_df["1"] == 24).all()
+    assert (maxpower_df["3"] == 24).all()
+
+
+def test_generate_hydro_psp_maxpower_falls_back_to_positional(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_TS_OUTPUT_DIRECTORY", str(tmp_path))
+
+    df = pd.DataFrame({"0": [3.0] * 8760, "1": [4.0] * 8760})
+    df.to_feather(tmp_path / "AT_psp_maxpower.arrow")
+
+    area_obj = MockArea(name="AT")
+    hydro_data = {"psp": True, "series": ["AT_psp_maxpower.arrow"]}
+
+    generate_hydro(area_obj, hydro_data)
+
+    maxpower_df = area_obj.hydro.series["maxpower"]
+    assert (maxpower_df["0"] == 3.0).all()
+    assert (maxpower_df["2"] == 4.0).all()
+
+
+def test_generate_hydro_standard_hydro_maxpower_unaffected(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_TS_OUTPUT_DIRECTORY", str(tmp_path))
+
+    df = pd.DataFrame({"v": [5.0] * 8760})
+    df.to_feather(tmp_path / "AT_maxpower.arrow")
+
+    area_obj = MockArea(name="AT")
+    hydro_data = {"series": ["AT_maxpower.arrow"]}
+
+    generate_hydro(area_obj, hydro_data)
+
+    maxpower_df = area_obj.hydro.series["maxpower"]
+    assert (maxpower_df["0"] == 5.0).all()
+    assert (maxpower_df["2"] == 0).all()
+
+
 def test_generate_hydro_handles_empty_properties_list(tmp_path, monkeypatch):
     monkeypatch.setenv("NAS_PATH", str(tmp_path))
     monkeypatch.setenv("PEGASE_HYDRO_TS_OUTPUT_DIRECTORY", str(tmp_path))
