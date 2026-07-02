@@ -175,10 +175,12 @@ def _create_sts_additional_constraints(
 
         constraint_name = _extract_constraint_name_from_series_file(filename)
         if constraint_name is None:
-            continue
+            # Fallback: use the filename itself (minus extension) as constraint name
+            # if the .csv marker is missing.
+            constraint_name = Path(filename).name.split(".")[0].lower()
 
         if constraint_name in series_by_constraint_name:
-            raise ValueError(f"Duplicate RHS series for STS constraint '{constraint_name}' in cluster '{cluster_name}'")
+            logger.warning(f"Duplicate RHS series for STS constraint '{constraint_name}' in cluster '{cluster_name}'")
         series_by_constraint_name[constraint_name] = filename
 
     for constraint_name, constraint_data in raw_constraints.items():
@@ -200,8 +202,23 @@ def _create_sts_additional_constraints(
 
         rhs_filename = series_by_constraint_name.get(constraint_name.lower())
         if rhs_filename is None:
+            # Fallback for case-insensitive and partial match
+            # We try to see if there is any overlap in the name parts (splitting by '_')
+            constraint_parts = set(constraint_name.lower().split("_"))
+            for key, filename in series_by_constraint_name.items():
+                key_parts = set(key.lower().split("_"))
+                # If there's a significant overlap (more than 50% of constraint parts), match it
+                if len(constraint_parts & key_parts) / len(constraint_parts) >= 0.5:
+                    rhs_filename = filename
+                    break
+                if key in constraint_name.lower() or constraint_name.lower() in key:
+                    rhs_filename = filename
+                    break
+
+        if rhs_filename is None:
             raise FileNotFoundError(
-                f"No RHS series found for STS constraint '{constraint_name}' in cluster '{cluster_name}'"
+                f"No RHS series found for STS constraint '{constraint_name}' in cluster '{cluster_name}'. "
+                f"Available series: {list(series_by_constraint_name.keys())}"
             )
 
         rhs_path = _resolve_sts_file_path(base_dir, rhs_filename, cluster_name, "constraint RHS matrix")

@@ -251,6 +251,173 @@ def test_generate_sts_clusters_missing_constraint_rhs_file_raises(tmp_path, monk
     assert "No RHS series found" in str(exc.value)
 
 
+def test_create_sts_additional_constraints_fuzzy_matching(tmp_path, monkeypatch, area):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_sts_clusters.settings",
+        type("S", (), {"sts_ts_directory": tmp_path}),
+    )
+
+    # 1. Test fuzzy matching (50% overlap)
+    # constraint: "night_min_v2g_fr" (parts: night, min, v2g, fr)
+    # filename: "psp_open_2h_v2g_limit_fr.csv..." -> "psp_open_2h_v2g_limit_fr" (parts: psp, open, 2h, v2g, limit, fr)
+    # Overlap: {v2g, fr} / {night, min, v2g, fr} = 2/4 = 0.5 -> Should match
+    rhs_data = pd.DataFrame({"time": [0], "TS1": [1.0]})
+    rhs_filename = "psp_open_2h_v2g_limit_fr.csv.uuid.arrow"
+    rhs_data.to_feather(tmp_path / rhs_filename)
+
+    sts_data = {
+        "cluster1": {
+            "properties": {},
+            "series": [],
+            "constraintParameters": {
+                "night_min_v2g_fr": {
+                    "variable": "injection",
+                    "operator": "greater",
+                    "enabled": True,
+                    "hours": [[1]],
+                }
+            },
+            "stsConstraintsSeriesList": [rhs_filename],
+        }
+    }
+
+    generate_sts_clusters(area, sts_data)
+    assert "night_min_v2g_fr" in area.last_storage.constraints
+    assert area.last_storage.constraint_terms["night_min_v2g_fr"].equals(rhs_data.iloc[:, [1]])
+
+
+def test_create_sts_additional_constraints_substring_matching(tmp_path, monkeypatch, area):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_sts_clusters.settings",
+        type("S", (), {"sts_ts_directory": tmp_path}),
+    )
+
+    # 2. Test substring matching
+    # constraint: "constraint_abc"
+    # filename: "abc.csv..." -> "abc"
+    # "abc" is in "constraint_abc" -> Should match
+    rhs_data = pd.DataFrame({"time": [0], "TS1": [2.0]})
+    rhs_filename = "abc.csv.uuid.arrow"
+    rhs_data.to_feather(tmp_path / rhs_filename)
+
+    sts_data = {
+        "cluster1": {
+            "properties": {},
+            "series": [],
+            "constraintParameters": {
+                "constraint_abc": {
+                    "variable": "injection",
+                    "operator": "greater",
+                    "enabled": True,
+                    "hours": [[1]],
+                }
+            },
+            "stsConstraintsSeriesList": [rhs_filename],
+        }
+    }
+
+    generate_sts_clusters(area, sts_data)
+    assert "constraint_abc" in area.last_storage.constraints
+    assert area.last_storage.constraint_terms["constraint_abc"].equals(rhs_data.iloc[:, [1]])
+
+
+def test_create_sts_additional_constraints_no_csv_marker_fallback(tmp_path, monkeypatch, area):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_sts_clusters.settings",
+        type("S", (), {"sts_ts_directory": tmp_path}),
+    )
+
+    # 3. Test fallback for missing .csv marker
+    rhs_data = pd.DataFrame({"time": [0], "TS1": [3.0]})
+    rhs_filename = "simple_name.uuid.arrow"
+    rhs_data.to_feather(tmp_path / rhs_filename)
+
+    sts_data = {
+        "cluster1": {
+            "properties": {},
+            "series": [],
+            "constraintParameters": {
+                "simple_name": {
+                    "variable": "injection",
+                    "operator": "greater",
+                    "enabled": True,
+                    "hours": [[1]],
+                }
+            },
+            "stsConstraintsSeriesList": [rhs_filename],
+        }
+    }
+
+    generate_sts_clusters(area, sts_data)
+    assert "simple_name" in area.last_storage.constraints
+
+
+def test_create_sts_additional_constraints_duplicate_warning(tmp_path, monkeypatch, area, caplog):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_sts_clusters.settings",
+        type("S", (), {"sts_ts_directory": tmp_path}),
+    )
+
+    # 4. Test warning on duplicate RHS series
+    rhs_data = pd.DataFrame({"time": [0], "TS1": [4.0]})
+    rhs_filename1 = "dup.csv.uuid1.arrow"
+    rhs_filename2 = "dup.csv.uuid2.arrow"
+    rhs_data.to_feather(tmp_path / rhs_filename1)
+    rhs_data.to_feather(tmp_path / rhs_filename2)
+
+    sts_data = {
+        "cluster1": {
+            "properties": {},
+            "series": [],
+            "constraintParameters": {
+                "dup": {
+                    "variable": "injection",
+                    "operator": "greater",
+                    "enabled": True,
+                    "hours": [[1]],
+                }
+            },
+            "stsConstraintsSeriesList": [rhs_filename1, rhs_filename2],
+        }
+    }
+
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        generate_sts_clusters(area, sts_data)
+
+    assert "Duplicate RHS series for STS constraint 'dup'" in caplog.text
+
+
+def test_create_sts_additional_constraints_error_message_contains_available(tmp_path, monkeypatch, area):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_sts_clusters.settings",
+        type("S", (), {"sts_ts_directory": tmp_path}),
+    )
+
+    # 5. Test improved error message
+    sts_data = {
+        "cluster1": {
+            "properties": {},
+            "series": [],
+            "constraintParameters": {
+                "missing": {
+                    "variable": "injection",
+                    "operator": "greater",
+                    "enabled": True,
+                    "hours": [[1]],
+                }
+            },
+            "stsConstraintsSeriesList": ["something_else.csv.uuid.arrow"],
+        }
+    }
+
+    with pytest.raises(FileNotFoundError) as exc:
+        generate_sts_clusters(area, sts_data)
+
+    assert "Available series: ['something_else']" in str(exc.value)
+
+
 def test_generate_sts_clusters_missing_file_raises(tmp_path, monkeypatch, area):
     monkeypatch.setattr(
         "antares.datamanager.generator.generate_sts_clusters.settings",

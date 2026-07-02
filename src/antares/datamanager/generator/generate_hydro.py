@@ -9,6 +9,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Optional, Set
@@ -107,7 +108,9 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Se
             area_obj.hydro.set_maxpower(maxpower_df)
 
 
-def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bool) -> tuple[pd.Series, pd.Series]:
+def _extract_generating_and_pumping(
+    df: pd.DataFrame, area_name: str, is_psp: bool
+) -> tuple[pd.Series[float | int], pd.Series[float | int]]:
     if not is_psp:
         # We assume the input df has only 1 column. If it has more, we only use the first one.
         return df.iloc[:, 0], pd.Series(0, index=df.index)
