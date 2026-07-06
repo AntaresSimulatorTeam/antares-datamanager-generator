@@ -44,6 +44,11 @@ from antares.datamanager.generator.generate_dsr_clusters import generate_dsr_clu
 from antares.datamanager.generator.generate_hydro import generate_hydro
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
 from antares.datamanager.generator.generate_misc_timeseries import generate_misc_timeseries
+from antares.datamanager.generator.generate_nuclear import (
+    Y_NUC_MODULATION_AREA_NAME,
+    generate_nuclear_binding_constraints,
+    generate_y_nuc_modulation_misc,
+)
 from antares.datamanager.generator.generate_res_clusters import generate_res_clusters
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
 from antares.datamanager.generator.generate_thermal_clusters import generate_thermal_clusters
@@ -74,6 +79,8 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         study.update_settings(study_settings)
 
         add_areas_to_study(study, study_data, used_files)
+        if study_data.nuclear_binding_constraints:
+            generate_nuclear_binding_constraints(study, study_data.nuclear_binding_constraints, used_files)
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
         if study_data.area_thermals and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study_data.nb_years} years")
@@ -147,6 +154,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         seed_tsgen_link=raw_study_data.get("global_seed", 0),
         nb_years=raw_study_data.get("nb_years", settings.nb_years),
         first_month=first_month,
+        nuclear_binding_constraints=raw_study_data.get("nuclear_binding_constraints"),
     )
 
     for area, area_info in study_data.areas.items():
@@ -158,6 +166,11 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         thermals = area_info.get("thermals", {})
         if thermals:
             study_data.area_thermals[area] = thermals
+
+        # Nuclear
+        nuclear = area_info.get("nuclear", {})
+        if nuclear:
+            study_data.area_nuclear[area] = nuclear
 
         # STS
         sts = area_info.get("sts", {})
@@ -312,6 +325,8 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
 
         loads = study_data.area_loads.get(area_name, [])
         thermals = study_data.area_thermals.get(area_name, {})
+        nuclear = study_data.area_nuclear.get(area_name, {})
+        nuclear_clusters = nuclear.get("clusters", {})
         sts = study_data.area_sts.get(area_name, {})
         dsr = study_data.area_dsr.get(area_name, {})
         misc = study_data.area_misc.get(area_name, {})
@@ -322,9 +337,16 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
             area_obj = study.create_area(area_name=area_name, properties=area_properties, ui=area_ui)
             _set_area_loads(area_obj, loads, path_to_load_directory, used_files)
 
-            generate_misc_timeseries(area_obj, area_name, misc, used_files)
+            if area_name.lower() == Y_NUC_MODULATION_AREA_NAME:
+                generate_y_nuc_modulation_misc(area_obj, misc)
+            else:
+                generate_misc_timeseries(area_obj, area_name, misc, used_files)
 
             generate_thermal_clusters(area_obj, thermals, first_month=study_data.first_month, used_files=used_files)
+            if nuclear_clusters:
+                generate_thermal_clusters(
+                    area_obj, nuclear_clusters, first_month=study_data.first_month, used_files=used_files
+                )
             generate_sts_clusters(area_obj, sts, used_files)
             df_dsr_constraints = generate_dsr_clusters(
                 area_obj, dsr, first_month=study_data.first_month, used_files=used_files
