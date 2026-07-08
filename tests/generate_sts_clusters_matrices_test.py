@@ -33,7 +33,7 @@ class StorageForTest:
     def set_lower_rule_curve(self, df):
         self._record("lower_curve", df)
 
-    def update_pmax_injection(self, df):
+    def set_pmax_injection(self, df):
         self._record("Pmax_injection", df)
 
     def set_pmax_withdrawal(self, df):

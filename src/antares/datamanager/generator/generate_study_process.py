@@ -39,6 +39,7 @@ from antares.datamanager.exceptions.exceptions import (
     MiscGenerationError,
 )
 from antares.datamanager.generator.build_study_settings import build_study_settings
+from antares.datamanager.generator.generate_adequacy_patch import generate_adequacy_patch
 from antares.datamanager.generator.generate_dsr_clusters import generate_dsr_clusters
 from antares.datamanager.generator.generate_hydro import generate_hydro
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
@@ -83,6 +84,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         if study_data.nuclear_talon_binding_constraint:
             generate_nuclear_talon_binding_constraint(study, study_data.nuclear_talon_binding_constraint, used_files)
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
+        generate_adequacy_patch(study, study_data.adequacy_patch)
         if study_data.area_thermals and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study_data.nb_years} years")
             study.generate_thermal_timeseries(settings.nb_years)
@@ -158,6 +160,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         seed_tsgen_link=raw_study_data.get("global_seed", 0),
         nb_years=raw_study_data.get("nb_years", settings.nb_years),
         first_month=first_month,
+        adequacy_patch=raw_study_data.get("settings", {}).get("adequacy", {}),
         nuclear_modulation_binding_constraints=binding_constraints.get("nuclear_modulation"),
         nuclear_talon_binding_constraint=binding_constraints.get("nuclear_talon"),
         settings=study_settings,
@@ -231,12 +234,14 @@ def _build_area_properties(area_def: dict[str, Any]) -> AreaProperties | None:
 
     has_ecu = "energy_cost_unsupplied" in properties_json
     has_ecs = "energy_cost_spilled" in properties_json
-    if not (has_ecu or has_ecs):
+    has_apm = "adequacy_patch_mode" in properties_json
+    if not (has_ecu or has_ecs or has_apm):
         return None
 
     return AreaProperties(
         energy_cost_unsupplied=properties_json.get("energy_cost_unsupplied", 0.0),
         energy_cost_spilled=properties_json.get("energy_cost_spilled", 0.0),
+        adequacy_patch_mode=properties_json.get("adequacy_patch_mode", "outside"),
     )
 
 

@@ -38,3 +38,4 @@ class StudyData:
     nb_years: int = field(default_factory=lambda: settings.nb_years)
     first_month: Month = field(default_factory=lambda: settings.study_setting_first_month)
     settings: dict[str, Any] = field(default_factory=dict)
+    adequacy_patch: dict[str, Any] = field(default_factory=dict)
