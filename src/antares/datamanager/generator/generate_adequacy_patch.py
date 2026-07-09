@@ -9,9 +9,11 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+import dataclasses
 
 from typing import Any
 
+from antares.craft import StudySettingsUpdate
 from antares.craft.model.settings.adequacy_patch import (
     AdequacyPatchParametersUpdate,
     PriceTakingOrder,
@@ -27,7 +29,7 @@ def generate_adequacy_patch(study: Study, adequacy_patch_def: dict[str, Any]) ->
         return
 
     # Filter adequacy_patch_def to only include fields present in AdequacyPatchParametersUpdate
-    valid_fields = set(AdequacyPatchParametersUpdate.__dataclass_fields__.keys())
+    valid_fields = {f.name for f in dataclasses.fields(AdequacyPatchParametersUpdate)}
     filtered_def = {k: v for k, v in adequacy_patch_def.items() if k in valid_fields}
 
     # Handle price_taking_order mapping
@@ -45,11 +47,7 @@ def generate_adequacy_patch(study: Study, adequacy_patch_def: dict[str, Any]) ->
     if not filtered_def:
         return
 
-    adequacy_patch_params = AdequacyPatchParametersUpdate(**filtered_def)
+    update_params = AdequacyPatchParametersUpdate(**filtered_def)
 
-    # We need to update the study settings.
-    # In antaresCraft, update_settings takes a StudySettingsUpdate object.
-    from antares.craft import StudySettingsUpdate
-
-    study_settings = StudySettingsUpdate(adequacy_patch_parameters=adequacy_patch_params)
+    study_settings = StudySettingsUpdate(adequacy_patch_parameters=update_params)
     study.update_settings(study_settings)
