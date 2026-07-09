@@ -127,6 +127,40 @@ def test_read_study_data_from_json_with_nb_years(mock_settings, mock_open_file, 
     assert study_data.nb_years == 5
 
 
+@patch("builtins.open", new_callable=mock_open)
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_read_study_data_from_json_parses_nuclear_clusters_and_binding_constraints(
+    mock_settings, mock_open_file, mock_json_data
+):
+    mock_settings.study_json_directory = Path("/mock/path")
+
+    mock_json_data["test_study"]["areas"]["area1"]["nuclear"] = {
+        "clusters": {"FR_Nuclear_epr": {"properties": "ThermalProperties class as JSON"}}
+    }
+    mock_json_data["test_study"]["nuclear_binding_constraints"] = {"group": "scenarised200", "constraints": []}
+    mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
+
+    study_data = read_study_data_from_json("test_study")
+
+    assert "FR_Nuclear_epr" in study_data.area_nuclear["area1"]["clusters"]
+    assert "area2" not in study_data.area_nuclear
+    assert study_data.nuclear_binding_constraints == {"group": "scenarised200", "constraints": []}
+
+
+@patch("builtins.open", new_callable=mock_open)
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_read_study_data_from_json_nuclear_binding_constraints_absent_by_default(
+    mock_settings, mock_open_file, mock_json_data
+):
+    mock_settings.study_json_directory = Path("/mock/path")
+    mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
+
+    study_data = read_study_data_from_json("test_study")
+
+    assert study_data.nuclear_binding_constraints is None
+    assert study_data.area_nuclear == {}
+
+
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
 def test_add_areas_to_study_with_fixed_seed(mock_load_dir):
     mock_load_dir.return_value = Path("/mock/load/dir")
@@ -357,6 +391,57 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
     assert result == {"message": "Study study_name successfully generated", "study_id": "dummy_id", "study_path": ""}
 
 
+@patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
+@patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
+@patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
+@patch("antares.datamanager.generator.generate_study_process.generate_nuclear_binding_constraints")
+def test_generate_study_calls_nuclear_binding_constraints_when_present(
+    mock_generate_nuclear_bc, mock_add_links, mock_add_areas, mock_read_study_data_from_json
+):
+    mock_study = MagicMock()
+    mock_study.service.study_id = "dummy_id"
+    mock_study.path = ""
+    mock_factory = MagicMock()
+    mock_factory.create_study.return_value = mock_study
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    nuclear_binding_constraints = {"group": "scenarised200", "constraints": []}
+    study_data = StudyData(
+        name="study_name",
+        areas={"fr": {}},
+        nuclear_binding_constraints=nuclear_binding_constraints,
+    )
+    mock_read_study_data_from_json.return_value = study_data
+
+    generate_study("dummy_id", mock_factory)
+
+    mock_generate_nuclear_bc.assert_called_once_with(mock_study, nuclear_binding_constraints, set())
+
+
+@patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
+@patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
+@patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
+@patch("antares.datamanager.generator.generate_study_process.generate_nuclear_binding_constraints")
+def test_generate_study_skips_nuclear_binding_constraints_when_absent(
+    mock_generate_nuclear_bc, mock_add_links, mock_add_areas, mock_read_study_data_from_json
+):
+    mock_study = MagicMock()
+    mock_study.service.study_id = "dummy_id"
+    mock_study.path = ""
+    mock_factory = MagicMock()
+    mock_factory.create_study.return_value = mock_study
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(name="study_name", areas={"fr": {}})
+    mock_read_study_data_from_json.return_value = study_data
+
+    generate_study("dummy_id", mock_factory)
+
+    mock_generate_nuclear_bc.assert_not_called()
+
+
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
 def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directory):
     mock_study = MagicMock()
@@ -393,6 +478,62 @@ def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directo
         assert mock_area_obj.create_thermal_cluster.call_count == 2
         mock_area_obj.create_thermal_cluster.assert_any_call("cluster1", {"enabled": True, "nominal_capacity": 2.0})
         mock_area_obj.create_thermal_cluster.assert_any_call("cluster2", {"must_run": True})
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_creates_nuclear_clusters_with_second_call(mock_generator_load_directory):
+    mock_study = MagicMock()
+    mock_area_obj = MagicMock()
+    mock_study.create_area.return_value = mock_area_obj
+    mock_generator_load_directory.return_value = "/fake/path"
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test",
+        areas={"fr": {}},
+        area_loads={"fr": []},
+        area_thermals={"fr": {"FR_Gas_ccgt": {"properties": {"enabled": True}}}},
+        area_nuclear={"fr": {"clusters": {"FR_Nuclear_epr": {"properties": {"enabled": True}}}}},
+    )
+
+    with patch(
+        "antares.datamanager.generator.generate_thermal_clusters.ThermalClusterProperties",
+        side_effect=lambda **kwargs: kwargs,
+    ):
+        add_areas_to_study(mock_study, study_data, used_files=set())
+
+        assert mock_area_obj.create_thermal_cluster.call_count == 2
+        mock_area_obj.create_thermal_cluster.assert_any_call("FR_Gas_ccgt", {"enabled": True})
+        mock_area_obj.create_thermal_cluster.assert_any_call("FR_Nuclear_epr", {"enabled": True})
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+def test_add_areas_to_study_y_nuc_modulation_uses_hardcoded_psp_misc(mock_generator_load_directory):
+    mock_study = MagicMock()
+    mock_area_obj = MagicMock()
+    mock_study.create_area.return_value = mock_area_obj
+    mock_generator_load_directory.return_value = "/fake/path"
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test",
+        areas={"y_nuc_modulation": {}},
+        area_loads={"y_nuc_modulation": []},
+        area_nuclear={"y_nuc_modulation": {"clusters": {"y_nuc_modulation_nuclear_epr": {"properties": {}}}}},
+        area_misc={"y_nuc_modulation": {"psp": -999999}},
+    )
+
+    with patch(
+        "antares.datamanager.generator.generate_thermal_clusters.ThermalClusterProperties",
+        side_effect=lambda **kwargs: kwargs,
+    ):
+        add_areas_to_study(mock_study, study_data, used_files=set())
+
+    mock_area_obj.set_misc_gen.assert_called_once()
+    matrix = mock_area_obj.set_misc_gen.call_args[0][0]
+    assert (matrix["PSP"] == -999999).all()
 
 
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
