@@ -223,7 +223,6 @@ def _set_area_loads(
     load_directory = Path(path_to_load_directory)
     for load_file in loads:
         load_path = load_directory / load_file
-       # used_files.add(load_path)
         df = pd.read_feather(load_path)
         area_obj.set_load(df)
 
