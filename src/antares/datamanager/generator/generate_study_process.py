@@ -149,6 +149,14 @@ def read_study_data_from_json(study_id: str) -> StudyData:
     else:
         first_month = settings.study_setting_first_month
 
+    # Handle adequacy patch settings
+    settings_val = raw_study_data.get("settings", {})
+    if not isinstance(settings_val, dict):
+        settings_val = {}
+    adequacy_patch = settings_val.get("adequacy", {})
+    if not isinstance(adequacy_patch, dict):
+        adequacy_patch = {}
+
     binding_constraints = raw_study_data.get("binding_constraints", {})
     study_settings = raw_study_data.get("settings", {})
 
@@ -160,7 +168,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         seed_tsgen_link=raw_study_data.get("global_seed", 0),
         nb_years=raw_study_data.get("nb_years", settings.nb_years),
         first_month=first_month,
-        adequacy_patch=raw_study_data.get("settings", {}).get("adequacy", {}),
+        adequacy_patch=adequacy_patch,
         nuclear_modulation_binding_constraints=binding_constraints.get("nuclear_modulation"),
         nuclear_talon_binding_constraint=binding_constraints.get("nuclear_talon"),
         settings=study_settings,
@@ -232,17 +240,13 @@ def _build_area_properties(area_def: dict[str, Any]) -> AreaProperties | None:
     if not isinstance(properties_json, dict):
         return None
 
-    has_ecu = "energy_cost_unsupplied" in properties_json
-    has_ecs = "energy_cost_spilled" in properties_json
-    has_apm = "adequacy_patch_mode" in properties_json
-    if not (has_ecu or has_ecs or has_apm):
-        return None
+    props = {}
+    for key in ["energy_cost_unsupplied", "energy_cost_spilled", "adequacy_patch_mode"]:
+        val = properties_json.get(key)
+        if val is not None:
+            props[key] = val
 
-    return AreaProperties(
-        energy_cost_unsupplied=properties_json.get("energy_cost_unsupplied", 0.0),
-        energy_cost_spilled=properties_json.get("energy_cost_spilled", 0.0),
-        adequacy_patch_mode=properties_json.get("adequacy_patch_mode", "outside"),
-    )
+    return AreaProperties(**props)
 
 
 def _set_area_loads(
