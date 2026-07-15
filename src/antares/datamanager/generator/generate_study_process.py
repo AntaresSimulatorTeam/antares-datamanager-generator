@@ -338,7 +338,7 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
             _set_area_loads(area_obj, loads, path_to_load_directory, used_files)
 
             if area_name.lower() == Y_NUC_MODULATION_AREA_NAME:
-                generate_y_nuc_modulation_misc(area_obj, misc)
+                generate_y_nuc_modulation_misc(area_obj)
             else:
                 generate_misc_timeseries(area_obj, area_name, misc, used_files)
 

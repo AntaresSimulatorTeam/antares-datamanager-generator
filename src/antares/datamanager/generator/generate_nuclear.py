@@ -42,8 +42,7 @@ logger = get_logger(__name__)
 #   "nuclear": { "clusters": { "FR_Nuclear_cp0_cp1_cp2": {...}, "FR_Nuclear_epr": {...} } }
 # },
 # "y_nuc_modulation": {
-#   "nuclear": { "clusters": { "y_nuc_modulation_nuclear_cp0_cp1_cp2": {...}, ... } },
-#   "misc": { "psp": -999999 }
+#   "nuclear": { "clusters": { "y_nuc_modulation_nuclear_cp0_cp1_cp2": {...}, ... } }
 # }
 #
 # Top level "nuclear_binding_constraints" (same level as area or links)
@@ -85,15 +84,13 @@ _ALL_FILTERS = {
 }
 
 
-def generate_y_nuc_modulation_misc(area_obj: Area, misc: dict[str, Any]) -> None:
+def generate_y_nuc_modulation_misc(area_obj: Area) -> None:
     """
     The y_nuc_modulation area has no real MISC generation. It only has a
-    value on the PSP column (all other columns are 0)
+    hardcoded value on the PSP column (all other columns are 0)
     """
-    psp_value = misc.get("psp", Y_NUC_MODULATION_PSP_DEFAULT)
-
     matrix = pd.DataFrame(np.zeros((EXPECTED_HOURS, len(MISC_COLUMNS)), dtype=np.float64), columns=MISC_COLUMNS)
-    matrix["PSP"] = psp_value
+    matrix["PSP"] = Y_NUC_MODULATION_PSP_DEFAULT
     area_obj.set_misc_gen(matrix)
 
 

@@ -522,7 +522,6 @@ def test_add_areas_to_study_y_nuc_modulation_uses_hardcoded_psp_misc(mock_genera
         areas={"y_nuc_modulation": {}},
         area_loads={"y_nuc_modulation": []},
         area_nuclear={"y_nuc_modulation": {"clusters": {"y_nuc_modulation_nuclear_epr": {"properties": {}}}}},
-        area_misc={"y_nuc_modulation": {"psp": -999999}},
     )
 
     with patch(
