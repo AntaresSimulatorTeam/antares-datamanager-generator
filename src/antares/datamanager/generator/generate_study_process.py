@@ -46,7 +46,8 @@ from antares.datamanager.generator.generate_link_matrices import generate_link_c
 from antares.datamanager.generator.generate_misc_timeseries import generate_misc_timeseries
 from antares.datamanager.generator.generate_nuclear import (
     Y_NUC_MODULATION_AREA_NAME,
-    generate_nuclear_binding_constraints,
+    generate_nuclear_modulation_binding_constraints,
+    generate_nuclear_talon_binding_constraint,
     generate_y_nuc_modulation_misc,
 )
 from antares.datamanager.generator.generate_res_clusters import generate_res_clusters
@@ -79,8 +80,12 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         study.update_settings(study_settings)
 
         add_areas_to_study(study, study_data, used_files)
-        if study_data.nuclear_binding_constraints:
-            generate_nuclear_binding_constraints(study, study_data.nuclear_binding_constraints, used_files)
+        if study_data.nuclear_modulation_binding_constraints:
+            generate_nuclear_modulation_binding_constraints(
+                study, study_data.nuclear_modulation_binding_constraints, used_files
+            )
+        if study_data.nuclear_talon_binding_constraint:
+            generate_nuclear_talon_binding_constraint(study, study_data.nuclear_talon_binding_constraint, used_files)
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
         if study_data.area_thermals and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study_data.nb_years} years")
@@ -146,6 +151,8 @@ def read_study_data_from_json(study_id: str) -> StudyData:
     else:
         first_month = settings.study_setting_first_month
 
+    binding_constraints = raw_study_data.get("binding_constraints", {})
+
     study_data = StudyData(
         name=study_name,
         areas=raw_study_data.get("areas", {}),
@@ -154,7 +161,8 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         seed_tsgen_link=raw_study_data.get("global_seed", 0),
         nb_years=raw_study_data.get("nb_years", settings.nb_years),
         first_month=first_month,
-        nuclear_binding_constraints=raw_study_data.get("nuclear_binding_constraints"),
+        nuclear_modulation_binding_constraints=binding_constraints.get("nuclear_modulation"),
+        nuclear_talon_binding_constraint=binding_constraints.get("nuclear_talon"),
     )
 
     for area, area_info in study_data.areas.items():

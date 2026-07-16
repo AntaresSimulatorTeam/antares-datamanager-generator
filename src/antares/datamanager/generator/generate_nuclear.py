@@ -28,6 +28,7 @@ from antares.craft.model.area import Area
 from antares.craft.model.commons import FilterOption
 from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
+from antares.datamanager.exceptions.exceptions import NuclearGenerationError
 from antares.datamanager.generator.generate_misc_timeseries import EXPECTED_HOURS, MISC_COLUMNS
 from antares.datamanager.logs.logging_setup import get_logger
 
@@ -45,29 +46,39 @@ logger = get_logger(__name__)
 #   "nuclear": { "clusters": { "y_nuc_modulation_nuclear_cp0_cp1_cp2": {...}, ... } }
 # }
 #
-# Top level "nuclear_binding_constraints" (same level as area or links)
+# Top level "binding_constraints" (same level as area or links) contains talon and modulation
+# both are optional
 #
-# "nuclear_binding_constraints": {
-#   "group": "scenarised200",             # groups the constraint TS + encodes nbTsColumns
-#   "nbTsColumns": 200,
-#   "frStandardClusters": ["fr_nuclear_cp0_cp1_cp2", "fr_nuclear_epr", ...],   # weight = 1
-#   "frPeakClusters": ["fr_nuclear_peak1", ...],                              # weight = 1, hourly only
-#   "yNucModulationClusters": ["y_nuc_modulation_nuclear_cp0_cp1_cp2", ...],  # weight = -coeff
-#   "constraints": [
-#     {
-#       "name": "nuc_modulation_limit",   # -> binding constraint name
-#       "type": "hourly",                 # -> hourly | daily | weekly
-#       "coeff": 1.00,                    # -> y_nuc_modulation side weight (negated)
-#       "includesPeak": true,             # -> also include frPeakClusters on the FR side
-#       "series": "<arrow_file>"          # -> RHS (less_term_matrix), without any transformation
-#     },
-#     ...
-#   ]
+# "binding_constraints": {
+#   "nuclear_modulation": {
+#     "group": "scenarised200",             # groups the constraint TS + encodes nbTsColumns
+#     "nbTsColumns": 200,
+#     "frStandardClusters": ["fr_nuclear_cp0_cp1_cp2", "fr_nuclear_epr", ...],   # weight = 1
+#     "frPeakClusters": ["fr_nuclear_peak1", ...],                              # weight = 1, hourly only
+#     "yNucModulationClusters": ["y_nuc_modulation_nuclear_cp0_cp1_cp2", ...],  # weight = -coeff
+#     "constraints": [
+#       {
+#         "name": "nuc_modulation_limit",   # -> binding constraint name
+#         "type": "hourly",                 # -> hourly | daily | weekly
+#         "coeff": 1.00,                    # -> y_nuc_modulation side weight (negated)
+#         "includesPeak": true,             # -> also include frPeakClusters on the FR side
+#         "series": "<arrow_file>"          # -> RHS (less_term_matrix), without any transformation
+#       },
+#       ...
+#     ]
+#   },
+#   "nuclear_talon": {
+#     "group": "scenarised200",
+#     "nbTsColumns": 200,
+#     "frStandardClusters": ["fr_nuclear_cp0_cp1_cp2", "fr_nuclear_epr", ...],   # weight = 1, fixed
+#     "series": "<arrow_file>"            # -> RHS (greater_term_matrix), without any transformation
+#   }
 # }
 
 FR_AREA_ID = "fr"
 Y_NUC_MODULATION_AREA_NAME = "y_nuc_modulation"
 Y_NUC_MODULATION_PSP_DEFAULT = -999999
+NUCLEAR_TALON_CONSTRAINT_NAME = "talon_nuc"
 
 _TIME_STEP_BY_TYPE = {
     "hourly": BindingConstraintFrequency.HOURLY,
@@ -83,6 +94,16 @@ _ALL_FILTERS = {
     FilterOption.ANNUAL,
 }
 
+_REQUIRED_MODULATION_KEYS = ("group", "frStandardClusters", "frPeakClusters", "yNucModulationClusters", "constraints")
+_REQUIRED_MODULATION_CONSTRAINT_KEYS = ("name", "type", "coeff", "includesPeak", "series")
+_REQUIRED_TALON_KEYS = ("group", "frStandardClusters", "series")
+
+
+def _require_keys(payload: dict[str, Any], required_keys: tuple[str, ...], context: str) -> None:
+    missing = [key for key in required_keys if key not in payload]
+    if missing:
+        raise NuclearGenerationError(f"{context} is missing required key(s): {', '.join(missing)}")
+
 
 def generate_y_nuc_modulation_misc(area_obj: Area) -> None:
     """
@@ -94,20 +115,22 @@ def generate_y_nuc_modulation_misc(area_obj: Area) -> None:
     area_obj.set_misc_gen(matrix)
 
 
-def generate_nuclear_binding_constraints(
+def generate_nuclear_modulation_binding_constraints(
     study: Study,
-    nuclear_binding_constraints: dict[str, Any],
+    nuclear_modulation_binding_constraints: dict[str, Any],
     used_files: Optional[Set[Path]] = None,
 ) -> None:
     """
     Creates the nuclear modulation binding constraints (hourly/daily/weekly) with
     the FR nuclear clusters to their y_nuc_modulation.
     """
-    group = nuclear_binding_constraints.get("group", "")
-    fr_standard_clusters = nuclear_binding_constraints.get("frStandardClusters", [])
-    fr_peak_clusters = nuclear_binding_constraints.get("frPeakClusters", [])
-    y_nuc_modulation_clusters = nuclear_binding_constraints.get("yNucModulationClusters", [])
-    constraints = nuclear_binding_constraints.get("constraints", [])
+    _require_keys(nuclear_modulation_binding_constraints, _REQUIRED_MODULATION_KEYS, "nuclear_modulation")
+
+    group = nuclear_modulation_binding_constraints["group"]
+    fr_standard_clusters = nuclear_modulation_binding_constraints["frStandardClusters"]
+    fr_peak_clusters = nuclear_modulation_binding_constraints["frPeakClusters"]
+    y_nuc_modulation_clusters = nuclear_modulation_binding_constraints["yNucModulationClusters"]
+    constraints = nuclear_modulation_binding_constraints["constraints"]
 
     base_dir = settings.nuclear_modulation_ts_directory
 
@@ -134,9 +157,11 @@ def _create_nuclear_modulation_constraint(
     base_dir: Path,
     used_files: Optional[Set[Path]] = None,
 ) -> None:
+    _require_keys(constraint, _REQUIRED_MODULATION_CONSTRAINT_KEYS, "nuclear_modulation constraint entry")
+
     name = constraint["name"]
-    coeff = constraint.get("coeff", 1.0)
-    includes_peak = constraint.get("includesPeak", False)
+    coeff = constraint["coeff"]
+    includes_peak = constraint["includesPeak"]
 
     properties = BindingConstraintProperties(
         enabled=True,
@@ -168,3 +193,46 @@ def _create_nuclear_modulation_constraint(
         less_term_matrix=less_term_matrix,
     )
     logger.info(f"Created nuclear modulation binding constraint {name}")
+
+
+def generate_nuclear_talon_binding_constraint(
+    study: Study,
+    nuclear_talon_binding_constraint: dict[str, Any],
+    used_files: Optional[Set[Path]] = None,
+) -> None:
+    """
+    Creates the nuclear talon binding constraint
+    FR physical nuclear production (standard clusters only, no peak, no virtual).
+    """
+    _require_keys(nuclear_talon_binding_constraint, _REQUIRED_TALON_KEYS, "nuclear_talon")
+
+    group = nuclear_talon_binding_constraint["group"]
+    fr_standard_clusters = nuclear_talon_binding_constraint["frStandardClusters"]
+
+    properties = BindingConstraintProperties(
+        enabled=True,
+        time_step=BindingConstraintFrequency.HOURLY,
+        operator=BindingConstraintOperator.GREATER,
+        group=group,
+        filter_year_by_year=set(_ALL_FILTERS),
+        filter_synthesis=set(_ALL_FILTERS),
+    )
+
+    terms = [
+        ConstraintTerm(data=ClusterData(area=FR_AREA_ID, cluster=cluster_id), weight=1)
+        for cluster_id in fr_standard_clusters
+    ]
+
+    base_dir = settings.nuclear_talon_ts_directory
+    series_path = base_dir / nuclear_talon_binding_constraint["series"]
+    if used_files is not None:
+        used_files.add(series_path)
+    greater_term_matrix = pd.read_feather(series_path)
+
+    study.create_binding_constraint(
+        name=NUCLEAR_TALON_CONSTRAINT_NAME,
+        properties=properties,
+        terms=terms,
+        greater_term_matrix=greater_term_matrix,
+    )
+    logger.info(f"Created nuclear talon binding constraint {NUCLEAR_TALON_CONSTRAINT_NAME}")

@@ -30,7 +30,8 @@ class StudyData:
     area_res: dict[str, Any] = field(default_factory=dict)
     area_hydro: dict[str, Any] = field(default_factory=dict)
     area_nuclear: dict[str, Any] = field(default_factory=dict)
-    nuclear_binding_constraints: dict[str, Any] | None = None
+    nuclear_modulation_binding_constraints: dict[str, Any] | None = None
+    nuclear_talon_binding_constraint: dict[str, Any] | None = None
     enable_random_ts: bool = True
     # TODO JSON must contain this field, mean while it is default to 0
     seed_tsgen_link: int = 0
