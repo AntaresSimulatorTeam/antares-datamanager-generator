@@ -25,16 +25,29 @@ logger = get_logger(__name__)
 DEFAULT_MAXPOWER_VALUE = 24
 
 
-def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Set[Path]] = None) -> None:
+def generate_hydro(
+    area_obj: Any,
+    hydro: dict[str, Any],
+    used_files: Optional[Set[Path]] = None,
+    *,
+    area_name: Optional[str] = None,
+    is_psp: bool = False,
+) -> None:
+    """Apply a hydro (or PSP) data block to `area_obj`.
+
+    `area_name` is used to parse the columns since they are named after the real area
+    and not virtual even for psp
+    """
     if not hydro:
         return
+
+    resolved_area_name = area_name or area_obj.name
 
     properties = hydro.get("properties", {})
     if isinstance(properties, list):
         properties = properties[0] if properties else {}
 
     series_list = hydro.get("series", [])
-    is_psp = bool(hydro.get("psp", False))
 
     # Update properties
     # Mapping intra_daily_modulation from input JSON's inter_daily_modulation
@@ -98,7 +111,7 @@ def generate_hydro(area_obj: Any, hydro: dict[str, Any], used_files: Optional[Se
             # Col 1: DEFAULT_MAXPOWER_VALUE (24)
             # Col 2: _pumping max power (0 for regular hydro, extracted from the arrow file for PSP)
             # Col 3: DEFAULT_MAXPOWER_VALUE (24)
-            generating, pumping = _extract_generating_and_pumping(df, area_obj.name, is_psp)
+            generating, pumping = _extract_generating_and_pumping(df, resolved_area_name, is_psp)
             maxpower_df = pd.DataFrame()
             maxpower_df["0"] = generating
             maxpower_df["1"] = DEFAULT_MAXPOWER_VALUE
