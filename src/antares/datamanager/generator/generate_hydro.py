@@ -43,11 +43,12 @@ def generate_hydro(
 
     resolved_area_name = area_name or area_obj.name
 
-    properties = hydro.get("properties", {})
+    # "properties"/"series" might be null if only psp is linked
+    properties = hydro.get("properties") or {}
     if isinstance(properties, list):
         properties = properties[0] if properties else {}
 
-    series_list = hydro.get("series", [])
+    series_list = hydro.get("series") or []
 
     # Update properties
     # Mapping intra_daily_modulation from input JSON's inter_daily_modulation
