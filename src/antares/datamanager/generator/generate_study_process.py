@@ -55,6 +55,10 @@ from antares.datamanager.utils.area_ui_utils import generate_random_color, gener
 configure_ecs_logger()
 logger = get_logger(__name__)
 
+# PSP areas get their data placed in a virtual
+# area instead of the real area named w_hydro_open_<area>
+PSP_VIRTUAL_AREA_PREFIX = "w_hydro_open_"
+
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     used_files: Set[Path] = set()
@@ -279,6 +283,26 @@ def _create_dsr_binding_constraints(study: Study, area_name: str, df_dsr_constra
         logger.info(f"Created binding constraint {bc_name} for area {area_name}")
 
 
+def _psp_virtual_area_name(real_area_name: str) -> str:
+    return f"{PSP_VIRTUAL_AREA_PREFIX}{real_area_name.lower()}"
+
+
+def _generate_area_hydro(
+    study: Study, area_obj: Area, area_name: str, hydro: dict[str, Any], used_files: Set[Path]
+) -> None:
+    psp_data = hydro.get("psp") if isinstance(hydro, dict) else None
+    hydro_data = {key: value for key, value in hydro.items() if key != "psp"} if hydro else {}
+
+    generate_hydro(area_obj, hydro_data, used_files, area_name=area_name)
+
+    if not psp_data:
+        return
+
+    virtual_area_name = _psp_virtual_area_name(area_name)
+    virtual_area_obj = study.create_area(area_name=virtual_area_name)
+    generate_hydro(virtual_area_obj, psp_data, used_files, area_name=area_name, is_psp=True)
+
+
 def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path]) -> None:
     path_to_load_directory = generator_load_directory()
     logger.info(list(study_data.areas.keys()))
@@ -308,7 +332,7 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
             _create_dsr_binding_constraints(study, area_name, df_dsr_constraints)
             generate_res_clusters(area_obj, area_name, res, used_files)
 
-            generate_hydro(area_obj, hydro, used_files)
+            _generate_area_hydro(study, area_obj, area_name, hydro, used_files)
 
             logger.info(f"Successfully created area for {area_name}")
         except (APIGenerationError, MiscGenerationError) as e:

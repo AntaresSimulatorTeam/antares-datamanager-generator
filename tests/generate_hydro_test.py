@@ -228,10 +228,10 @@ def test_generate_hydro_psp_maxpower_uses_named_columns(tmp_path, monkeypatch):
     df = pd.DataFrame({"AT_generating": [1.0] * 8760, "AT_pumping": [2.0] * 8760})
     df.to_feather(tmp_path / "AT_psp_maxpower.arrow")
 
-    area_obj = MockArea(name="AT")
-    hydro_data = {"psp": True, "series": ["AT_psp_maxpower.arrow"]}
+    area_obj = MockArea(name="w_hydro_open_at")
+    hydro_data = {"series": ["AT_psp_maxpower.arrow"]}
 
-    generate_hydro(area_obj, hydro_data)
+    generate_hydro(area_obj, hydro_data, area_name="AT", is_psp=True)
 
     maxpower_df = area_obj.hydro.series["maxpower"]
     assert (maxpower_df["0"] == 1.0).all()
@@ -248,9 +248,9 @@ def test_generate_hydro_psp_maxpower_falls_back_to_positional(tmp_path, monkeypa
     df.to_feather(tmp_path / "AT_psp_maxpower.arrow")
 
     area_obj = MockArea(name="AT")
-    hydro_data = {"psp": True, "series": ["AT_psp_maxpower.arrow"]}
+    hydro_data = {"series": ["AT_psp_maxpower.arrow"]}
 
-    generate_hydro(area_obj, hydro_data)
+    generate_hydro(area_obj, hydro_data, is_psp=True)
 
     maxpower_df = area_obj.hydro.series["maxpower"]
     assert (maxpower_df["0"] == 3.0).all()

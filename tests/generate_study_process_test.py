@@ -15,7 +15,7 @@ import json
 import os
 
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, call, mock_open, patch
 
 from antares.craft import APIconf
 from antares.datamanager.core.dependencies import get_study_factory
@@ -783,3 +783,95 @@ def test_add_areas_to_study_calls_res_generator_with_area_payload(
     add_areas_to_study(mock_study, study_data, used_files)
 
     mock_generate_res_clusters.assert_called_once_with(mock_area_obj, "FR", study_data.area_res["FR"], used_files)
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+@patch("antares.datamanager.generator.generate_study_process.generate_hydro")
+def test_add_areas_to_study_hydro_only_does_not_create_virtual_psp_area(mock_generate_hydro, mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
+    mock_study = MagicMock()
+    mock_area_obj = MagicMock()
+    mock_study.create_area.return_value = mock_area_obj
+    used_files = set()
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test",
+        areas={"AT": {}},
+        area_hydro={"AT": {"properties": {"follow_load": True}, "series": [], "allocation": {"AT": 1.0}}},
+    )
+
+    add_areas_to_study(mock_study, study_data, used_files)
+
+    # Only the real area is created, no virtual PSP area
+    assert mock_study.create_area.call_count == 1
+    mock_generate_hydro.assert_called_once_with(
+        mock_area_obj,
+        {"properties": {"follow_load": True}, "series": [], "allocation": {"AT": 1.0}},
+        used_files,
+        area_name="AT",
+    )
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+@patch("antares.datamanager.generator.generate_study_process.generate_hydro")
+def test_add_areas_to_study_psp_creates_virtual_area_and_leaves_real_area_untouched(mock_generate_hydro, mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
+    mock_study = MagicMock()
+    mock_real_area_obj = MagicMock(name="real_area")
+    mock_virtual_area_obj = MagicMock(name="virtual_area")
+    mock_study.create_area.side_effect = [mock_real_area_obj, mock_virtual_area_obj]
+    used_files = set()
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    psp_block = {
+        "properties": {"reservoir": True},
+        "series": ["AT_psp_mod.arrow"],
+        "allocation": {"AT": 1.0, "FR": 2.0},
+    }
+    study_data = StudyData(
+        name="test",
+        areas={"AT": {}},
+        area_hydro={"AT": {"psp": psp_block}},
+    )
+
+    add_areas_to_study(mock_study, study_data, used_files)
+
+    # The real area is created, then the virtual PSP area
+    assert mock_study.create_area.call_count == 2
+    real_call, virtual_call = mock_study.create_area.call_args_list
+    assert real_call.kwargs["area_name"] == "AT"
+    assert virtual_call == call(area_name="w_hydro_open_at")
+
+    assert mock_generate_hydro.call_count == 2
+    mock_generate_hydro.assert_any_call(mock_real_area_obj, {}, used_files, area_name="AT")
+    mock_generate_hydro.assert_any_call(mock_virtual_area_obj, psp_block, used_files, area_name="AT", is_psp=True)
+
+
+@patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
+@patch("antares.datamanager.generator.generate_study_process.generate_hydro")
+def test_add_areas_to_study_hydro_and_psp_coexist(mock_generate_hydro, mock_load_dir):
+    mock_load_dir.return_value = Path("/mock/load/dir")
+    mock_study = MagicMock()
+    mock_real_area_obj = MagicMock(name="real_area")
+    mock_virtual_area_obj = MagicMock(name="virtual_area")
+    mock_study.create_area.side_effect = [mock_real_area_obj, mock_virtual_area_obj]
+    used_files = set()
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    hydro_block = {"properties": {"follow_load": True}, "series": ["AT_mod.arrow"], "allocation": {"AT": 1.0}}
+    psp_block = {"properties": {"reservoir": True}, "series": ["AT_psp_mod.arrow"], "allocation": {"AT": 1.0}}
+    study_data = StudyData(
+        name="test",
+        areas={"AT": {}},
+        area_hydro={"AT": {**hydro_block, "psp": psp_block}},
+    )
+
+    add_areas_to_study(mock_study, study_data, used_files)
+
+    assert mock_study.create_area.call_count == 2
+    mock_generate_hydro.assert_any_call(mock_real_area_obj, hydro_block, used_files, area_name="AT")
+    mock_generate_hydro.assert_any_call(mock_virtual_area_obj, psp_block, used_files, area_name="AT", is_psp=True)
