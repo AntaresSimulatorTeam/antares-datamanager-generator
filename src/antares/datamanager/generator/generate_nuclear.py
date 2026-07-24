@@ -43,7 +43,7 @@ logger = get_logger(__name__)
 # "fr": {
 #   "thermals": { "FR_Gas_ccgt": {...} },
 #   "nuclear": { "clusters": {
-#     "FR_Nuclear_cp0_cp1_cp2": { "series": "<arrow_file>", ... },   # LT: no transforamtion, same file for cp0_cp1_cp2/n4/p4
+#     "FR_Nuclear_cp0_cp1_cp2": { "series": "<arrow_file>", ... },   # LT: no transforamtion, same thing for cp0_cp1_cp2/n4/p4
 #     "FR_Nuclear_epr": { "series": "<arrow_file>", ... },           # EPR: no transformation
 #     "FR_Nuclear_smr": {
 #       "series": "<arrow_file_shared_pool>",                       # SMR: shared raw pool, needs mixing
