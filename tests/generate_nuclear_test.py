@@ -247,6 +247,21 @@ def test_generate_nuclear_availability_skips_clusters_without_series(mock_read_f
 
 @patch("antares.datamanager.generator.generate_nuclear.settings")
 @patch("antares.datamanager.generator.generate_nuclear.pd.read_feather")
+def test_generate_nuclear_availability_skips_clusters_with_unlinked_placeholder(
+    mock_read_feather, mock_settings, tmp_path
+):
+    mock_settings.nuclear_availability_ts_directory = tmp_path
+
+    area = _area_with_thermals(["fr_nuclear_smr"])
+
+    generate_nuclear_availability(area, {"fr_nuclear_smr": {"series": "matrix hash"}}, set())
+
+    mock_read_feather.assert_not_called()
+    area.get_thermals()["fr_nuclear_smr"].set_series.assert_not_called()
+
+
+@patch("antares.datamanager.generator.generate_nuclear.settings")
+@patch("antares.datamanager.generator.generate_nuclear.pd.read_feather")
 def test_generate_nuclear_availability_lt_series_shared_across_clusters_is_read_once(
     mock_read_feather, mock_settings, tmp_path
 ):

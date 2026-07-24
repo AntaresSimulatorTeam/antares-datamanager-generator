@@ -254,6 +254,11 @@ def generate_nuclear_talon_binding_constraint(
 
 _REQUIRED_SMR_MIXAGE_KEYS = ("unit_count", "seed")
 
+# Placeholder value used by the Java backend when no trajectory of a given family
+# is linked to the study - the "series" key stays present but keeps its pre-existing
+# placeholder rather than being omitted, same placeholder used for fuel_cost/co2_cost.
+_UNLINKED_SERIES_PLACEHOLDER = "matrix hash"
+
 
 def generate_nuclear_availability(
     area_obj: Area,
@@ -271,7 +276,7 @@ def generate_nuclear_availability(
 
     for cluster_name, cluster_values in nuclear_clusters.items():
         series_filename = cluster_values.get("series")
-        if not series_filename:
+        if not series_filename or series_filename == _UNLINKED_SERIES_PLACEHOLDER:
             continue
 
         if base_dir is None:
