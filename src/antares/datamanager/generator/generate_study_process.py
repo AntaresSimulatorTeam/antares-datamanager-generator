@@ -20,8 +20,8 @@ from typing import Any, Set
 import pandas as pd
 
 from antares.craft import (
-    APIconf,
     AdvancedParametersUpdate,
+    APIconf,
     BindingConstraintFrequency,
     BindingConstraintOperator,
     BindingConstraintProperties,
