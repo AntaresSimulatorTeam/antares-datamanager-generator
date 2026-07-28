@@ -74,7 +74,10 @@ def _build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) 
     Build StudySettingsUpdate from settings dictionary using Pydantic validation.
     Pydantic handles missing fields with defaults, so we only pass non-None values.
     """
-    kwargs = {}
+    general_params: GeneralParametersUpdate | None = None
+    optimization_params: OptimizationParametersUpdate | None = None
+    advanced_params: AdvancedParametersUpdate | None = None
+    seed_params: SeedParametersUpdate | None = None
 
     if settings_dict:
         # Extract and filter each parameter category (remove None values)
@@ -82,34 +85,39 @@ def _build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) 
         if general_settings:
             filtered_general = {k: v for k, v in general_settings.items() if v is not None}
             if filtered_general:
-                kwargs["general_parameters"] = GeneralParametersUpdate(**filtered_general)
+                general_params = GeneralParametersUpdate(**filtered_general)
 
         optimization_settings = settings_dict.get("optimization_parameters", {})
         if optimization_settings:
             filtered_optimization = {k: v for k, v in optimization_settings.items() if v is not None}
             if filtered_optimization:
-                kwargs["optimization_parameters"] = OptimizationParametersUpdate(**filtered_optimization)
+                optimization_params = OptimizationParametersUpdate(**filtered_optimization)
 
         advanced_settings = settings_dict.get("advanced_parameters", {})
         if advanced_settings:
             filtered_advanced = {k: v for k, v in advanced_settings.items() if v is not None}
             if filtered_advanced:
-                kwargs["advanced_parameters"] = AdvancedParametersUpdate(**filtered_advanced)
+                advanced_params = AdvancedParametersUpdate(**filtered_advanced)
 
         seed_settings = settings_dict.get("seeds_parameters", {})
         if seed_settings:
             filtered_seeds = {k: v for k, v in seed_settings.items() if v is not None}
             if filtered_seeds:
-                kwargs["seed_parameters"] = SeedParametersUpdate(**filtered_seeds)
+                seed_params = SeedParametersUpdate(**filtered_seeds)
 
-    # Ensure required general parameters are set (only add if not already in kwargs)
-    if "general_parameters" not in kwargs:
-        kwargs["general_parameters"] = GeneralParametersUpdate(
+    # Ensure required general parameters are set (only add if not already set)
+    if general_params is None:
+        general_params = GeneralParametersUpdate(
             nb_years=study_data.nb_years,
             first_month_in_year=study_data.first_month,
         )
 
-    return StudySettingsUpdate(**kwargs)
+    return StudySettingsUpdate(
+        general_parameters=general_params,
+        optimization_parameters=optimization_params,
+        advanced_parameters=advanced_params,
+        seed_parameters=seed_params,
+    )
 
 
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
