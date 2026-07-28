@@ -22,6 +22,7 @@ from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, MiscGenerationError
 from antares.datamanager.generator.generate_study_process import (
+    _build_study_settings,
     _package_and_upload_local_study,
     add_areas_to_study,
     add_links_to_study,
@@ -1081,3 +1082,302 @@ def test_add_areas_to_study_hydro_and_psp_coexist(mock_generate_hydro, mock_load
     assert mock_study.create_area.call_count == 2
     mock_generate_hydro.assert_any_call(mock_real_area_obj, hydro_block, used_files, area_name="AT")
     mock_generate_hydro.assert_any_call(mock_virtual_area_obj, psp_block, used_files, area_name="AT", is_psp=True)
+
+
+# Tests for _build_study_settings function
+def test_build_study_settings_empty_settings_dict():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=3,
+        first_month=Month.JANUARY,
+    )
+
+    settings_update = _build_study_settings({}, study_data)
+
+    assert settings_update.general_parameters is not None
+    assert settings_update.general_parameters.nb_years == 3
+    assert settings_update.general_parameters.first_month_in_year == Month.JANUARY
+    assert settings_update.optimization_parameters is None
+    assert settings_update.advanced_parameters is None
+    assert settings_update.seed_parameters is None
+
+
+def test_build_study_settings_with_general_parameters_only():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=2,
+        first_month=Month.FEBRUARY,
+    )
+
+    settings_dict = {
+        "general_parameters": {
+            "mode": "economy",
+            "horizon": "2028-2029",
+            "simulation_start": 1,
+            "simulation_end": 365,
+            "year_by_year": True,
+        }
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    assert settings_update.general_parameters is not None
+    assert settings_update.general_parameters.mode == "economy"
+    assert settings_update.general_parameters.horizon == "2028-2029"
+    assert settings_update.general_parameters.year_by_year is True
+    assert settings_update.optimization_parameters is None
+    assert settings_update.advanced_parameters is None
+    assert settings_update.seed_parameters is None
+
+
+def test_build_study_settings_with_optimization_parameters():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=1,
+        first_month=Month.JANUARY,
+    )
+
+    settings_dict = {
+        "optimization_parameters": {
+            "simplex_range": "week",
+            "transmission_capacities": "local-values",
+            "include_constraints": True,
+            "include_hurdlecosts": False,
+            "include_tc_minstablepower": True,
+        }
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    assert settings_update.general_parameters is not None
+    assert settings_update.optimization_parameters is not None
+    assert settings_update.optimization_parameters.simplex_range == "week"
+    assert settings_update.optimization_parameters.transmission_capacities == "local-values"
+    assert settings_update.optimization_parameters.include_constraints is True
+    assert settings_update.optimization_parameters.include_hurdlecosts is False
+
+
+def test_build_study_settings_with_advanced_parameters():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=1,
+        first_month=Month.JANUARY,
+    )
+
+    settings_dict = {
+        "advanced_parameters": {
+            "hydro_heuristic_policy": "accomodate rule curves",
+            "hydro_pricing_mode": "fast",
+            "power_fluctuations": "free modulations",
+            "shedding_policy": "shave peaks",
+            "unit_commitment_mode": "fast",
+        }
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    assert settings_update.advanced_parameters is not None
+    assert settings_update.advanced_parameters.hydro_heuristic_policy == "accomodate rule curves"
+    assert settings_update.advanced_parameters.hydro_pricing_mode == "fast"
+    assert settings_update.advanced_parameters.shedding_policy == "shave peaks"
+
+
+def test_build_study_settings_with_seed_parameters():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=1,
+        first_month=Month.JANUARY,
+    )
+
+    settings_dict = {
+        "seeds_parameters": {
+            "seed_tsgen_thermal": 3005489,
+            "seed_tsnumbers": 5005489,
+            "seed_unsupplied_energy_costs": 6005489,
+            "seed_spilled_energy_costs": 7005489,
+            "seed_thermal_costs": 8005489,
+            "seed_hydro_costs": 9005489,
+            "seed_initial_reservoir_levels": 10005489,
+        }
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    assert settings_update.seed_parameters is not None
+    assert settings_update.seed_parameters.seed_tsgen_thermal == 3005489
+    assert settings_update.seed_parameters.seed_tsnumbers == 5005489
+    assert settings_update.seed_parameters.seed_hydro_costs == 9005489
+
+
+def test_build_study_settings_with_all_parameters():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=5,
+        first_month=Month.MARCH,
+    )
+
+    settings_dict = {
+        "general_parameters": {
+            "mode": "economy",
+            "leap_year": True,
+        },
+        "optimization_parameters": {
+            "simplex_range": "week",
+            "include_constraints": True,
+        },
+        "advanced_parameters": {
+            "hydro_pricing_mode": "fast",
+            "unit_commitment_mode": "fast",
+        },
+        "seeds_parameters": {
+            "seed_tsgen_thermal": 1000,
+            "seed_tsnumbers": 2000,
+        },
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    assert settings_update.general_parameters is not None
+    assert settings_update.general_parameters.mode == "economy"
+    assert settings_update.general_parameters.leap_year is True
+    assert settings_update.optimization_parameters is not None
+    assert settings_update.optimization_parameters.simplex_range == "week"
+    assert settings_update.advanced_parameters is not None
+    assert settings_update.advanced_parameters.hydro_pricing_mode == "fast"
+    assert settings_update.seed_parameters is not None
+    assert settings_update.seed_parameters.seed_tsgen_thermal == 1000
+
+
+def test_build_study_settings_filters_none_values():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=1,
+        first_month=Month.JANUARY,
+    )
+
+    settings_dict = {
+        "general_parameters": {
+            "mode": "economy",
+            "leap_year": None,  # None value should be filtered
+            "horizon": "2028-2029",
+        },
+        "optimization_parameters": {
+            "simplex_range": "week",
+            "include_constraints": None,  # None value should be filtered
+        },
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    assert settings_update.general_parameters is not None
+    assert settings_update.general_parameters.mode == "economy"
+    assert settings_update.general_parameters.horizon == "2028-2029"
+    # leap_year should not be in the object (should use Pydantic default)
+    assert settings_update.optimization_parameters is not None
+    assert settings_update.optimization_parameters.simplex_range == "week"
+
+
+def test_build_study_settings_general_parameters_override_study_data_values():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=2,
+        first_month=Month.FEBRUARY,
+    )
+
+    settings_dict = {
+        "general_parameters": {
+            "nb_years": 5,  # Override study_data value
+            "first_month_in_year": Month.JULY,  # Override study_data value
+            "mode": "economy",
+        }
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    assert settings_update.general_parameters is not None
+    assert settings_update.general_parameters.nb_years == 5
+    assert settings_update.general_parameters.first_month_in_year == Month.JULY
+    assert settings_update.general_parameters.mode == "economy"
+
+
+def test_build_study_settings_empty_parameter_sections():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=1,
+        first_month=Month.JANUARY,
+    )
+
+    settings_dict = {
+        "general_parameters": {},
+        "optimization_parameters": {},
+        "advanced_parameters": {},
+        "seeds_parameters": {},
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    # Empty parameter sections should result in None (no Pydantic objects created)
+    assert settings_update.general_parameters is not None  # But general has defaults
+    assert settings_update.optimization_parameters is None
+    assert settings_update.advanced_parameters is None
+    assert settings_update.seed_parameters is None
+
+
+def test_build_study_settings_mixed_none_and_valid_values():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=3,
+        first_month=Month.JANUARY,
+    )
+
+    settings_dict = {
+        "general_parameters": {
+            "mode": "economy",
+            "leap_year": None,
+            "year_by_year": True,
+            "simulation_synthesis": None,
+        },
+        "seeds_parameters": {
+            "seed_tsgen_thermal": None,
+            "seed_tsnumbers": 5000,
+            "seed_hydro_costs": None,
+        },
+    }
+
+    settings_update = _build_study_settings(settings_dict, study_data)
+
+    assert settings_update.general_parameters is not None
+    assert settings_update.general_parameters.mode == "economy"
+    assert settings_update.general_parameters.year_by_year is True
+    assert settings_update.seed_parameters is not None
+    assert settings_update.seed_parameters.seed_tsnumbers == 5000
