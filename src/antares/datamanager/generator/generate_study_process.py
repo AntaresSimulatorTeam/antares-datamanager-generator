@@ -21,6 +21,7 @@ import pandas as pd
 
 from antares.craft import (
     APIconf,
+    AdvancedParametersUpdate,
     BindingConstraintFrequency,
     BindingConstraintOperator,
     BindingConstraintProperties,
@@ -29,6 +30,8 @@ from antares.craft import (
     GeneralParametersUpdate,
     LinkPropertiesUpdate,
     Month,
+    OptimizationParametersUpdate,
+    SeedParametersUpdate,
     StudySettingsUpdate,
 )
 from antares.craft.model.area import Area, AreaProperties, AreaUi
@@ -66,17 +69,56 @@ logger = get_logger(__name__)
 PSP_VIRTUAL_AREA_PREFIX = "w_hydro_open_"
 
 
+def _build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) -> StudySettingsUpdate:
+    """
+    Build StudySettingsUpdate from settings dictionary using Pydantic validation.
+    Pydantic handles missing fields with defaults, so we only pass non-None values.
+    """
+    kwargs = {}
+
+    if settings_dict:
+        # Extract and filter each parameter category (remove None values)
+        general_settings = settings_dict.get("general_parameters", {})
+        if general_settings:
+            filtered_general = {k: v for k, v in general_settings.items() if v is not None}
+            if filtered_general:
+                kwargs["general_parameters"] = GeneralParametersUpdate(**filtered_general)
+
+        optimization_settings = settings_dict.get("optimization_parameters", {})
+        if optimization_settings:
+            filtered_optimization = {k: v for k, v in optimization_settings.items() if v is not None}
+            if filtered_optimization:
+                kwargs["optimization_parameters"] = OptimizationParametersUpdate(**filtered_optimization)
+
+        advanced_settings = settings_dict.get("advanced_parameters", {})
+        if advanced_settings:
+            filtered_advanced = {k: v for k, v in advanced_settings.items() if v is not None}
+            if filtered_advanced:
+                kwargs["advanced_parameters"] = AdvancedParametersUpdate(**filtered_advanced)
+
+        seed_settings = settings_dict.get("seeds_parameters", {})
+        if seed_settings:
+            filtered_seeds = {k: v for k, v in seed_settings.items() if v is not None}
+            if filtered_seeds:
+                kwargs["seed_parameters"] = SeedParametersUpdate(**filtered_seeds)
+
+    # Ensure required general parameters are set (only add if not already in kwargs)
+    if "general_parameters" not in kwargs:
+        kwargs["general_parameters"] = GeneralParametersUpdate(
+            nb_years=study_data.nb_years,
+            first_month_in_year=study_data.first_month,
+        )
+
+    return StudySettingsUpdate(**kwargs)
+
+
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     used_files: Set[Path] = set()
     study = None
     try:
         study_data = read_study_data_from_json(study_id)
         study = factory.create_study(study_data.name)
-        study_settings = StudySettingsUpdate(
-            general_parameters=GeneralParametersUpdate(
-                first_month_in_year=study_data.first_month, nb_years=study_data.nb_years
-            )
-        )
+        study_settings = _build_study_settings(study_data.settings, study_data)
         study.update_settings(study_settings)
 
         add_areas_to_study(study, study_data, used_files)
@@ -152,6 +194,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         first_month = settings.study_setting_first_month
 
     binding_constraints = raw_study_data.get("binding_constraints", {})
+    study_settings = raw_study_data.get("settings", {})
 
     study_data = StudyData(
         name=study_name,
@@ -163,6 +206,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         first_month=first_month,
         nuclear_modulation_binding_constraints=binding_constraints.get("nuclear_modulation"),
         nuclear_talon_binding_constraint=binding_constraints.get("nuclear_talon"),
+        settings=study_settings,
     )
 
     for area, area_info in study_data.areas.items():
