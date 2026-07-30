@@ -22,13 +22,13 @@ from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, MiscGenerationError
 from antares.datamanager.generator.generate_study_process import (
-    _build_study_settings,
     _package_and_upload_local_study,
     add_areas_to_study,
     add_links_to_study,
     generate_study,
     read_study_data_from_json,
 )
+from antares.datamanager.generator.build_study_settings import build_study_settings
 from antares.datamanager.generator.study_adapters import APIStudyFactory, LocalStudyFactory
 from antares.datamanager.main import create_study
 
@@ -1084,7 +1084,7 @@ def test_add_areas_to_study_hydro_and_psp_coexist(mock_generate_hydro, mock_load
     mock_generate_hydro.assert_any_call(mock_virtual_area_obj, psp_block, used_files, area_name="AT", is_psp=True)
 
 
-# Tests for _build_study_settings function
+# Tests for build_study_settings function
 def test_build_study_settings_empty_settings_dict():
     from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
@@ -1095,7 +1095,7 @@ def test_build_study_settings_empty_settings_dict():
         first_month=Month.JANUARY,
     )
 
-    settings_update = _build_study_settings({}, study_data)
+    settings_update = build_study_settings({}, study_data)
 
     assert settings_update.general_parameters is not None
     assert settings_update.general_parameters.nb_years == 3
@@ -1125,7 +1125,7 @@ def test_build_study_settings_with_general_parameters_only():
         }
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     assert settings_update.general_parameters is not None
     assert settings_update.general_parameters.mode == "economy"
@@ -1156,7 +1156,7 @@ def test_build_study_settings_with_optimization_parameters():
         }
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     assert settings_update.general_parameters is not None
     assert settings_update.optimization_parameters is not None
@@ -1186,7 +1186,7 @@ def test_build_study_settings_with_advanced_parameters():
         }
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     assert settings_update.advanced_parameters is not None
     assert settings_update.advanced_parameters.hydro_heuristic_policy == "accomodate rule curves"
@@ -1216,7 +1216,7 @@ def test_build_study_settings_with_seed_parameters():
         }
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     assert settings_update.seed_parameters is not None
     assert settings_update.seed_parameters.seed_tsgen_thermal == 3005489
@@ -1253,7 +1253,7 @@ def test_build_study_settings_with_all_parameters():
         },
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     assert settings_update.general_parameters is not None
     assert settings_update.general_parameters.mode == "economy"
@@ -1288,7 +1288,7 @@ def test_build_study_settings_filters_none_values():
         },
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     assert settings_update.general_parameters is not None
     assert settings_update.general_parameters.mode == "economy"
@@ -1316,7 +1316,7 @@ def test_build_study_settings_general_parameters_override_study_data_values():
         }
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     assert settings_update.general_parameters is not None
     assert settings_update.general_parameters.nb_years == 5
@@ -1341,7 +1341,7 @@ def test_build_study_settings_empty_parameter_sections():
         "seeds_parameters": {},
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     # Empty parameter sections should result in None (no Pydantic objects created)
     assert settings_update.general_parameters is not None  # But general has defaults
@@ -1374,7 +1374,7 @@ def test_build_study_settings_mixed_none_and_valid_values():
         },
     }
 
-    settings_update = _build_study_settings(settings_dict, study_data)
+    settings_update = build_study_settings(settings_dict, study_data)
 
     assert settings_update.general_parameters is not None
     assert settings_update.general_parameters.mode == "economy"
