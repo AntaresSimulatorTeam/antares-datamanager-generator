@@ -22,6 +22,7 @@ from antares.craft.model.settings.adequacy_patch import PriceTakingOrder
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, MiscGenerationError
+from antares.datamanager.generator.build_study_settings import build_study_settings
 from antares.datamanager.generator.generate_study_process import (
     _package_and_upload_local_study,
     add_areas_to_study,
@@ -29,7 +30,6 @@ from antares.datamanager.generator.generate_study_process import (
     generate_study,
     read_study_data_from_json,
 )
-from antares.datamanager.generator.build_study_settings import build_study_settings
 from antares.datamanager.generator.study_adapters import APIStudyFactory, LocalStudyFactory
 from antares.datamanager.main import create_study
 

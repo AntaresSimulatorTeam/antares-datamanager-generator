@@ -15,16 +15,14 @@ import dataclasses
 from typing import Any
 
 from antares.craft import (
+    AdequacyPatchParametersUpdate,
     AdvancedParametersUpdate,
     GeneralParametersUpdate,
     OptimizationParametersUpdate,
     SeedParametersUpdate,
     StudySettingsUpdate,
-    AdequacyPatchParametersUpdate,
 )
-from antares.craft.model.settings.adequacy_patch import (
-    PriceTakingOrder,
-)
+from antares.craft.model.settings.adequacy_patch import PriceTakingOrder
 from antares.datamanager.models.study_data_json_model import StudyData
 
 
