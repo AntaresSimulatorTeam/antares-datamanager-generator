@@ -22,7 +22,6 @@ from antares.craft.model.settings.adequacy_patch import PriceTakingOrder
 from antares.datamanager.core.dependencies import get_study_factory
 from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, MiscGenerationError
-from antares.datamanager.generator.generate_adequacy_patch import generate_adequacy_patch
 from antares.datamanager.generator.generate_study_process import (
     _package_and_upload_local_study,
     add_areas_to_study,
@@ -993,78 +992,6 @@ def test_add_areas_to_study_calls_res_generator_with_area_payload(
 
     mock_generate_res_clusters.assert_called_once_with(mock_area_obj, "FR", study_data.area_res["FR"], used_files)
 
-
-def test_generate_adequacy_patch_mapping():
-    mock_study = MagicMock()
-    adequacy_patch_def = {
-        "include_adq_patch": True,
-        "price_taking_order": "LOAD",
-    }
-
-    import antares.craft
-
-    from antares.craft.model.settings.adequacy_patch import AdequacyPatchParametersUpdate
-
-    with patch("antares.craft.StudySettingsUpdate", wraps=antares.craft.StudySettingsUpdate):
-        generate_adequacy_patch(mock_study, adequacy_patch_def)
-
-        assert mock_study.update_settings.called
-        ssu = mock_study.update_settings.call_args[0][0]
-        assert isinstance(ssu.adequacy_patch_parameters, AdequacyPatchParametersUpdate)
-        assert ssu.adequacy_patch_parameters.price_taking_order == PriceTakingOrder.LOAD
-
-
-def test_generate_adequacy_patch_filters_none():
-    mock_study = MagicMock()
-    # set_to_null_ntc_between_physical_out_for_first_step is None in the input
-    adequacy_patch_def = {
-        "include_adq_patch": True,
-        "set_to_null_ntc_between_physical_out_for_first_step": None,
-        "price_taking_order": "LOAD",
-    }
-
-    import antares.craft
-
-    with patch("antares.craft.StudySettingsUpdate", wraps=antares.craft.StudySettingsUpdate):
-        generate_adequacy_patch(mock_study, adequacy_patch_def)
-
-        assert mock_study.update_settings.called
-        ssu = mock_study.update_settings.call_args[0][0]
-        params = ssu.adequacy_patch_parameters
-        # It should NOT have the field set in the object if we want to avoid the error,
-        # but AdequacyPatchParameters is a dataclass, so it will have it with default value if not passed.
-        # However, the key fix is that we didn't pass it as None to the constructor if it was None.
-        assert params.include_adq_patch is True
-        assert params.price_taking_order == PriceTakingOrder.LOAD
-
-
-def test_generate_adequacy_patch_9_3_fields():
-    mock_study = MagicMock()
-    # Input uses 9.3 fields directly
-    adequacy_patch_def = {
-        "include_adq_patch": True,
-        "price_taking_order": "LOAD",
-        "set_to_null_ntc_from_physical_out_to_physical_in_for_first_step": True,
-        "set_to_null_ntc_between_physical_out_for_first_step": True,
-        "redispatch": True,
-    }
-
-    import antares.craft
-
-    with patch("antares.craft.StudySettingsUpdate", wraps=antares.craft.StudySettingsUpdate):
-        generate_adequacy_patch(mock_study, adequacy_patch_def)
-
-        assert mock_study.update_settings.called
-        ssu = mock_study.update_settings.call_args[0][0]
-        params = ssu.adequacy_patch_parameters
-
-        assert params.include_adq_patch is True
-        assert params.price_taking_order == PriceTakingOrder.LOAD
-        assert params.set_to_null_ntc_from_physical_out_to_physical_in_for_first_step is True
-        assert params.set_to_null_ntc_between_physical_out_for_first_step is True
-        assert params.redispatch is True
-
-
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
 @patch("antares.datamanager.generator.generate_study_process.generate_hydro")
 def test_add_areas_to_study_hydro_only_does_not_create_virtual_psp_area(mock_generate_hydro, mock_load_dir):
@@ -1173,6 +1100,7 @@ def test_build_study_settings_empty_settings_dict():
     assert settings_update.general_parameters is not None
     assert settings_update.general_parameters.nb_years == 3
     assert settings_update.general_parameters.first_month_in_year == Month.JANUARY
+    assert settings_update.adequacy_patch_parameters is None
     assert settings_update.optimization_parameters is None
     assert settings_update.advanced_parameters is None
     assert settings_update.seed_parameters is None
@@ -1204,10 +1132,48 @@ def test_build_study_settings_with_general_parameters_only():
     assert settings_update.general_parameters.mode == "economy"
     assert settings_update.general_parameters.horizon == "2028-2029"
     assert settings_update.general_parameters.year_by_year is True
+    assert settings_update.adequacy_patch_parameters is None
     assert settings_update.optimization_parameters is None
     assert settings_update.advanced_parameters is None
     assert settings_update.seed_parameters is None
 
+def test_build_study_settings_with_adequacy_parameters_only():
+    from antares.craft import Month
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=2,
+        first_month=Month.FEBRUARY,
+    )
+
+    settings_dict = {
+        "adequacy": {
+            "include_adq_patch": True,
+            "price_taking_order": "DENS",
+            "include_hurdle_cost_csr": False,
+            "check_csr_cost_function": False,
+            "threshold_initiate_curtailment_sharing_rule": 1,
+            "threshold_display_local_matching_rule_violations": 0,
+            "threshold_csr_variable_bounds_relaxation": 7,
+            "set_to_null_ntc_from_physical_out_to_physical_in_for_first_step": True
+        }
+    }
+
+    settings_update = build_study_settings(settings_dict, study_data)
+
+    assert settings_update.adequacy_patch_parameters is not None
+    assert settings_update.adequacy_patch_parameters.include_adq_patch is True
+    assert settings_update.adequacy_patch_parameters.price_taking_order == PriceTakingOrder.DENS
+    assert settings_update.adequacy_patch_parameters.include_hurdle_cost_csr is False
+    assert settings_update.adequacy_patch_parameters.check_csr_cost_function is False
+    assert settings_update.adequacy_patch_parameters.threshold_initiate_curtailment_sharing_rule == 1
+    assert settings_update.adequacy_patch_parameters.threshold_display_local_matching_rule_violations == 0
+    assert settings_update.adequacy_patch_parameters.threshold_csr_variable_bounds_relaxation == 7
+    assert settings_update.adequacy_patch_parameters.set_to_null_ntc_from_physical_out_to_physical_in_for_first_step is True
+    assert settings_update.optimization_parameters is None
+    assert settings_update.advanced_parameters is None
+    assert settings_update.seed_parameters is None
 
 def test_build_study_settings_with_optimization_parameters():
     from antares.craft import Month

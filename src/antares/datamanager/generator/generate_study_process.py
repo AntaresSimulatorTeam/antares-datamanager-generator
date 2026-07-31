@@ -39,7 +39,6 @@ from antares.datamanager.exceptions.exceptions import (
     MiscGenerationError,
 )
 from antares.datamanager.generator.build_study_settings import build_study_settings
-from antares.datamanager.generator.generate_adequacy_patch import generate_adequacy_patch
 from antares.datamanager.generator.generate_dsr_clusters import generate_dsr_clusters
 from antares.datamanager.generator.generate_hydro import generate_hydro
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
@@ -84,7 +83,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         if study_data.nuclear_talon_binding_constraint:
             generate_nuclear_talon_binding_constraint(study, study_data.nuclear_talon_binding_constraint, used_files)
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
-        generate_adequacy_patch(study, study_data.adequacy_patch)
+        
         if study_data.area_thermals and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study_data.nb_years} years")
             study.generate_thermal_timeseries(settings.nb_years)
