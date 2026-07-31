@@ -27,10 +27,12 @@ from antares.craft import (
 from antares.craft.model.area import Area
 from antares.craft.model.commons import FilterOption
 from antares.craft.model.study import Study
+from antares.craft.tools.contents_tool import transform_name_to_id
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import NuclearGenerationError
 from antares.datamanager.generator.generate_misc_timeseries import EXPECTED_HOURS, MISC_COLUMNS
 from antares.datamanager.logs.logging_setup import get_logger
+from antares.datamanager.utils.seed_factory import SeedFactory
 
 logger = get_logger(__name__)
 
@@ -40,11 +42,23 @@ logger = get_logger(__name__)
 #
 # "fr": {
 #   "thermals": { "FR_Gas_ccgt": {...} },
-#   "nuclear": { "clusters": { "FR_Nuclear_cp0_cp1_cp2": {...}, "FR_Nuclear_epr": {...} } }
+#   "nuclear": { "clusters": {
+#     "FR_Nuclear_cp0_cp1_cp2": { "series": "<arrow_file>", ... },   # LT: no transforamtion, same thing for cp0_cp1_cp2/n4/p4
+#     "FR_Nuclear_epr": { "series": "<arrow_file>", ... },           # EPR: no transformation
+#     "FR_Nuclear_smr": {
+#       "series": "<arrow_file_shared_pool>",                       # SMR: shared raw pool, needs mixing
+#       "smr_mixage": { "unit_count": 3, "seed": "frnuclear_smrseed-tsgen-thermal" },
+#       ...
+#     }
+#   } }
 # },
 # "y_nuc_modulation": {
-#   "nuclear": { "clusters": { "y_nuc_modulation_nuclear_cp0_cp1_cp2": {...}, ... } }
+#   "nuclear": { "clusters": { "y_nuc_modulation_nuclear_cp0_cp1_cp2": {...}, ... } }  # same shape, mirrored
 # }
+#
+# "series" is optional per cluster,
+# "smr_mixage" is present if and only if "series" points to
+# a shared SMR pool that still needs the seeded "draw and sum" below.
 #
 # Top level "binding_constraints" (same level as area or links) contains talon and modulation
 # both are optional
@@ -236,3 +250,83 @@ def generate_nuclear_talon_binding_constraint(
         greater_term_matrix=greater_term_matrix,
     )
     logger.info(f"Created nuclear talon binding constraint {NUCLEAR_TALON_CONSTRAINT_NAME}")
+
+
+_REQUIRED_SMR_MIXAGE_KEYS = ("unit_count", "seed")
+
+# Placeholder value used by the Java backend when no trajectory of a given family
+# is linked to the study - the "series" key stays present but keeps its pre-existing
+# placeholder rather than being omitted, same placeholder used for fuel_cost/co2_cost.
+_UNLINKED_SERIES_PLACEHOLDER = "matrix hash"
+
+
+def generate_nuclear_availability(
+    area_obj: Area,
+    nuclear_clusters: dict[str, Any],
+    used_files: Optional[Set[Path]] = None,
+) -> None:
+    """
+    Applies LT/EPR/SMR availability series on created nuclear clusters
+    (see create_thermal_cluster_with_prepro, called before).
+
+    Clusters with no "series" entry (no trajectory linked) are left not touched
+    """
+    base_dir: Optional[Path] = None
+    pool_cache: dict[Path, pd.DataFrame] = {}
+
+    for cluster_name, cluster_values in nuclear_clusters.items():
+        series_filename = cluster_values.get("series")
+        if not series_filename or series_filename == _UNLINKED_SERIES_PLACEHOLDER:
+            continue
+
+        if base_dir is None:
+            base_dir = settings.nuclear_availability_ts_directory
+
+        series_path = base_dir / series_filename
+        if used_files is not None:
+            used_files.add(series_path)
+        if series_path not in pool_cache:
+            pool_cache[series_path] = pd.read_feather(series_path)
+        pool = pool_cache[series_path]
+
+        smr_mixage = cluster_values.get("smr_mixage")
+        final_series = _mix_smr_series(pool, smr_mixage, cluster_name) if smr_mixage is not None else pool
+
+        thermal_id = transform_name_to_id(cluster_name)
+        try:
+            thermal_cluster = area_obj.get_thermals()[thermal_id]
+        except KeyError as exc:
+            raise NuclearGenerationError(
+                f"Nuclear cluster '{cluster_name}' not found on area before applying availability series"
+            ) from exc
+
+        thermal_cluster.set_series(final_series)
+        logger.info(f"Applied nuclear availability series to cluster {cluster_name}")
+
+
+def _mix_smr_series(pool: pd.DataFrame, smr_mixage: dict[str, Any], cluster_name: str) -> pd.DataFrame:
+    """
+    "Mixage des chroniques" draw: the first active SMR unit maps
+    output column k directly to pool column k, each additional unit independently draws
+    nb_series pool column indices with replacement (seeded), and output column k is the
+    cell by cell sum across all active units' contributions for that column
+    """
+    _require_keys(smr_mixage, _REQUIRED_SMR_MIXAGE_KEYS, f"smr_mixage for cluster '{cluster_name}'")
+
+    unit_count = smr_mixage["unit_count"]
+    if not isinstance(unit_count, int) or isinstance(unit_count, bool) or unit_count < 1:
+        raise NuclearGenerationError(f"Invalid smr_mixage.unit_count for cluster '{cluster_name}': {unit_count!r}")
+
+    if unit_count == 1:
+        return pool.copy()
+
+    rng = np.random.default_rng(SeedFactory.from_string(str(smr_mixage["seed"])))
+    pool_values = pool.to_numpy()
+    nb_series = pool_values.shape[1]
+
+    total = pool_values.copy()
+    for _ in range(unit_count - 1):
+        draw = rng.integers(0, nb_series, size=nb_series)
+        total = total + pool_values[:, draw]
+
+    return pd.DataFrame(total, columns=pool.columns)

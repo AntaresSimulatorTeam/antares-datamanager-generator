@@ -46,6 +46,7 @@ from antares.datamanager.generator.generate_link_matrices import generate_link_c
 from antares.datamanager.generator.generate_misc_timeseries import generate_misc_timeseries
 from antares.datamanager.generator.generate_nuclear import (
     Y_NUC_MODULATION_AREA_NAME,
+    generate_nuclear_availability,
     generate_nuclear_modulation_binding_constraints,
     generate_nuclear_talon_binding_constraint,
     generate_y_nuc_modulation_misc,
@@ -355,6 +356,7 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
                 generate_thermal_clusters(
                     area_obj, nuclear_clusters, first_month=study_data.first_month, used_files=used_files
                 )
+                generate_nuclear_availability(area_obj, nuclear_clusters, used_files=used_files)
             generate_sts_clusters(area_obj, sts, used_files)
             df_dsr_constraints = generate_dsr_clusters(
                 area_obj, dsr, first_month=study_data.first_month, used_files=used_files
