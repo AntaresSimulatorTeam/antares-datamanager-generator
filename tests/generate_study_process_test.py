@@ -992,6 +992,7 @@ def test_add_areas_to_study_calls_res_generator_with_area_payload(
 
     mock_generate_res_clusters.assert_called_once_with(mock_area_obj, "FR", study_data.area_res["FR"], used_files)
 
+
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
 @patch("antares.datamanager.generator.generate_study_process.generate_hydro")
 def test_add_areas_to_study_hydro_only_does_not_create_virtual_psp_area(mock_generate_hydro, mock_load_dir):
@@ -1137,6 +1138,7 @@ def test_build_study_settings_with_general_parameters_only():
     assert settings_update.advanced_parameters is None
     assert settings_update.seed_parameters is None
 
+
 def test_build_study_settings_with_adequacy_parameters_only():
     from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
@@ -1156,7 +1158,7 @@ def test_build_study_settings_with_adequacy_parameters_only():
             "threshold_initiate_curtailment_sharing_rule": 1,
             "threshold_display_local_matching_rule_violations": 0,
             "threshold_csr_variable_bounds_relaxation": 7,
-            "set_to_null_ntc_from_physical_out_to_physical_in_for_first_step": True
+            "set_to_null_ntc_from_physical_out_to_physical_in_for_first_step": True,
         }
     }
 
@@ -1170,10 +1172,14 @@ def test_build_study_settings_with_adequacy_parameters_only():
     assert settings_update.adequacy_patch_parameters.threshold_initiate_curtailment_sharing_rule == 1
     assert settings_update.adequacy_patch_parameters.threshold_display_local_matching_rule_violations == 0
     assert settings_update.adequacy_patch_parameters.threshold_csr_variable_bounds_relaxation == 7
-    assert settings_update.adequacy_patch_parameters.set_to_null_ntc_from_physical_out_to_physical_in_for_first_step is True
+    assert (
+        settings_update.adequacy_patch_parameters.set_to_null_ntc_from_physical_out_to_physical_in_for_first_step
+        is True
+    )
     assert settings_update.optimization_parameters is None
     assert settings_update.advanced_parameters is None
     assert settings_update.seed_parameters is None
+
 
 def test_build_study_settings_with_optimization_parameters():
     from antares.craft import Month

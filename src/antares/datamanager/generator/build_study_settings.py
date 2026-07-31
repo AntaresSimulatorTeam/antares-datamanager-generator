@@ -47,17 +47,18 @@ def normalize_enum_values(optimization_settings: dict[str, Any]) -> dict[str, An
             elif value.lower() == "true":
                 optimization_settings["include_exportmps"] = True
     return optimization_settings
-    
+
+
 def normalize_adequacy_enum_values(adequacy_settings: dict[str, Any]) -> dict[str, Any]:
-    
     if "price_taking_order" in adequacy_settings:
         order = adequacy_settings["price_taking_order"]
         if isinstance(order, str):
             if order.upper() == "LOAD":
                 adequacy_settings["price_taking_order"] = PriceTakingOrder.LOAD
             elif order.upper() == "DENS":
-                adequacy_settings["price_taking_order"] = PriceTakingOrder.DENS  
+                adequacy_settings["price_taking_order"] = PriceTakingOrder.DENS
     return adequacy_settings
+
 
 def build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) -> StudySettingsUpdate:
     """
@@ -111,7 +112,7 @@ def build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) -
             filtered_adequacy_patch = {k: v for k, v in adequacy_patch_settings.items() if k in valid_fields}
             if filtered_adequacy_patch:
                 filtered_adequacy_patch = normalize_adequacy_enum_values(filtered_adequacy_patch)
-                adequacy_patch_params = AdequacyPatchParametersUpdate(**filtered_adequacy_patch)        
+                adequacy_patch_params = AdequacyPatchParametersUpdate(**filtered_adequacy_patch)
 
     # Ensure required general parameters are set (only add if not already set)
     if general_params is None:
