@@ -301,8 +301,10 @@ def generate_nuclear_availability(
             raise NuclearGenerationError(
                 f"Nuclear cluster '{cluster_name}' not found on area before applying availability series"
             ) from exc
-            
-        thermal_cluster.update_properties(ThermalClusterPropertiesUpdate(gen_ts=LocalTSGenerationBehavior.FORCE_NO_GENERATION))
+
+        thermal_cluster.update_properties(
+            ThermalClusterPropertiesUpdate(gen_ts=LocalTSGenerationBehavior.FORCE_NO_GENERATION)
+        )
         thermal_cluster.set_series(final_series)
         logger.info(f"Applied nuclear availability series to cluster {cluster_name}")
 
