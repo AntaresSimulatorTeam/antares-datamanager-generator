@@ -23,8 +23,8 @@ from antares.craft import (
     BindingConstraintProperties,
     ClusterData,
     ConstraintTerm,
+    LocalTSGenerationBehavior,
     ThermalClusterPropertiesUpdate,
-    LocalTSGenerationBehavior
 )
 from antares.craft.model.area import Area
 from antares.craft.model.commons import FilterOption
