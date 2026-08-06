@@ -224,7 +224,7 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optio
         matrix_setter_map = {
             "inflows": storage.set_storage_inflows,
             "lower_curve": storage.set_lower_rule_curve,
-            "Pmax_injection": storage.update_pmax_injection,
+            "Pmax_injection": storage.set_pmax_injection,
             "Pmax_soutirage": storage.set_pmax_withdrawal,
             "upper_curve": storage.set_upper_rule_curve,
         }
