@@ -83,14 +83,14 @@ def test_generate_contraintes_couplantes_fr():
                 "enabled": True,
                 "nominal_capacity": 300,
             },
-            "data": {"nb_hour_per_day": 13, "max_hour_per_day": 1},
+            "data": {"capacity": 400, "binding_constraint": True, "nb_hour_per_day": 13, "max_hour_per_day": 1},
         },
         "FR_DSR_0_ind": {
             "properties": {
                 "enabled": True,
                 "nominal_capacity": 500,
             },
-            "data": {"nb_hour_per_day": 10, "max_hour_per_day": 2},
+            "data": {"capacity": 400, "binding_constraint": True, "nb_hour_per_day": 10, "max_hour_per_day": 2},
         },
     }
 
@@ -108,23 +108,23 @@ def test_generate_contraintes_couplantes_fr():
 
     # Coefficient 24 * 1 / 13 = 1.84615...
     # Mean ter = 100
-    # Result ter = 100 * 1.84615 = 184.615
-    expected_ter = 100 * (24 * 1 / 13)
+    # Result ter = 400 * 100 * 1.84615 = 184.615
+    expected_ter = 400 * 100 * (24 * 1 / 13)
     np.testing.assert_allclose(df_constraints["FR_DSR_0_ter"].iloc[0], expected_ter, rtol=1e-5)
 
     # Coefficient ind = 24 * 2 / 10 = 4.8
     # Mean ind = 200
-    # Result ind = 200 * 4.8 = 960
-    expected_ind = 200 * (24 * 2 / 10)
+    # Result ind = 400 * 200 * 4.8 = 960
+    expected_ind = 400 * 200 * (24 * 2 / 10)
     np.testing.assert_allclose(df_constraints["FR_DSR_0_ind"].iloc[0], expected_ind, rtol=1e-5)
 
 
 def test_generate_binding_constraints_non_fr():
-    dsr_data = {"BE_DSR_0": {"properties": {"enabled": True}, "data": {"nb_hour_per_day": 12, "max_hour_per_day": 1}}}
+    dsr_data = {"BE_DSR_0": {"properties": {"enabled": True}, "data": {"capacity": 400, "binding_constraint": True, "nb_hour_per_day": 12, "max_hour_per_day": 1}}}
     cluster_series = {"BE_DSR_0": pd.Series([100.0] * 8760)}
 
     df_constraints = generate_dsr_binding_constraints(dsr_data, cluster_series)
     assert df_constraints.shape == (366, 1)
-    expected_be = 100 * (24 * 1 / 12)  # 100 * 2 = 200
+    expected_be = 400 * 100 * (24 * 1 / 12)  # 400 * 100 * 2 = 800
     assert "BE_DSR_0" in df_constraints.columns
     np.testing.assert_allclose(df_constraints["BE_DSR_0"].iloc[0], expected_be, rtol=1e-5)

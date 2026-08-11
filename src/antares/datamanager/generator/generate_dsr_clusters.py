@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional, Set
 import numpy as np
 import pandas as pd
 
-from antares.craft import Month, ThermalClusterProperties
+from antares.craft import Month, ThermalClusterProperties, ThermalClusterPropertiesUpdate, LocalTSGenerationBehavior
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
@@ -42,6 +42,7 @@ def generate_dsr_clusters(
     for cluster_name, values in dsr.items():
         cluster_modulation = values.get("modulation", [])
         if not cluster_modulation:
+            cluster_series[cluster_name] = pd.Series(np.ones(8760))
             continue
 
         cm_file = next((f for f in cluster_modulation if "cm_" in f.lower()), None)
@@ -56,25 +57,34 @@ def generate_dsr_clusters(
             else:
                 logger.warning(f"DSR CM file '{cm_file}' not found at {cm_path}")
 
-    # Global max of the SUM of all DSR capacities in this zone
-    global_max = 0
-    if cluster_series:
-        # Sum all series element-wise to get the total DSR capacity at each hour
-        total_series = pd.concat(cluster_series.values(), axis=1).sum(axis=1)
-        global_max = total_series.max()
-
     # 2. Create clusters with normalized modulation
     for cluster_name, values in dsr.items():
         logger.info(f"Creating dsr cluster: {cluster_name}")
 
         cluster_series_data: Optional[pd.Series[Any]] = cluster_series.get(cluster_name)
-        modulation_matrix = create_dsr_modulation_matrix_from_series(cluster_series_data, global_max)
+        modulation_matrix = create_dsr_modulation_matrix_from_series(cluster_series_data)
 
         create_dsr_cluster(area_obj, cluster_name, values, modulation_matrix, first_month)
 
     # 3. Generate coupling constraints
     return generate_dsr_binding_constraints(dsr, cluster_series)
 
+def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") -> pd.DataFrame:
+    """
+    Returns a 4-column DataFrame without column names:
+        [1, 1, capacity_modulation, 0]
+
+    If series is None:
+        returns 8760 rows of [1, 1, 1, 0]
+    """
+    if series is None:
+        logger.info("DSR modulation series is None, skipping dsr modulation matrix generation.")
+        data = np.tile([1, 1, 1, 0], (8760, 1))
+        return pd.DataFrame(data)
+
+    df = pd.DataFrame([[1, 1, cm, 0] for cm in series.round(3)])
+    logger.info(f"Final dsr modulation matrix shape: {df.shape}")
+    return df
 
 def generate_dsr_binding_constraints(
     dsr_data: Dict[str, Any], cluster_series: Dict[str, pd.Series[Any]]
@@ -90,25 +100,25 @@ def generate_dsr_binding_constraints(
 
     FR Case: Do not sum sub-clusters. Keep FR_* columns separate.
     """
-    if not cluster_series:
-        return pd.DataFrame()
-
     results = {}
     for cluster_name, series in cluster_series.items():
         data = dsr_data.get(cluster_name, {}).get("data", {})
         max_hour_per_day = data.get("max_hour_per_day", 1)
         nb_hour_per_day = data.get("nb_hour_per_day", 1)
-
-        if nb_hour_per_day == 0:
-            logger.warning(f"nb_hour_per_day is 0 for {cluster_name}, using 1 to avoid division by zero.")
-            nb_hour_per_day = 1
+        capacity = data.get("capacity", 1)
+        binding_constraint = data.get("binding_constraint")
 
         coefficient = 24 * max_hour_per_day / nb_hour_per_day
+        volume_no_modulation = capacity * coefficient
 
-        daily_mean = series.groupby(series.index // 24).mean()
-
-        # 3. Multiply by coeff
-        results[cluster_name] = daily_mean * coefficient
+        if binding_constraint is True and series is not None:
+            daily_mean = series.groupby(series.index // 24).mean()
+            results[cluster_name] = volume_no_modulation * daily_mean
+        else:
+            results[cluster_name] = pd.Series(
+                volume_no_modulation,
+                index=range(365)
+            )
 
     df_results = pd.DataFrame(results)
 
@@ -155,33 +165,8 @@ def create_dsr_cluster(
     thermal_cluster.set_prepro_data(prepro_matrix)
     thermal_cluster.set_prepro_modulation(modulation_matrix)
 
-
 def generator_dsr_modulation_directory() -> Path:
     return settings.dsr_modulation_directory
-
-
-def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None", global_max: float) -> pd.DataFrame:
-    """
-    Returns a 4-column DataFrame without column names:
-        [1, 1, capacity_modulation, 0]
-
-    If series is None:
-        returns 8760 rows of [1, 1, 1, 0]
-    """
-    if series is None:
-        logger.info("DSR modulation series is None, skipping dsr modulation matrix generation.")
-        data = np.tile([1, 1, 1, 0], (8760, 1))
-        return pd.DataFrame(data)
-
-    if global_max > 0:
-        cm_values = (series / global_max).round(3)
-    else:
-        cm_values = series.round(3)
-
-    df = pd.DataFrame([[1, 1, cm, 0] for cm in cm_values])
-    logger.info(f"Final dsr modulation matrix shape: {df.shape}")
-    return df
-
 
 def create_dsr_prepro_data_matrix(data: Dict[str, Any], first_month: Optional[Month] = None) -> pd.DataFrame:
     """
