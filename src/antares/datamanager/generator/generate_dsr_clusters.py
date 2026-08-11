@@ -69,6 +69,7 @@ def generate_dsr_clusters(
     # 3. Generate coupling constraints
     return generate_dsr_binding_constraints(dsr, cluster_series)
 
+
 def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") -> pd.DataFrame:
     """
     Returns a 4-column DataFrame without column names:
@@ -85,6 +86,7 @@ def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") ->
     df = pd.DataFrame([[1, 1, cm, 0] for cm in series.round(3)])
     logger.info(f"Final dsr modulation matrix shape: {df.shape}")
     return df
+
 
 def generate_dsr_binding_constraints(
     dsr_data: Dict[str, Any], cluster_series: Dict[str, pd.Series[Any]]
@@ -115,10 +117,7 @@ def generate_dsr_binding_constraints(
             daily_mean = series.groupby(series.index // 24).mean()
             results[cluster_name] = volume_no_modulation * daily_mean
         else:
-            results[cluster_name] = pd.Series(
-                volume_no_modulation,
-                index=range(365)
-            )
+            results[cluster_name] = pd.Series(volume_no_modulation, index=range(365))
 
     df_results = pd.DataFrame(results)
 
@@ -165,8 +164,10 @@ def create_dsr_cluster(
     thermal_cluster.set_prepro_data(prepro_matrix)
     thermal_cluster.set_prepro_modulation(modulation_matrix)
 
+
 def generator_dsr_modulation_directory() -> Path:
     return settings.dsr_modulation_directory
+
 
 def create_dsr_prepro_data_matrix(data: Dict[str, Any], first_month: Optional[Month] = None) -> pd.DataFrame:
     """

@@ -120,7 +120,12 @@ def test_generate_contraintes_couplantes_fr():
 
 
 def test_generate_binding_constraints_non_fr():
-    dsr_data = {"BE_DSR_0": {"properties": {"enabled": True}, "data": {"capacity": 400, "binding_constraint": True, "nb_hour_per_day": 12, "max_hour_per_day": 1}}}
+    dsr_data = {
+        "BE_DSR_0": {
+            "properties": {"enabled": True},
+            "data": {"capacity": 400, "binding_constraint": True, "nb_hour_per_day": 12, "max_hour_per_day": 1},
+        }
+    }
     cluster_series = {"BE_DSR_0": pd.Series([100.0] * 8760)}
 
     df_constraints = generate_dsr_binding_constraints(dsr_data, cluster_series)

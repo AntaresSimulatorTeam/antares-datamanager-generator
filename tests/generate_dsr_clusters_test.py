@@ -50,11 +50,11 @@ def test_create_dsr_modulation_matrix_from_series_builds_dataframe():
 @patch("antares.datamanager.generator.generate_dsr_clusters.pd.read_feather")
 @patch("antares.datamanager.generator.generate_dsr_clusters.Path.exists")
 def test_generate_dsr_clusters_calls_area_methods(
-        mock_exists,
-        mock_read_feather,
-        mock_create_dsr_cluster,
-        mock_create_modulation,
-        mock_generate_constraints,
+    mock_exists,
+    mock_read_feather,
+    mock_create_dsr_cluster,
+    mock_create_modulation,
+    mock_generate_constraints,
 ):
     # Arrange
     mock_exists.return_value = True
@@ -94,13 +94,14 @@ def test_generate_dsr_clusters_calls_area_methods(
     mock_generate_constraints.assert_called_once()
     pd.testing.assert_frame_equal(result, expected_df)
 
+
 @patch("antares.datamanager.generator.generate_dsr_clusters.generate_dsr_binding_constraints")
 @patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_modulation_matrix_from_series")
 @patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_cluster")
 def test_generate_dsr_clusters_with_empty_modulation(
-        mock_create_dsr_cluster,
-        mock_create_modulation,
-        mock_generate_constraints,
+    mock_create_dsr_cluster,
+    mock_create_modulation,
+    mock_generate_constraints,
 ):
     # Arrange
     area_obj = MagicMock(spec=Area)
@@ -133,11 +134,11 @@ def test_generate_dsr_clusters_with_empty_modulation(
     @patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_cluster")
     @patch("antares.datamanager.generator.generate_dsr_clusters.Path.exists")
     def test_generate_dsr_clusters_logs_warning_when_file_not_found(
-            mock_exists,
-            mock_create_dsr_cluster,
-            mock_create_modulation,
-            mock_generate_constraints,
-            mock_logger,
+        mock_exists,
+        mock_create_dsr_cluster,
+        mock_create_modulation,
+        mock_generate_constraints,
+        mock_logger,
     ):
         # Arrange
         mock_exists.return_value = False
