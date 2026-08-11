@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional, Set
 import numpy as np
 import pandas as pd
 
-from antares.craft import Month, ThermalClusterProperties, ThermalClusterPropertiesUpdate, LocalTSGenerationBehavior
+from antares.craft import Month, ThermalClusterProperties
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
