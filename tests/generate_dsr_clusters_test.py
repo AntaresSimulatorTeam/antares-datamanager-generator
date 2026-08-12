@@ -128,34 +128,35 @@ def test_generate_dsr_clusters_with_empty_modulation(
 
     mock_create_dsr_cluster.assert_called_once()
 
-    @patch("antares.datamanager.generator.generate_dsr_clusters.logger")
-    @patch("antares.datamanager.generator.generate_dsr_clusters.generate_dsr_binding_constraints")
-    @patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_modulation_matrix_from_series")
-    @patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_cluster")
-    @patch("antares.datamanager.generator.generate_dsr_clusters.Path.exists")
-    def test_generate_dsr_clusters_logs_warning_when_file_not_found(
-        mock_exists,
-        mock_create_dsr_cluster,
-        mock_create_modulation,
-        mock_generate_constraints,
-        mock_logger,
-    ):
-        # Arrange
-        mock_exists.return_value = False
 
-        area_obj = MagicMock(spec=Area)
+@patch("antares.datamanager.generator.generate_dsr_clusters.logger")
+@patch("antares.datamanager.generator.generate_dsr_clusters.generate_dsr_binding_constraints")
+@patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_modulation_matrix_from_series")
+@patch("antares.datamanager.generator.generate_dsr_clusters.create_dsr_cluster")
+@patch("antares.datamanager.generator.generate_dsr_clusters.Path.exists")
+def test_generate_dsr_clusters_logs_warning_when_file_not_found(
+    mock_exists,
+    mock_create_dsr_cluster,
+    mock_create_modulation,
+    mock_generate_constraints,
+    mock_logger,
+):
+    # Arrange
+    mock_exists.return_value = False
 
-        dsr_data = {
-            "dsr_1": {
-                "modulation": ["CM_missing.arrow"],
-            }
+    area_obj = MagicMock(spec=Area)
+
+    dsr_data = {
+        "dsr_1": {
+            "modulation": ["CM_missing.arrow"],
         }
+    }
 
-        mock_generate_constraints.return_value = pd.DataFrame()
+    mock_generate_constraints.return_value = pd.DataFrame()
 
-        # Act
-        generate_dsr_clusters(area_obj, dsr_data)
+    # Act
+    generate_dsr_clusters(area_obj, dsr_data)
 
-        # Assert
-        mock_logger.warning.assert_called_once()
-        mock_create_dsr_cluster.assert_called_once()
+    # Assert
+    mock_logger.warning.assert_called_once()
+    mock_create_dsr_cluster.assert_called_once()
