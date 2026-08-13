@@ -84,7 +84,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
             generate_nuclear_talon_binding_constraint(study, study_data.nuclear_talon_binding_constraint, used_files)
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
 
-        if study_data.area_thermals and study_data.enable_random_ts:
+        if (study_data.area_thermals or study_data.area_dsr) and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study_data.nb_years} years")
             study.generate_thermal_timeseries(settings.nb_years)
 
