@@ -301,6 +301,7 @@ def _read_second_member_file(trajectory_directory: Path, used_files: Set[Path]) 
 
 # feeature extraction (Load / Wind / Solar / RoR for the 5 hub countries)
 
+
 def _read_load_series(area: str, area_loads: dict[str, list[str]], used_files: Set[Path]) -> pd.DataFrame:
     files = area_loads.get(area, [])
     if not files:
@@ -362,6 +363,7 @@ def _build_hub_features(study_data: StudyData, used_files: Set[Path]) -> dict[st
 
 # rf prediction -> idDayType, per hour and per reference year column
 
+
 def _hourly_season_mask(first_month: Month) -> np.ndarray[Any, np.dtype[np.bool_]]:
     daily_mask = SeasonManager(first_month).is_winter()
     return np.repeat(daily_mask, 24)
@@ -422,6 +424,8 @@ def compute_id_day_types(
 # idDayType -> RHS
 
 FILTER_ID_HOUR = 16
+
+
 def build_vect_b_lookup_table(second_member: pd.DataFrame) -> dict[str, dict[int, float]]:
     """Build the full `{constraint_name: {id_day: vect_b}}` lookup for the whole file.
 
@@ -453,6 +457,7 @@ def build_rhs_matrix(
 
 # weight.txt -> binding constraint terms
 
+
 def _build_constraint_terms(weight_row: pd.Series[Any]) -> list[ConstraintTerm]:
     terms = []
     for link_column, coefficient in weight_row.items():
@@ -464,6 +469,7 @@ def _build_constraint_terms(weight_row: pd.Series[Any]) -> list[ConstraintTerm]:
 
 
 # Scenario builder part
+
 
 def _wire_scenario_builder(study: Study, group_name: str, n_columns: int, nb_years: int) -> None:
     scenario_builder = study.get_scenario_builder()
