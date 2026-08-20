@@ -272,11 +272,15 @@ def _to_link_capacity_data(link_entry: dict[str, Any], area1: str, area2: str) -
     return {key.replace("_", ""): link_entry[key] for key in _REQUIRED_LINK_CAPACITY_KEYS}
 
 
+_TS_PATH_PREFIX = "flowbased/"
+
+
 def _resolve_trajectory_directory(flowbased_data: dict[str, Any]) -> Path:
     ts_path = flowbased_data.get("ts_path")
     if not ts_path:
         raise FlowbasedGenerationError("flowbased.ts_path is required for the recalculate path")
-    return settings.flowbased_directory / str(ts_path)
+    relative_path = str(ts_path).removeprefix(_TS_PATH_PREFIX)
+    return settings.flowbased_directory / relative_path
 
 
 def _load_models(trajectory_directory: Path, used_files: Set[Path]) -> tuple[Any, Any]:

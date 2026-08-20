@@ -109,7 +109,7 @@ class Settings:
 
     @property
     def flowbased_directory(self) -> Path:
-        return self._resolve_env_path("PEGASE_FLOWBASED_OUTPUT_DIRECTORY")
+        return self._resolve_env_path("PEGASE_FLOWBASED_DIRECTORY")
 
     @property
     def api_host(self) -> str:

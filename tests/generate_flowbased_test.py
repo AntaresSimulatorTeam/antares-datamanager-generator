@@ -158,7 +158,7 @@ def flowbased_fixture(tmp_path: Path) -> dict:
     )
     flowbased_data = {
         "recalculate_ts": True,
-        "ts_path": "model_2024",
+        "ts_path": "flowbased/model_2024",  # real payloads carry this "flowbased/" prefix, must be stripped
         "type_days": [
             {"clustering": "winter1", "id_type_day": 1, "class_day": "winterWd"},
             {"clustering": "winter2", "id_type_day": 2, "class_day": "winterWd"},
