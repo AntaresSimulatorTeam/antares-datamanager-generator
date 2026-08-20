@@ -154,6 +154,9 @@ class FlowbasedFileReader:
         return second_member_df
 
 
+# TODO: (READ MODE) binding constraints must be
+# created in BOTH modes. Only the RHS is different between read and reculaculate (where pmml is used)
+# This method has to be splitted into shared and not shared behavior
 def generate_flowbased_binding_constraints(
     study: Study, flowbased_data: dict[str, Any], study_data: StudyData, used_files: Set[Path]
 ) -> None:
