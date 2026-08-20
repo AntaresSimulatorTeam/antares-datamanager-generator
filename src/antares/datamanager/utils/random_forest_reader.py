@@ -49,7 +49,7 @@ def predict_cluster(model: PMMLForestClassifier, features: dict[str, float]) -> 
 
     Args:
         model: A classifier loaded with the `load_forest_model` method
-        features: Mapping of PMML field name to its normalized value.
+        features: Mapping of PMML field name to its value.
 
     Returns:
         The predicted cluster label (example: "summer2")
@@ -59,7 +59,31 @@ def predict_cluster(model: PMMLForestClassifier, features: dict[str, float]) -> 
     """
     try:
         prediction = model.predict(pd.DataFrame([features]))
-    except (KeyError, ValueError) as exc:
+    except Exception as exc:
         raise PmmlModelError(f"Could not predict cluster: {exc}") from exc
 
     return str(prediction[0])
+
+
+def predict_clusters_batch(model: PMMLForestClassifier, features_df: pd.DataFrame) -> list[str]:
+    """Predict the weather cluster label for many rows of features at once.
+
+    Vectorized version of `predict_cluster`, used when doing a full hourly
+    instead of a single row at a time.
+
+    Args:
+        model: A classifier loaded with the `load_forest_model` method
+        features_df: One row per prediction, one column per PMML field name.
+
+    Returns:
+        The predicted cluster labels, in the same row order as `features_df`.
+
+    Raises:
+        PmmlModelError: If prediction fails
+    """
+    try:
+        predictions = model.predict(features_df)
+    except Exception as exc:
+        raise PmmlModelError(f"Could not predict clusters: {exc}") from exc
+
+    return [str(prediction) for prediction in predictions]

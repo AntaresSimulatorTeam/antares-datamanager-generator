@@ -40,6 +40,10 @@ from antares.datamanager.exceptions.exceptions import (
 )
 from antares.datamanager.generator.build_study_settings import build_study_settings
 from antares.datamanager.generator.generate_dsr_clusters import generate_dsr_clusters
+from antares.datamanager.generator.generate_flowbased import (
+    create_flowbased_areas_and_links,
+    generate_flowbased_binding_constraints,
+)
 from antares.datamanager.generator.generate_hydro import generate_hydro
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
 from antares.datamanager.generator.generate_misc_timeseries import generate_misc_timeseries
@@ -83,6 +87,11 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         if study_data.nuclear_talon_binding_constraint:
             generate_nuclear_talon_binding_constraint(study, study_data.nuclear_talon_binding_constraint, used_files)
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
+
+        if study_data.flowbased:
+            create_flowbased_areas_and_links(study, study_data.flowbased, used_files)
+            if study_data.flowbased.get("recalculate_ts"):
+                generate_flowbased_binding_constraints(study, study_data.flowbased, study_data, used_files)
 
         if (study_data.area_thermals or study_data.area_dsr) and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study_data.nb_years} years")
@@ -170,6 +179,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         adequacy_patch=adequacy_patch,
         nuclear_modulation_binding_constraints=binding_constraints.get("nuclear_modulation"),
         nuclear_talon_binding_constraint=binding_constraints.get("nuclear_talon"),
+        flowbased=raw_study_data.get("flowbased"),
         settings=study_settings,
     )
 
