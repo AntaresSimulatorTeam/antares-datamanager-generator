@@ -173,12 +173,20 @@ class FlowbasedFileReader:
         try:
             ts_df = pd.read_csv(ts_path, sep=r"\s+", quotechar='"')
         except (OSError, pd.errors.ParserError) as exc:
-            raise FlowbasedGenerationError(f"Could not read ts file {ts_path}: {exc}") from exc
+            raise FlowbasedGenerationError(
+                f"Could not read ts file {ts_path}: {exc}"
+            ) from exc
 
-        ts_df = ts_df.drop(columns=["Date"])
-        ts_df.columns = pd.Index(range(len(ts_df.columns)))
+        ts_df = pd.DataFrame(
+            ts_df.drop(columns=["Date"]).to_numpy(),
+            columns=range(ts_df.shape[1] - 1),
+        )
 
-        logger.info("Loaded flowbased ts file", extra={"ts_path": str(ts_path), "rows": len(ts_df)})
+        logger.info(
+            "Loaded flowbased ts file",
+            extra={"ts_path": str(ts_path), "rows": len(ts_df)},
+        )
+
         return ts_df
 
 
