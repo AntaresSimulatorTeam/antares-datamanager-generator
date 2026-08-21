@@ -54,6 +54,7 @@ from antares.datamanager.generator.generate_nuclear import (
     generate_y_nuc_modulation_misc,
 )
 from antares.datamanager.generator.generate_res_clusters import generate_res_clusters
+from antares.datamanager.generator.generate_scenario_builder import generate_scenario_builder
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
 from antares.datamanager.generator.generate_thermal_clusters import generate_thermal_clusters
 from antares.datamanager.generator.study_adapters import StudyFactory
@@ -102,6 +103,8 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         if (study_data.area_thermals or study_data.area_dsr) and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study.get_settings().general_parameters.nb_years} years")
             study.generate_thermal_timeseries(study.get_settings().general_parameters.nb_years)
+
+        generate_scenario_builder(study, study_data, used_files)
 
         if settings.generation_mode == GenerationMode.LOCAL:
             _package_and_upload_local_study(study_data.name)
@@ -167,6 +170,10 @@ def read_study_data_from_json(study_id: str) -> StudyData:
 
     binding_constraints = raw_study_data.get("binding_constraints", {})
     study_settings = raw_study_data.get("settings", {})
+    scenario_builder_config = study_settings.get("scenariobuilder", {})
+    general_settings = study_settings.get("general_parameters", {})
+
+    nb_years = general_settings.get("nb_years", settings.nb_years)
 
     study_data = StudyData(
         name=study_name,
@@ -179,6 +186,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         nuclear_talon_binding_constraint=binding_constraints.get("nuclear_talon"),
         flowbased=raw_study_data.get("flowbased"),
         settings=study_settings,
+        scenario_builder_config=scenario_builder_config,
     )
 
     for area, area_info in study_data.areas.items():
