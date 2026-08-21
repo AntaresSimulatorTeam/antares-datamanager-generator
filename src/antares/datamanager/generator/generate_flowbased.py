@@ -172,15 +172,16 @@ class FlowbasedFileReader:
             FlowbasedGenerationError: If the file is missing or cannot be parsed.
         """
         try:
-            ts_df = pd.read_csv(ts_path, sep = r"\s+", quotechar = '"')
+            ts_df = pd.read_csv(ts_path, sep=r"\s+", quotechar='"')
         except (OSError, pd.errors.ParserError) as exc:
             raise FlowbasedGenerationError(f"Could not read ts file {ts_path}: {exc}") from exc
-        
+
         ts_df = ts_df.drop(columns=["Date"])
         ts_df.columns = range(len(ts_df.columns))
-        
+
         logger.info("Loaded flowbased ts file", extra={"ts_path": str(ts_path), "rows": len(ts_df)})
         return ts_df
+
 
 def generate_flowbased_binding_constraints(
     study: Study, flowbased_data: dict[str, Any], study_data: StudyData, used_files: Set[Path]
