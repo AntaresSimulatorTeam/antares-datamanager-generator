@@ -156,10 +156,32 @@ class FlowbasedFileReader:
         )
         return second_member_df
 
+    @staticmethod
+    def read_ts_file(ts_path: Path) -> pd.DataFrame:
+        """Read the day type time series (`ts.txt`).
 
-# TODO: (READ MODE) binding constraints must be
-# created in BOTH modes. Only the RHS is different between read and reculaculate (where pmml is used)
-# This method has to be splitted into shared and not shared behavior
+        One row per hour, one column per climatic year
+
+        Args:
+            ts_path: Path to `ts.txt`
+
+        Returns:
+            A DataFrame indexed by constraint name (`Name` column), one column per link.
+
+        Raises:
+            FlowbasedGenerationError: If the file is missing or cannot be parsed.
+        """
+        try:
+            ts_df = pd.read_csv(ts_path, sep = r"\s+", quotechar = '"')
+        except (OSError, pd.errors.ParserError) as exc:
+            raise FlowbasedGenerationError(f"Could not read ts file {ts_path}: {exc}") from exc
+        
+        ts_df = ts_df.drop(columns=["Date"])
+        ts_df.columns = range(len(ts_df.columns))
+        
+        logger.info("Loaded flowbased ts file", extra={"ts_path": str(ts_path), "rows": len(ts_df)})
+        return ts_df
+
 def generate_flowbased_binding_constraints(
     study: Study, flowbased_data: dict[str, Any], study_data: StudyData, used_files: Set[Path]
 ) -> None:
@@ -183,7 +205,7 @@ def generate_flowbased_binding_constraints(
     second_member_df = _read_second_member_file(trajectory_directory, used_files)
     vect_b_lookup = build_vect_b_lookup_table(second_member_df)
 
-    if study_data.flowbased.get("recalculate_ts"):
+    if flowbased_data.get("recalculate_ts"):
         type_days = flowbased_data.get("type_days") or []
         if not type_days:
             raise FlowbasedGenerationError("flowbased.type_days is required for the recalculate path")
@@ -192,7 +214,6 @@ def generate_flowbased_binding_constraints(
         hub_features = _build_hub_features(study_data)
         id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, study_data.first_month)
     else:
-        # id_day_type à partir de ts.txt
         id_day_types = _read_ts_file(trajectory_directory, used_files)
 
     n_columns = id_day_types.shape[1]
@@ -318,7 +339,7 @@ def _read_second_member_file(trajectory_directory: Path, used_files: Set[Path]) 
 def _read_ts_file(trajectory_directory: Path, used_files: Set[Path]) -> pd.DataFrame:
     ts_path = trajectory_directory / TS_FILENAME
     used_files.add(ts_path)
-    return FlowbasedFileReader.read_second_member_file(ts_path)
+    return FlowbasedFileReader.read_ts_file(ts_path)
 
 
 # feature extraction (Load / Wind / Solar / RoR for the 5 hub countries)
