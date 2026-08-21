@@ -354,14 +354,24 @@ def _validate_matching_shapes(area: str, series_by_variable: dict[str, pd.DataFr
         raise FlowbasedGenerationError(f"Mismatched series shapes for hub area '{area}': {shapes}")
 
 
+def _resolve_area_key(area: str, study_data: StudyData) -> str:
+    for key in study_data.areas:
+        if key.lower() == area:
+            return key
+    raise FlowbasedGenerationError(f"Hub area '{area}' not found in study areas")
+
+
 def _build_hub_features(study_data: StudyData, used_files: Set[Path]) -> dict[str, dict[str, pd.DataFrame]]:
     features: dict[str, dict[str, pd.DataFrame]] = {}
     for area in HUB_AREAS:
+        area_key = _resolve_area_key(area, study_data)
         series_by_variable = {
-            "load": _read_load_series(area, study_data.area_loads, used_files),
-            "wind": _read_combined_res_series(area, study_data.area_res.get(area, {}), WIND_GROUPS, used_files),
-            "solar": _read_combined_res_series(area, study_data.area_res.get(area, {}), SOLAR_GROUPS, used_files),
-            "h_ror": _read_ror_series(area, study_data.area_hydro.get(area, {}), used_files),
+            "load": _read_load_series(area_key, study_data.area_loads, used_files),
+            "wind": _read_combined_res_series(area_key, study_data.area_res.get(area_key, {}), WIND_GROUPS, used_files),
+            "solar": _read_combined_res_series(
+                area_key, study_data.area_res.get(area_key, {}), SOLAR_GROUPS, used_files
+            ),
+            "h_ror": _read_ror_series(area_key, study_data.area_hydro.get(area_key, {}), used_files),
         }
         _validate_matching_shapes(area, series_by_variable)
         features[area] = series_by_variable

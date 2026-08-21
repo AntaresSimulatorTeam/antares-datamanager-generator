@@ -109,23 +109,26 @@ def flowbased_fixture(tmp_path: Path) -> dict:
     for directory in (load_dir, res_dir, hydro_dir, trajectory_dir):
         directory.mkdir(parents=True)
 
+    areas: dict[str, dict] = {}
     area_loads: dict[str, list[str]] = {}
     area_res: dict[str, dict] = {}
     area_hydro: dict[str, dict] = {}
     for area in HUB_AREAS:
+        area_key = area.upper()
+        areas[area_key] = {}
         load_value_low, load_value_high = (10.0, 90.0) if area == "fr" else (1.0, 1.0)
         _write_two_column_series(load_dir / f"{area}_load.arrow", load_value_low, load_value_high)
-        area_loads[area] = [f"{area}_load.arrow"]
+        area_loads[area_key] = [f"{area}_load.arrow"]
 
         _write_res_series(res_dir / f"{area}_wind.arrow", 0.3)
         _write_res_series(res_dir / f"{area}_solar.arrow", 0.4)
-        area_res[area] = {
+        area_res[area_key] = {
             "wind_cluster": {"properties": {"group": "wind_onshore"}, "series": [f"{area}_wind.arrow"]},
             "solar_cluster": {"properties": {"group": "solar_pv"}, "series": [f"{area}_solar.arrow"]},
         }
 
         _write_two_column_series(hydro_dir / f"{area}_ror.arrow", 5.0, 5.0)
-        area_hydro[area] = {"series": [f"{area}_ror.arrow"]}
+        area_hydro[area_key] = {"series": [f"{area}_ror.arrow"]}
 
     (trajectory_dir / SUMMER_MODEL_FILENAME).write_text(_single_split_pmml("summer1", "summer2"))
     (trajectory_dir / WINTER_MODEL_FILENAME).write_text(_single_split_pmml("winter1", "winter2"))
@@ -150,6 +153,7 @@ def flowbased_fixture(tmp_path: Path) -> dict:
 
     study_data = StudyData(
         name="test-study",
+        areas=areas,
         area_loads=area_loads,
         area_res=area_res,
         area_hydro=area_hydro,
