@@ -181,12 +181,12 @@ def generate_flowbased_binding_constraints(
     weight_df = _read_weight_file(trajectory_directory, used_files)
     second_member_df = _read_second_member_file(trajectory_directory, used_files)
     vect_b_lookup = build_vect_b_lookup_table(second_member_df)
-    
+
     if study_data.flowbased.get("recalculate_ts"):
         type_days = flowbased_data.get("type_days") or []
         if not type_days:
             raise FlowbasedGenerationError("flowbased.type_days is required for the recalculate path")
-    
+
         summer_model, winter_model = _load_models(trajectory_directory, used_files)
         hub_features = _build_hub_features(study_data)
         id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, study_data.first_month)
@@ -195,7 +195,7 @@ def generate_flowbased_binding_constraints(
         id_day_types = _read_ts_file(trajectory_directory, used_files)
 
     n_columns = id_day_types.shape[1]
-    
+
     group_name = f"{SCENARIO_BUILDER_GROUP_PREFIX}{n_columns}"
     properties = BindingConstraintProperties(
         enabled=True,
@@ -312,6 +312,7 @@ def _read_second_member_file(trajectory_directory: Path, used_files: Set[Path]) 
     second_member_path = trajectory_directory / SECOND_MEMBER_FILENAME
     used_files.add(second_member_path)
     return FlowbasedFileReader.read_second_member_file(second_member_path)
+
 
 def _read_ts_file(trajectory_directory: Path, used_files: Set[Path]) -> pd.DataFrame:
     ts_path = trajectory_directory / TS_FILENAME
