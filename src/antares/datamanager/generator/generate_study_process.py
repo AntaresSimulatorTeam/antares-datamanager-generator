@@ -90,8 +90,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
 
         if study_data.flowbased:
             create_flowbased_areas_and_links(study, study_data.flowbased)
-            if study_data.flowbased.get("recalculate_ts"):
-                generate_flowbased_binding_constraints(study, study_data.flowbased, study_data, used_files)
+            generate_flowbased_binding_constraints(study, study_data.flowbased, study_data, used_files)
 
         if (study_data.area_thermals or study_data.area_dsr) and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study_data.nb_years} years")
