@@ -176,7 +176,7 @@ class FlowbasedFileReader:
             raise FlowbasedGenerationError(f"Could not read ts file {ts_path}: {exc}") from exc
 
         ts_df = ts_df.drop(columns=["Date"])
-        ts_df.columns = range(len(ts_df.columns))
+        ts_df.columns = pd.Index(range(len(ts_df.columns)))
 
         logger.info("Loaded flowbased ts file", extra={"ts_path": str(ts_path), "rows": len(ts_df)})
         return ts_df
