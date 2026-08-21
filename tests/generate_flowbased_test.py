@@ -215,21 +215,20 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
     assert fb002_rhs.iloc[3000, 1] == 400.0
     assert fb002_rhs.shape == (BINDING_CONSTRAINT_HOURLY_ROWS, 2)
 
+
 @patch("antares.datamanager.generator.generate_flowbased.settings")
 def test_generate_flowbased_read_binding_constraints_builds_expected_rhs(mock_settings, flowbased_fixture):
     mock_settings.flowbased_directory = flowbased_fixture["flowbased_root"]
 
     study = MagicMock()
     used_files: set[Path] = set()
-    
+
     flowbasedData = {
         "recalculate_ts": False,
         "ts_path": "flowbased/model_2024",
     }
 
-    generate_flowbased_binding_constraints(
-        study, flowbasedData, flowbased_fixture["study_data"], used_files
-    )
+    generate_flowbased_binding_constraints(study, flowbasedData, flowbased_fixture["study_data"], used_files)
 
     assert study.create_binding_constraint.call_count == 2
     calls_by_name = {call.kwargs["name"]: call.kwargs for call in study.create_binding_constraint.call_args_list}
@@ -536,11 +535,12 @@ SAMPLE_SECOND_MEMBER_FILE = """Id_Day Id_Hour Name vect_b
 1 0 FB002 42.0
 """
 
-SAMPLE_TS_FILE = '''"Date" "1" "2" "3"
+SAMPLE_TS_FILE = """"Date" "1" "2" "3"
 1 3 3 3
 2 4 4 4
 3 1 1 1
-'''
+"""
+
 
 @pytest.fixture
 def sample_weight_path(tmp_path: Path) -> Path:
@@ -555,11 +555,13 @@ def sample_second_member_path(tmp_path: Path) -> Path:
     second_member_path.write_text(SAMPLE_SECOND_MEMBER_FILE)
     return second_member_path
 
+
 @pytest.fixture
 def sample_ts_path(tmp_path: Path) -> Path:
     ts_path = tmp_path / "ts.txt"
     ts_path.write_text(SAMPLE_TS_FILE)
     return ts_path
+
 
 def test_should_read_weight_file_indexed_by_constraint_name(sample_weight_path):
     weight_df = FlowbasedFileReader.read_weight_file(sample_weight_path)
@@ -599,9 +601,11 @@ def test_should_raise_flowbased_generation_error_when_second_member_file_missing
     with pytest.raises(FlowbasedGenerationError):
         FlowbasedFileReader.read_second_member_file(second_member_path)
 
+
 def test_should_raise_flowbased_generation_error_when_second_member_file_is_missing():
     with pytest.raises(FlowbasedGenerationError):
         FlowbasedFileReader.read_second_member_file(Path("/nonexistent/second_member.txt"))
+
 
 def test_should_read_ts_file(sample_ts_path):
     ts_df = FlowbasedFileReader.read_ts_file(sample_ts_path)
@@ -611,6 +615,7 @@ def test_should_read_ts_file(sample_ts_path):
     assert ts_df[0].tolist() == [3, 4, 1]
     assert ts_df[1].tolist() == [3, 4, 1]
     assert ts_df[2].tolist() == [3, 4, 1]
+
 
 def test_should_raise_flowbased_generation_error_when_ts_file_is_missing():
     with pytest.raises(FlowbasedGenerationError):
