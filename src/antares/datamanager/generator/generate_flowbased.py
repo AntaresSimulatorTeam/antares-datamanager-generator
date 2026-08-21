@@ -74,6 +74,7 @@ SUMMER_MODEL_FILENAME = "random_forest_summer.pmml"
 WINTER_MODEL_FILENAME = "random_forest_winter.pmml"
 WEIGHT_FILENAME = "weight.txt"
 SECOND_MEMBER_FILENAME = "second_member.txt"
+TS_FILENAME = "ts.txt"
 
 _REQUIRED_LINK_CAPACITY_KEYS = (
     "winter_HC_direct_MW",
@@ -177,19 +178,25 @@ def generate_flowbased_binding_constraints(
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
     """
     trajectory_directory = _resolve_trajectory_directory(flowbased_data)
-    type_days = flowbased_data.get("type_days") or []
-    if not type_days:
-        raise FlowbasedGenerationError("flowbased.type_days is required for the recalculate path")
 
-    summer_model, winter_model = _load_models(trajectory_directory, used_files)
     weight_df = _read_weight_file(trajectory_directory, used_files)
     second_member_df = _read_second_member_file(trajectory_directory, used_files)
     vect_b_lookup = build_vect_b_lookup_table(second_member_df)
-
-    hub_features = _build_hub_features(study)
-    id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, study_data.first_month)
+    
+    if study_data.flowbased.get("recalculate_ts"):
+        type_days = flowbased_data.get("type_days") or []
+        if not type_days:
+            raise FlowbasedGenerationError("flowbased.type_days is required for the recalculate path")
+    
+        summer_model, winter_model = _load_models(trajectory_directory, used_files)
+        hub_features = _build_hub_features(study_data)
+        id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, study_data.first_month)
+    else:
+        # id_day_type à partir de ts.txt
+        id_day_types = _read_ts_file(trajectory_directory, used_files)
 
     n_columns = id_day_types.shape[1]
+    
     group_name = f"{SCENARIO_BUILDER_GROUP_PREFIX}{n_columns}"
     properties = BindingConstraintProperties(
         enabled=True,
@@ -306,6 +313,11 @@ def _read_second_member_file(trajectory_directory: Path, used_files: Set[Path]) 
     second_member_path = trajectory_directory / SECOND_MEMBER_FILENAME
     used_files.add(second_member_path)
     return FlowbasedFileReader.read_second_member_file(second_member_path)
+
+def _read_ts_file(trajectory_directory: Path, used_files: Set[Path]) -> pd.DataFrame:
+    ts_path = trajectory_directory / TS_FILENAME
+    used_files.add(ts_path)
+    return FlowbasedFileReader.read_second_member_file(ts_path)
 
 
 # feature extraction (Load / Wind / Solar / RoR for the 5 hub countries)
