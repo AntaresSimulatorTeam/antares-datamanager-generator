@@ -382,7 +382,7 @@ def _zscore_pooled(daily: pd.DataFrame) -> pd.DataFrame:
     values = daily.to_numpy(dtype=float)
     mean = float(values.mean())
     std = float(values.std(ddof=1))
-    if std < 1e-9: # == 0.0
+    if std < 1e-9:  # == 0.0
         raise FlowbasedGenerationError("Cannot z-score a constant series (std == 0)")
     return (daily - mean) / std
 
