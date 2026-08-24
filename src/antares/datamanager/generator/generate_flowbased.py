@@ -27,11 +27,12 @@ from antares.craft import (
     Month,
     TransmissionCapacities,
 )
+from antares.craft.model.area import Area
 from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df
-from antares.datamanager.generator.generate_res_clusters import map_res_group_to_aw, read_res_hourly_series
+from antares.datamanager.generator.generate_res_clusters import map_res_group_to_aw
 from antares.datamanager.logs.logging_setup import get_logger
 from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.random_forest_reader import load_forest_model, predict_clusters_batch
@@ -168,7 +169,7 @@ def generate_flowbased_binding_constraints(
     Args:
         study: The Antares study being generated.
         flowbased_data: The JSON `flowbased` block (`ts_path`, `type_days`, ...).
-        study_data: The full parsed study data, used to read the hub countries' Load/RES/Hydro series.
+        study_data: The full parsed study data.
         used_files: Set of `.arrow`/raw files opened, tracked for post generation cleanup.
 
     Raises:
@@ -184,7 +185,7 @@ def generate_flowbased_binding_constraints(
     second_member_df = _read_second_member_file(trajectory_directory, used_files)
     vect_b_lookup = build_vect_b_lookup_table(second_member_df)
 
-    hub_features = _build_hub_features(study_data, used_files)
+    hub_features = _build_hub_features(study)
     id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, study_data.first_month)
 
     n_columns = id_day_types.shape[1]
@@ -306,46 +307,31 @@ def _read_second_member_file(trajectory_directory: Path, used_files: Set[Path]) 
     return FlowbasedFileReader.read_second_member_file(second_member_path)
 
 
-# feeature extraction (Load / Wind / Solar / RoR for the 5 hub countries)
+# feature extraction (Load / Wind / Solar / RoR for the 5 hub countries)
 
 
-def _read_load_series(area: str, area_loads: dict[str, list[str]], used_files: Set[Path]) -> pd.DataFrame:
-    files = area_loads.get(area, [])
-    if not files:
-        raise FlowbasedGenerationError(f"No load series configured for hub area '{area}'")
-    load_path = settings.load_output_directory / files[0]
-    used_files.add(load_path)
-    return pd.read_feather(load_path)
+def _read_load_series(area: Area) -> pd.DataFrame:
+    return area.get_load_matrix()
 
 
-def _read_combined_res_series(
-    area: str, res_data: dict[str, Any], groups: set[str], used_files: Set[Path]
-) -> pd.DataFrame:
-    base_dir = settings.res_ts_directory
+def _read_combined_res_series(area: Area, groups: set[str]) -> pd.DataFrame:
+    """
+    Sum matching RES clusters' production (load_factor x enabled capacity), in MW.
+    """
     combined: pd.DataFrame | None = None
-    for cluster in res_data.values():
-        group = str(cluster.get("properties", {}).get("group", ""))
-        if map_res_group_to_aw(group) not in groups:
+    for cluster in area.get_renewables().values():
+        if map_res_group_to_aw(cluster.properties.group) not in groups:
             continue
-        for series_file in cluster.get("series", []):
-            series_df = read_res_hourly_series(
-                base_dir=base_dir, filename=series_file, expected_rows=EXPECTED_HOURS, used_files=used_files
-            )
-            combined = series_df if combined is None else combined.add(series_df, fill_value=0.0)
+        weighted = cluster.get_timeseries() * cluster.properties.enabled_capacity
+        combined = weighted if combined is None else combined.add(weighted, fill_value=0.0)
 
     if combined is None:
-        raise FlowbasedGenerationError(f"No matching RES series found for hub area '{area}', groups={groups}")
+        raise FlowbasedGenerationError(f"No matching RES clusters found for hub area '{area.id}', groups={groups}")
     return combined
 
 
-def _read_ror_series(area: str, hydro_data: dict[str, Any], used_files: Set[Path]) -> pd.DataFrame:
-    base_dir = settings.hydro_ts_directory
-    for series_file in hydro_data.get("series", []):
-        if "_ror" in series_file:
-            file_path = base_dir / series_file
-            used_files.add(file_path)
-            return pd.read_feather(file_path)
-    raise FlowbasedGenerationError(f"No RoR series found for hub area '{area}'")
+def _read_ror_series(area: Area) -> pd.DataFrame:
+    return area.hydro.get_ror_series()
 
 
 def _validate_matching_shapes(area: str, series_by_variable: dict[str, pd.DataFrame]) -> None:
@@ -353,43 +339,61 @@ def _validate_matching_shapes(area: str, series_by_variable: dict[str, pd.DataFr
     if len(set(shapes.values())) > 1:
         raise FlowbasedGenerationError(f"Mismatched series shapes for hub area '{area}': {shapes}")
 
-
-def _resolve_area_key(area: str, study_data: StudyData) -> str:
-    for key in study_data.areas:
-        if key.lower() == area:
-            return key
-    raise FlowbasedGenerationError(f"Hub area '{area}' not found in study areas")
+    n_rows = next(iter(shapes.values()))[0]
+    if n_rows != EXPECTED_HOURS:
+        raise FlowbasedGenerationError(f"Expected {EXPECTED_HOURS} hourly rows for hub area '{area}', got {n_rows}")
 
 
-def _build_hub_features(study_data: StudyData, used_files: Set[Path]) -> dict[str, dict[str, pd.DataFrame]]:
+def _build_hub_features(study: Study) -> dict[str, dict[str, pd.DataFrame]]:
+    areas = study.get_areas()
     features: dict[str, dict[str, pd.DataFrame]] = {}
-    for area in HUB_AREAS:
-        area_key = _resolve_area_key(area, study_data)
+    for area_id in HUB_AREAS:
+        if area_id not in areas:
+            raise FlowbasedGenerationError(f"Hub area '{area_id}' not found in study areas")
+        area = areas[area_id]
         series_by_variable = {
-            "load": _read_load_series(area_key, study_data.area_loads, used_files),
-            "wind": _read_combined_res_series(area_key, study_data.area_res.get(area_key, {}), WIND_GROUPS, used_files),
-            "solar": _read_combined_res_series(
-                area_key, study_data.area_res.get(area_key, {}), SOLAR_GROUPS, used_files
-            ),
-            "h_ror": _read_ror_series(area_key, study_data.area_hydro.get(area_key, {}), used_files),
+            "load": _read_load_series(area),
+            "wind": _read_combined_res_series(area, WIND_GROUPS),
+            "solar": _read_combined_res_series(area, SOLAR_GROUPS),
+            "h_ror": _read_ror_series(area),
         }
-        _validate_matching_shapes(area, series_by_variable)
-        features[area] = series_by_variable
+        _validate_matching_shapes(area_id, series_by_variable)
+        features[area_id] = series_by_variable
     return features
 
 
-# rf prediction -> idDayType, per hour and per reference year column
+# rf prediction -> idDayType, per day and per reference year column
+# daily mean -> z-score -> predict once a day (one idDayType),
 
 
-def _hourly_season_mask(first_month: Month) -> np.ndarray[Any, np.dtype[np.bool_]]:
-    daily_mask = SeasonManager(first_month).is_winter()
-    return np.repeat(daily_mask, 24)
+def _hourly_to_daily_mean(hourly: pd.DataFrame) -> pd.DataFrame:
+    """(8760, n_columns) -> (365, n_columns), mean of each day's 24 hourly rows.
+
+    (hours 0-23 = day 1, 24-47 = day 2, ...)
+    """
+    values = hourly.to_numpy()
+    daily_values = values.reshape(365, 24, values.shape[1]).mean(axis=1)
+    return pd.DataFrame(daily_values, columns=hourly.columns)
 
 
-def _build_feature_frame(hub_features: dict[str, dict[str, pd.DataFrame]], column_index: int) -> pd.DataFrame:
+def _zscore_pooled(daily: pd.DataFrame) -> pd.DataFrame:
+    """Z-score a (365, n_columns) daily mean df using one mean/std pooled over every value
+    (all days x all columns), matching R's `scale()` in old generator (sample std, ddof=1).
+    """
+    values = daily.to_numpy(dtype=float)
+    mean = float(values.mean())
+    std = float(values.std(ddof=1))
+    if std == 0.0:
+        raise FlowbasedGenerationError("Cannot z-score a constant series (std == 0)")
+    return (daily - mean) / std
+
+
+def _build_feature_frame(
+    daily_normalized_features: dict[str, dict[str, pd.DataFrame]], column_index: int
+) -> pd.DataFrame:
     columns = {
         f"{area}_{variable}_normalized": series.iloc[:, column_index]
-        for area, series_by_variable in hub_features.items()
+        for area, series_by_variable in daily_normalized_features.items()
         for variable, series in series_by_variable.items()
     }
     return pd.DataFrame(columns)
@@ -412,6 +416,12 @@ def _map_cluster_to_id_day_type(cluster: str, cluster_to_id_day_type: dict[str, 
     return cluster_to_id_day_type[cluster]
 
 
+def _broadcast_daily_to_hourly(daily_id_day_types: pd.DataFrame) -> pd.DataFrame:
+    """(365, n_columns) -> (8760, n_columns), each day's value repeated across its 24 hours."""
+    hourly_values = np.repeat(daily_id_day_types.to_numpy(), repeats=24, axis=0)
+    return pd.DataFrame(hourly_values, columns=daily_id_day_types.columns)
+
+
 def compute_id_day_types(
     summer_model: Any,
     winter_model: Any,
@@ -419,23 +429,31 @@ def compute_id_day_types(
     type_days: list[dict[str, Any]],
     first_month: Month,
 ) -> pd.DataFrame:
-    """Predict `idDayType` for every hour, for every reference climatic year column.
+    """Predict `idDayType` once per day, for every reference climatic year column, then
+    put each day's value into 24 hours.
 
     Computed once, shared by all 100 FBxxx constraints.
+
+    Returns shape (8760, n_columns), columns 0..n_columns-1.
     """
-    is_winter = _hourly_season_mask(first_month)
+    is_winter = SeasonManager(first_month).is_winter()
     cluster_to_id_day_type = {str(entry["clustering"]): int(entry["id_type_day"]) for entry in type_days}
 
-    n_columns = next(iter(hub_features[HUB_AREAS[0]].values())).shape[1]
+    daily_normalized_features = {
+        area: {variable: _zscore_pooled(_hourly_to_daily_mean(series)) for variable, series in by_variable.items()}
+        for area, by_variable in hub_features.items()
+    }
+
+    n_columns = next(iter(daily_normalized_features[HUB_AREAS[0]].values())).shape[1]
     id_day_type_columns = {}
     for column_index in range(n_columns):
-        column_features = _build_feature_frame(hub_features, column_index)
+        column_features = _build_feature_frame(daily_normalized_features, column_index)
         clusters = _predict_column_clusters(summer_model, winter_model, column_features, is_winter)
         id_day_type_columns[column_index] = [
             _map_cluster_to_id_day_type(cluster, cluster_to_id_day_type) for cluster in clusters
         ]
 
-    return pd.DataFrame(id_day_type_columns)
+    return _broadcast_daily_to_hourly(pd.DataFrame(id_day_type_columns))
 
 
 # idDayType -> RHS

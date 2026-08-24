@@ -18,6 +18,8 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from antares.craft import BindingConstraintFrequency, BindingConstraintOperator, Month, TransmissionCapacities
+from antares.craft.model.area import Area
+from antares.craft.model.renewable import RenewableCluster
 from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
 from antares.datamanager.generator.generate_flowbased import (
     SECOND_MEMBER_FILENAME,
@@ -25,6 +27,10 @@ from antares.datamanager.generator.generate_flowbased import (
     WEIGHT_FILENAME,
     WINTER_MODEL_FILENAME,
     FlowbasedFileReader,
+    _broadcast_daily_to_hourly,
+    _hourly_to_daily_mean,
+    _read_combined_res_series,
+    _zscore_pooled,
     create_flowbased_areas_and_links,
     generate_flowbased_binding_constraints,
 )
@@ -33,11 +39,13 @@ from antares.datamanager.models.study_data_json_model import StudyData
 EXPECTED_HOURS = 8760
 HUB_AREAS = ("at", "be", "de", "fr", "nl")
 SPLIT_FIELD = "fr_load_normalized"
-SPLIT_THRESHOLD = 50.0
+# Pooled z-score of two constants centers on 0 - the fake model's split threshold is the
+# z-scored midpoint, not the raw midpoint (see _single_split_pmml docstring).
+SPLIT_THRESHOLD = 0.0
 
 
 def _single_split_pmml(class_low: str, class_high: str) -> str:
-    """A one-tree, one-feature forest: votes `class_low` if fr_load_normalized <= 50, else `class_high`."""
+    """A one-tree, one-feature forest: votes `class_low` if fr_load_normalized <= 0 (z-scored), else `class_high`."""
     return f"""<?xml version="1.0"?>
 <PMML version="4.4.1" xmlns="http://www.dmg.org/PMML-4_4">
  <Header copyright="Copyright (c) 1970 Placeholder" description="Fabricated sample model for flowbased tests">
@@ -81,54 +89,44 @@ def _single_split_pmml(class_low: str, class_high: str) -> str:
 """
 
 
-def _write_two_column_series(path: Path, low_value: float, high_value: float) -> None:
+def _two_column_series(low_value: float, high_value: float) -> pd.DataFrame:
     """Column 0 is always `low_value`, column 1 is always `high_value`, over 8760 rows."""
-    df = pd.DataFrame({"0": [low_value] * EXPECTED_HOURS, "1": [high_value] * EXPECTED_HOURS})
-    df.to_feather(path)
+    return pd.DataFrame({0: [low_value] * EXPECTED_HOURS, 1: [high_value] * EXPECTED_HOURS})
 
 
-def _write_res_series(path: Path, value: float) -> None:
-    """RES series have a leading date column that read_res_hourly_series drops."""
-    df = pd.DataFrame(
-        {
-            "date": range(EXPECTED_HOURS),
-            "0": [value] * EXPECTED_HOURS,
-            "1": [value] * EXPECTED_HOURS,
-        }
-    )
-    df.to_feather(path)
+def _make_renewable_cluster(group: str, factor_df: pd.DataFrame, enabled_capacity: float) -> MagicMock:
+    cluster = MagicMock(spec=RenewableCluster)
+    cluster.get_timeseries.return_value = factor_df
+    cluster.properties = MagicMock(group=group, enabled_capacity=enabled_capacity)
+    return cluster
+
+
+def _make_area(area_id: str, load_df: pd.DataFrame, renewables: list[MagicMock], ror_df: pd.DataFrame) -> MagicMock:
+    area = MagicMock(spec=Area)
+    area.id = area_id
+    area.get_load_matrix.return_value = load_df
+    area.get_renewables.return_value = {f"cluster{i}": cluster for i, cluster in enumerate(renewables)}
+    area.hydro.get_ror_series.return_value = ror_df
+    return area
 
 
 @pytest.fixture
 def flowbased_fixture(tmp_path: Path) -> dict:
-    load_dir = tmp_path / "load"
-    res_dir = tmp_path / "res"
-    hydro_dir = tmp_path / "hydro"
     flowbased_root = tmp_path / "flowbased"
     trajectory_dir = flowbased_root / "model_2024"
-    for directory in (load_dir, res_dir, hydro_dir, trajectory_dir):
-        directory.mkdir(parents=True)
+    trajectory_dir.mkdir(parents=True)
 
-    areas: dict[str, dict] = {}
-    area_loads: dict[str, list[str]] = {}
-    area_res: dict[str, dict] = {}
-    area_hydro: dict[str, dict] = {}
+    areas: dict[str, MagicMock] = {}
     for area in HUB_AREAS:
-        area_key = area.upper()
-        areas[area_key] = {}
-        load_value_low, load_value_high = (10.0, 90.0) if area == "fr" else (1.0, 1.0)
-        _write_two_column_series(load_dir / f"{area}_load.arrow", load_value_low, load_value_high)
-        area_loads[area_key] = [f"{area}_load.arrow"]
+        load_low, load_high = (10.0, 90.0) if area == "fr" else (1.0, 1.5)
+        load_df = _two_column_series(load_low, load_high)
+        wind_cluster = _make_renewable_cluster("Wind Onshore", _two_column_series(0.3, 0.35), enabled_capacity=100.0)
+        solar_cluster = _make_renewable_cluster("Solar PV", _two_column_series(0.4, 0.45), enabled_capacity=100.0)
+        ror_df = _two_column_series(5.0, 6.0)
+        areas[area] = _make_area(area, load_df, [wind_cluster, solar_cluster], ror_df)
 
-        _write_res_series(res_dir / f"{area}_wind.arrow", 0.3)
-        _write_res_series(res_dir / f"{area}_solar.arrow", 0.4)
-        area_res[area_key] = {
-            "wind_cluster": {"properties": {"group": "wind_onshore"}, "series": [f"{area}_wind.arrow"]},
-            "solar_cluster": {"properties": {"group": "solar_pv"}, "series": [f"{area}_solar.arrow"]},
-        }
-
-        _write_two_column_series(hydro_dir / f"{area}_ror.arrow", 5.0, 5.0)
-        area_hydro[area_key] = {"series": [f"{area}_ror.arrow"]}
+    study = MagicMock()
+    study.get_areas.return_value = areas
 
     (trajectory_dir / SUMMER_MODEL_FILENAME).write_text(_single_split_pmml("summer1", "summer2"))
     (trajectory_dir / WINTER_MODEL_FILENAME).write_text(_single_split_pmml("winter1", "winter2"))
@@ -151,15 +149,7 @@ def flowbased_fixture(tmp_path: Path) -> dict:
         "4 16 FB002 400.0\n"
     )
 
-    study_data = StudyData(
-        name="test-study",
-        areas=areas,
-        area_loads=area_loads,
-        area_res=area_res,
-        area_hydro=area_hydro,
-        first_month=Month.JANUARY,
-        nb_years=5,
-    )
+    study_data = StudyData(name="test-study", first_month=Month.JANUARY, nb_years=5)
     flowbased_data = {
         "recalculate_ts": True,
         "ts_path": "flowbased/model_2024",  # real payloads carry this "flowbased/" prefix, must be stripped
@@ -172,23 +162,18 @@ def flowbased_fixture(tmp_path: Path) -> dict:
     }
 
     return {
+        "study": study,
         "study_data": study_data,
         "flowbased_data": flowbased_data,
-        "load_dir": load_dir,
-        "res_dir": res_dir,
-        "hydro_dir": hydro_dir,
         "flowbased_root": flowbased_root,
     }
 
 
 @patch("antares.datamanager.generator.generate_flowbased.settings")
 def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_settings, flowbased_fixture):
-    mock_settings.load_output_directory = flowbased_fixture["load_dir"]
-    mock_settings.res_ts_directory = flowbased_fixture["res_dir"]
-    mock_settings.hydro_ts_directory = flowbased_fixture["hydro_dir"]
     mock_settings.flowbased_directory = flowbased_fixture["flowbased_root"]
 
-    study = MagicMock()
+    study = flowbased_fixture["study"]
     used_files: set[Path] = set()
 
     generate_flowbased_binding_constraints(
@@ -208,15 +193,18 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
     assert terms_by_link == {("fr", "zz_flowbased"): -1.0, ("ch", "fr"): 1.0}
 
     rhs = fb001_kwargs["less_term_matrix"]
-    # Winter hour (hour 0, day 1): column 0 -> idDayType 1 -> vect_b 10, column 1 -> idDayType 2 -> vect_b 20
+    # Winter day (hour 0, day 1): column 0 -> idDayType 1 -> vect_b 10, column 1 -> idDayType 2 -> vect_b 20
     assert rhs.iloc[0, 0] == 10.0
     assert rhs.iloc[0, 1] == 20.0
-    # Summer hour (hour 3000, day ~126): column 0 -> idDayType 3 -> vect_b 30, column 1 -> idDayType 4 -> vect_b 40
+    # Summer day (hour 3000, day ~126): column 0 -> idDayType 3 -> vect_b 30, column 1 -> idDayType 4 -> vect_b 40
     assert rhs.iloc[3000, 0] == 30.0
     assert rhs.iloc[3000, 1] == 40.0
-    # Winter hour again (hour 8759, day 365)
+    # Winter day again (hour 8759, day 365)
     assert rhs.iloc[8759, 0] == 10.0
     assert rhs.iloc[8759, 1] == 20.0
+    # idDayType is predicted once per day and made into 24 hours
+    assert rhs.iloc[0:24, 0].nunique() == 1
+    assert rhs.iloc[24:48, 0].nunique() == 1
 
     fb002_rhs = calls_by_name["FB002"]["less_term_matrix"]
     assert fb002_rhs.iloc[0, 0] == 100.0
@@ -225,12 +213,9 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
 
 @patch("antares.datamanager.generator.generate_flowbased.settings")
 def test_generate_flowbased_binding_constraints_wires_scenario_builder(mock_settings, flowbased_fixture):
-    mock_settings.load_output_directory = flowbased_fixture["load_dir"]
-    mock_settings.res_ts_directory = flowbased_fixture["res_dir"]
-    mock_settings.hydro_ts_directory = flowbased_fixture["hydro_dir"]
     mock_settings.flowbased_directory = flowbased_fixture["flowbased_root"]
 
-    study = MagicMock()
+    study = flowbased_fixture["study"]
     used_files: set[Path] = set()
 
     generate_flowbased_binding_constraints(
@@ -246,12 +231,9 @@ def test_generate_flowbased_binding_constraints_wires_scenario_builder(mock_sett
 
 @patch("antares.datamanager.generator.generate_flowbased.settings")
 def test_generate_flowbased_binding_constraints_tracks_used_files(mock_settings, flowbased_fixture):
-    mock_settings.load_output_directory = flowbased_fixture["load_dir"]
-    mock_settings.res_ts_directory = flowbased_fixture["res_dir"]
-    mock_settings.hydro_ts_directory = flowbased_fixture["hydro_dir"]
     mock_settings.flowbased_directory = flowbased_fixture["flowbased_root"]
 
-    study = MagicMock()
+    study = flowbased_fixture["study"]
     used_files: set[Path] = set()
 
     generate_flowbased_binding_constraints(
@@ -263,21 +245,97 @@ def test_generate_flowbased_binding_constraints_tracks_used_files(mock_settings,
     assert trajectory_dir / WINTER_MODEL_FILENAME in used_files
     assert trajectory_dir / WEIGHT_FILENAME in used_files
     assert trajectory_dir / SECOND_MEMBER_FILENAME in used_files
-    assert flowbased_fixture["load_dir"] / "fr_load.arrow" in used_files
 
 
 @patch("antares.datamanager.generator.generate_flowbased.settings")
 def test_generate_flowbased_binding_constraints_raises_when_ts_path_missing(mock_settings, flowbased_fixture):
-    mock_settings.load_output_directory = flowbased_fixture["load_dir"]
-    mock_settings.res_ts_directory = flowbased_fixture["res_dir"]
-    mock_settings.hydro_ts_directory = flowbased_fixture["hydro_dir"]
     mock_settings.flowbased_directory = flowbased_fixture["flowbased_root"]
 
     flowbased_data = dict(flowbased_fixture["flowbased_data"])
     flowbased_data.pop("ts_path")
 
     with pytest.raises(FlowbasedGenerationError):
-        generate_flowbased_binding_constraints(MagicMock(), flowbased_data, flowbased_fixture["study_data"], set())
+        generate_flowbased_binding_constraints(
+            flowbased_fixture["study"], flowbased_data, flowbased_fixture["study_data"], set()
+        )
+
+
+# --- _read_combined_res_series ---
+
+
+def test_read_combined_res_series_weights_by_enabled_capacity():
+    onshore = _make_renewable_cluster("Wind Onshore", _two_column_series(0.5, 0.6), enabled_capacity=100.0)
+    offshore = _make_renewable_cluster("Wind Offshore", _two_column_series(0.2, 0.3), enabled_capacity=50.0)
+    area = _make_area("fr", _two_column_series(1.0, 1.0), [onshore, offshore], _two_column_series(1.0, 1.0))
+
+    combined = _read_combined_res_series(area, {"Wind Onshore", "Wind Offshore"})
+
+    # 0.5*100 + 0.2*50 = 60.0 ; 0.6*100 + 0.3*50 = 75.0
+    assert combined.iloc[0, 0] == 60.0
+    assert combined.iloc[0, 1] == 75.0
+
+
+def test_read_combined_res_series_disabled_cluster_contributes_zero():
+    onshore = _make_renewable_cluster("Wind Onshore", _two_column_series(0.5, 0.6), enabled_capacity=100.0)
+    disabled_offshore = _make_renewable_cluster("Wind Offshore", _two_column_series(0.9, 0.9), enabled_capacity=0.0)
+    area = _make_area("fr", _two_column_series(1.0, 1.0), [onshore, disabled_offshore], _two_column_series(1.0, 1.0))
+
+    combined = _read_combined_res_series(area, {"Wind Onshore", "Wind Offshore"})
+
+    assert combined.iloc[0, 0] == 50.0
+    assert combined.iloc[0, 1] == 60.0
+
+
+def test_read_combined_res_series_raises_when_no_matching_cluster():
+    area = _make_area("fr", _two_column_series(1.0, 1.0), [], _two_column_series(1.0, 1.0))
+
+    with pytest.raises(FlowbasedGenerationError):
+        _read_combined_res_series(area, {"Wind Onshore", "Wind Offshore"})
+
+
+# --- _hourly_to_daily_mean / _zscore_pooled / _broadcast_daily_to_hourly ---
+
+
+def test_hourly_to_daily_mean_averages_24_hour_blocks():
+    values = [5.0] * EXPECTED_HOURS
+    values[0:24] = [2.0] * 24
+    values[24:48] = [8.0] * 24
+    hourly = pd.DataFrame({0: values, 1: values})
+
+    daily = _hourly_to_daily_mean(hourly)
+
+    assert daily.shape == (365, 2)
+    assert daily.iloc[0, 0] == 2.0
+    assert daily.iloc[1, 0] == 8.0
+    assert daily.iloc[2, 0] == 5.0
+
+
+def test_zscore_pooled_matches_manual_computation():
+    daily = pd.DataFrame({0: [1.0, 2.0, 3.0], 1: [4.0, 5.0, 6.0]})
+
+    result = _zscore_pooled(daily)
+
+    values = daily.to_numpy().ravel()
+    expected = (daily - values.mean()) / values.std(ddof=1)
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_zscore_pooled_raises_on_constant_series():
+    daily = pd.DataFrame({0: [5.0, 5.0], 1: [5.0, 5.0]})
+
+    with pytest.raises(FlowbasedGenerationError):
+        _zscore_pooled(daily)
+
+
+def test_broadcast_daily_to_hourly_repeats_each_day_24_times():
+    daily = pd.DataFrame({0: [1, 2, 3]})
+
+    hourly = _broadcast_daily_to_hourly(daily)
+
+    assert hourly.shape == (72, 1)
+    assert (hourly.iloc[0:24, 0] == 1).all()
+    assert (hourly.iloc[24:48, 0] == 2).all()
+    assert (hourly.iloc[48:72, 0] == 3).all()
 
 
 # --- create_flowbased_areas_and_links ---
