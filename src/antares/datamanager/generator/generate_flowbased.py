@@ -267,6 +267,10 @@ def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any
         area1, area2 = _parse_link_name(entry.get("name"))
         _create_flowbased_link(study, area1, area2, entry)
 
+    # Création du cluster et de la contrainte restriction_ahc si model_description_fb est présent
+    if "model_description_fb" in (flowbased_data.get("virtual_nodes") or []):
+        create_restriction_ahc(study)
+
 
 def _parse_link_name(name: Any) -> tuple[str, str]:
     """flowbased.links entries name the full link, ex: "fr - zz_flowbased"."""
@@ -552,3 +556,58 @@ def _wire_scenario_builder(study: Study, group_name: str, n_columns: int, nb_yea
     group_matrix.set_new_scenario([year % n_columns for year in range(nb_years)])
     study.set_scenario_builder(scenario_builder)
     logger.info(f"Wired flowbased scenario builder group={group_name} nb_years={nb_years} n_columns={n_columns}")
+
+
+def create_restriction_ahc(study: Study, limitation_mw: float = 10000.0) -> None:
+    """Crée le cluster thermique virtuel et la contrainte couplante restriction_ahc.
+
+    Équation :
+        1 * (ch%fr) - 1 * (fr%itn) - 1 * (fr%zz_flowbased) - 1 * (model_description_fb.restriction_ahc) <= 0
+    """
+    area_name = "model_description_fb"
+    cluster_name = "restriction_ahc"
+
+    # 1. Récupération de la zone et création du cluster thermique virtuel
+    area_obj = study.get_areas()[area_name]
+
+    # Création du cluster thermique avec sa capacité nominale (ex: 10000 MW)
+    area_obj.create_thermal_cluster(
+        cluster_name=cluster_name,
+        properties=ThermalClusterProperties(
+            nominal_capacity=limitation_mw,
+            unit_count=1,
+            enabled=True,
+        ),
+    )
+    logger.info(f"Created virtual thermal cluster {cluster_name} in area {area_name}")
+
+    # 2. Définition des propriétés de la contrainte couplante
+    properties = BindingConstraintProperties(
+        enabled=True,
+        time_step=BindingConstraintFrequency.HOURLY,
+        operator=BindingConstraintOperator.LESS,
+    )
+
+    # 3. Définition des termes (coefficients PTDF et cluster)
+    terms = [
+        ConstraintTerm(data=LinkData(area1="ch", area2="fr"), weight=1.0),
+        ConstraintTerm(data=LinkData(area1="fr", area2="itn"), weight=-1.0),
+        ConstraintTerm(data=LinkData(area1="fr", area2="zz_flowbased"), weight=-1.0),
+        ConstraintTerm(
+            data=ClusterData(area=area_name, cluster=cluster_name),
+            weight=-1.0,
+        ),
+    ]
+
+    # 4. Matrice second membre (RHS) : 0 pour 8760 heures
+    # Le cluster virtuel avec coefficient -1 porte la limitation
+    less_term_matrix = pd.DataFrame(np.zeros((EXPECTED_HOURS, 1)))
+
+    # 5. Création de la contrainte couplante dans l'étude
+    study.create_binding_constraint(
+        name="restriction_ahc",
+        properties=properties,
+        terms=terms,
+        less_term_matrix=less_term_matrix,
+    )
+    logger.info("Created restriction_ahc binding constraint")
