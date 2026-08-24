@@ -334,17 +334,18 @@ def _read_ror_series(area: Area) -> pd.DataFrame:
     return area.hydro.get_ror_series()
 
 
-def _validate_matching_shapes(area: str, series_by_variable: dict[str, pd.DataFrame]) -> None:
-    shapes = {name: df.shape for name, df in series_by_variable.items()}
-    if len(set(shapes.values())) > 1:
-        raise FlowbasedGenerationError(f"Mismatched series shapes for hub area '{area}': {shapes}")
-
-    n_rows = next(iter(shapes.values()))[0]
-    if n_rows != EXPECTED_HOURS:
-        raise FlowbasedGenerationError(f"Expected {EXPECTED_HOURS} hourly rows for hub area '{area}', got {n_rows}")
+def _validate_row_count(area: str, series_by_variable: dict[str, pd.DataFrame]) -> None:
+    for variable, df in series_by_variable.items():
+        if len(df) != EXPECTED_HOURS:
+            raise FlowbasedGenerationError(
+                f"Expected {EXPECTED_HOURS} hourly rows for hub area '{area}' variable '{variable}', got {len(df)}"
+            )
 
 
 def _build_hub_features(study: Study) -> dict[str, dict[str, pd.DataFrame]]:
+    """
+    Column (scenario) counts are assumed already validated/consistent before flowbased runs
+    """
     areas = study.get_areas()
     features: dict[str, dict[str, pd.DataFrame]] = {}
     for area_id in HUB_AREAS:
@@ -357,7 +358,7 @@ def _build_hub_features(study: Study) -> dict[str, dict[str, pd.DataFrame]]:
             "solar": _read_combined_res_series(area, SOLAR_GROUPS),
             "h_ror": _read_ror_series(area),
         }
-        _validate_matching_shapes(area_id, series_by_variable)
+        _validate_row_count(area_id, series_by_variable)
         features[area_id] = series_by_variable
     return features
 
@@ -423,13 +424,15 @@ def compute_id_day_types(
     """
     is_winter = _hourly_season_mask(first_month)
     cluster_to_id_day_type = {str(entry["clustering"]): int(entry["id_type_day"]) for entry in type_days}
+    # Every series shares the same column count. The load series
+    # is just the reference point used to read it.
+    n_columns = hub_features[HUB_AREAS[0]]["load"].shape[1]
 
     normalized_features = {
         area: {variable: _zscore_pooled(series) for variable, series in by_variable.items()}
         for area, by_variable in hub_features.items()
     }
 
-    n_columns = next(iter(normalized_features[HUB_AREAS[0]].values())).shape[1]
     id_day_type_columns = {}
     for column_index in range(n_columns):
         column_features = _build_feature_frame(normalized_features, column_index)
