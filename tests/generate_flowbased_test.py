@@ -20,6 +20,16 @@ import pandas as pd
 from antares.craft import BindingConstraintFrequency, BindingConstraintOperator, Month, TransmissionCapacities
 from antares.craft.model.area import Area
 from antares.craft.model.renewable import RenewableCluster
+from antares.craft import (
+    BindingConstraintFrequency,
+    BindingConstraintOperator,
+    ClusterData,
+    ConstraintTerm,
+    LinkData,
+    Month,
+    ThermalClusterProperties,
+    TransmissionCapacities,
+)
 from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
 from antares.datamanager.generator.generate_flowbased import (
     BINDING_CONSTRAINT_HOURLY_ROWS,
@@ -34,6 +44,7 @@ from antares.datamanager.generator.generate_flowbased import (
     _zscore_pooled,
     compute_id_day_types,
     create_flowbased_areas_and_links,
+    create_restriction_ahc,
     generate_flowbased_binding_constraints,
 )
 from antares.datamanager.models.study_data_json_model import StudyData
@@ -519,6 +530,108 @@ def test_create_flowbased_areas_and_links_raises_on_malformed_link_name():
 
     with pytest.raises(FlowbasedGenerationError):
         create_flowbased_areas_and_links(study, flowbased_data)
+
+
+# --- Restriction AHC ---
+
+
+def test_create_restriction_ahc_creates_thermal_cluster_and_binding_constraint():
+    study = MagicMock()
+    model_description_fb_area = MagicMock()
+    study.get_areas.return_value = {"model_description_fb": model_description_fb_area}
+
+    create_restriction_ahc(study)
+
+    # 1. Vérification de la création du cluster thermique
+    model_description_fb_area.create_thermal_cluster.assert_called_once()
+    cluster_kwargs = model_description_fb_area.create_thermal_cluster.call_args.kwargs
+    assert cluster_kwargs["cluster_name"] == "restriction_ahc"
+    cluster_props = cluster_kwargs["properties"]
+    assert cluster_props.nominal_capacity == 10000.0
+    assert cluster_props.unit_count == 1
+    assert cluster_props.enabled is True
+
+    # 2. Vérification de la création de la contrainte couplante
+    study.create_binding_constraint.assert_called_once()
+    constraint_kwargs = study.create_binding_constraint.call_args.kwargs
+    assert constraint_kwargs["name"] == "restriction_ahc"
+
+    properties = constraint_kwargs["properties"]
+    assert properties.enabled is True
+    assert properties.time_step == BindingConstraintFrequency.HOURLY
+    assert properties.operator == BindingConstraintOperator.LESS
+
+    terms = constraint_kwargs["terms"]
+    assert len(terms) == 4
+
+    # 1 * (ch%fr)
+    term_ch_fr = next(t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "ch" and t.data.area2 == "fr")
+    assert term_ch_fr.weight == 1.0
+
+    # -1 * (fr%itn)
+    term_fr_itn = next(
+        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "fr" and t.data.area2 == "itn"
+    )
+    assert term_fr_itn.weight == -1.0
+
+    # -1 * (fr%zz_flowbased)
+    term_fr_zz = next(
+        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "fr" and t.data.area2 == "zz_flowbased"
+    )
+    assert term_fr_zz.weight == -1.0
+
+    # -1 * (model_description_fb.restriction_ahc)
+    term_cluster = next(t for t in terms if isinstance(t.data, ClusterData))
+    assert term_cluster.data.area == "model_description_fb"
+    assert term_cluster.data.cluster == "restriction_ahc"
+    assert term_cluster.weight == -1.0
+
+    # 3. Matrice second membre (RHS) : 0 sur 8760 heures
+    less_term_matrix = constraint_kwargs["less_term_matrix"]
+    assert isinstance(less_term_matrix, pd.DataFrame)
+    assert less_term_matrix.shape == (EXPECTED_HOURS, 1)
+    assert (less_term_matrix == 0).all().all()
+
+
+def test_create_restriction_ahc_with_custom_limitation_mw():
+    study = MagicMock()
+    model_description_fb_area = MagicMock()
+    study.get_areas.return_value = {"model_description_fb": model_description_fb_area}
+
+    create_restriction_ahc(study, limitation_mw=5000.0)
+
+    model_description_fb_area.create_thermal_cluster.assert_called_once()
+    cluster_kwargs = model_description_fb_area.create_thermal_cluster.call_args.kwargs
+    assert cluster_kwargs["properties"].nominal_capacity == 5000.0
+
+
+def test_create_flowbased_areas_and_links_creates_restriction_ahc_when_model_description_fb_present():
+    study = MagicMock()
+    model_description_fb_area = MagicMock()
+    study.get_areas.return_value = {"model_description_fb": model_description_fb_area}
+    flowbased_data = _structural_flowbased_data()
+    assert "model_description_fb" in flowbased_data["virtual_nodes"]
+
+    create_flowbased_areas_and_links(study, flowbased_data, set())
+
+    model_description_fb_area.create_thermal_cluster.assert_called_once()
+    assert model_description_fb_area.create_thermal_cluster.call_args.kwargs["cluster_name"] == "restriction_ahc"
+    binding_constraint_names = [call.kwargs["name"] for call in study.create_binding_constraint.call_args_list]
+    assert "restriction_ahc" in binding_constraint_names
+
+
+def test_create_flowbased_areas_and_links_does_not_create_restriction_ahc_when_model_description_fb_absent():
+    study = MagicMock()
+    model_description_fb_area = MagicMock()
+    study.get_areas.return_value = {"model_description_fb": model_description_fb_area}
+    flowbased_data = _structural_flowbased_data()
+    flowbased_data["virtual_nodes"] = ["alegro1", "alegro2", "alegro3", "zz_flowbased"]
+
+    create_flowbased_areas_and_links(study, flowbased_data, set())
+
+    model_description_fb_area.create_thermal_cluster.assert_not_called()
+    binding_constraint_names = [call.kwargs["name"] for call in study.create_binding_constraint.call_args_list]
+    assert "restriction_ahc" not in binding_constraint_names
 
 
 # --- FlowbasedFileReader ---

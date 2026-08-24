@@ -21,10 +21,12 @@ from antares.craft import (
     BindingConstraintFrequency,
     BindingConstraintOperator,
     BindingConstraintProperties,
+    ClusterData,
     ConstraintTerm,
     LinkData,
     LinkProperties,
     Month,
+    ThermalClusterProperties,
     TransmissionCapacities,
 )
 from antares.craft.model.area import Area
