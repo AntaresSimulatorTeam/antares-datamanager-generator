@@ -22,19 +22,21 @@ from antares.craft.model.area import Area
 from antares.craft.model.renewable import RenewableCluster
 from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
 from antares.datamanager.generator.generate_flowbased import (
+    BINDING_CONSTRAINT_HOURLY_ROWS,
     SECOND_MEMBER_FILENAME,
     SUMMER_MODEL_FILENAME,
     WEIGHT_FILENAME,
     WINTER_MODEL_FILENAME,
     FlowbasedFileReader,
-    _broadcast_daily_to_hourly,
-    _hourly_to_daily_mean,
+    _pad_to_binding_constraint_hourly_rows,
     _read_combined_res_series,
     _zscore_pooled,
+    compute_id_day_types,
     create_flowbased_areas_and_links,
     generate_flowbased_binding_constraints,
 )
 from antares.datamanager.models.study_data_json_model import StudyData
+from antares.datamanager.utils.random_forest_reader import load_forest_model
 
 EXPECTED_HOURS = 8760
 HUB_AREAS = ("at", "be", "de", "fr", "nl")
@@ -202,13 +204,14 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
     # Winter day again (hour 8759, day 365)
     assert rhs.iloc[8759, 0] == 10.0
     assert rhs.iloc[8759, 1] == 20.0
-    # idDayType is predicted once per day and made into 24 hours
-    assert rhs.iloc[0:24, 0].nunique() == 1
-    assert rhs.iloc[24:48, 0].nunique() == 1
+    # BC matrix is always 8784 rows hourly, extra rows are 0
+    assert rhs.shape == (BINDING_CONSTRAINT_HOURLY_ROWS, 2)
+    assert (rhs.iloc[EXPECTED_HOURS:BINDING_CONSTRAINT_HOURLY_ROWS] == 0.0).all(axis=None)
 
     fb002_rhs = calls_by_name["FB002"]["less_term_matrix"]
     assert fb002_rhs.iloc[0, 0] == 100.0
     assert fb002_rhs.iloc[3000, 1] == 400.0
+    assert fb002_rhs.shape == (BINDING_CONSTRAINT_HOURLY_ROWS, 2)
 
 
 @patch("antares.datamanager.generator.generate_flowbased.settings")
@@ -293,49 +296,72 @@ def test_read_combined_res_series_raises_when_no_matching_cluster():
         _read_combined_res_series(area, {"Wind Onshore", "Wind Offshore"})
 
 
-# --- _hourly_to_daily_mean / _zscore_pooled / _broadcast_daily_to_hourly ---
-
-
-def test_hourly_to_daily_mean_averages_24_hour_blocks():
-    values = [5.0] * EXPECTED_HOURS
-    values[0:24] = [2.0] * 24
-    values[24:48] = [8.0] * 24
-    hourly = pd.DataFrame({0: values, 1: values})
-
-    daily = _hourly_to_daily_mean(hourly)
-
-    assert daily.shape == (365, 2)
-    assert daily.iloc[0, 0] == 2.0
-    assert daily.iloc[1, 0] == 8.0
-    assert daily.iloc[2, 0] == 5.0
+# --- _zscore_pooled / compute_id_day_types ---
 
 
 def test_zscore_pooled_matches_manual_computation():
-    daily = pd.DataFrame({0: [1.0, 2.0, 3.0], 1: [4.0, 5.0, 6.0]})
+    hourly = pd.DataFrame({0: [1.0, 2.0, 3.0], 1: [4.0, 5.0, 6.0]})
 
-    result = _zscore_pooled(daily)
+    result = _zscore_pooled(hourly)
 
-    values = daily.to_numpy().ravel()
-    expected = (daily - values.mean()) / values.std(ddof=1)
+    values = hourly.to_numpy().ravel()
+    expected = (hourly - values.mean()) / values.std(ddof=1)
     pd.testing.assert_frame_equal(result, expected)
 
 
 def test_zscore_pooled_raises_on_constant_series():
-    daily = pd.DataFrame({0: [5.0, 5.0], 1: [5.0, 5.0]})
+    hourly = pd.DataFrame({0: [5.0, 5.0], 1: [5.0, 5.0]})
 
     with pytest.raises(FlowbasedGenerationError):
-        _zscore_pooled(daily)
+        _zscore_pooled(hourly)
 
 
-def test_broadcast_daily_to_hourly_repeats_each_day_24_times():
-    daily = pd.DataFrame({0: [1, 2, 3]})
+def test_compute_id_day_types_predicts_independently_per_hour(tmp_path):
+    """
+    The model must be called once per hour, not once per day with the result broadcast.
+    """
+    pmml_path = tmp_path / "model.pmml"
+    pmml_path.write_text(_single_split_pmml("low", "high"))
+    model = load_forest_model(pmml_path)
 
-    hourly = _broadcast_daily_to_hourly(daily)
+    fr_load_values = ([10.0] * 12 + [90.0] * 12) * 365
+    filler_values = [1.0, 1.5] * (EXPECTED_HOURS // 2)
+    hub_features = {
+        area: {
+            variable: pd.DataFrame({0: fr_load_values if (area == "fr" and variable == "load") else filler_values})
+            for variable in ("load", "wind", "solar", "h_ror")
+        }
+        for area in HUB_AREAS
+    }
+    type_days = [
+        {"clustering": "low", "id_type_day": 1, "class_day": "winterWd"},
+        {"clustering": "high", "id_type_day": 2, "class_day": "winterWd"},
+    ]
 
-    assert hourly.shape == (72, 1)
-    assert (hourly.iloc[0:24, 0] == 1).all()
-    assert (hourly.iloc[24:48, 0] == 2).all()
-    assert (hourly.iloc[48:72, 0] == 3).all()
+    id_day_types = compute_id_day_types(model, model, hub_features, type_days, Month.JANUARY)
+
+    assert id_day_types.iloc[0, 0] != id_day_types.iloc[12, 0]
+    assert id_day_types.shape == (EXPECTED_HOURS, 1)
+
+
+def test_pad_to_binding_constraint_hourly_rows_appends_zeros():
+    matrix = pd.DataFrame({0: [1.0] * EXPECTED_HOURS, 1: [2.0] * EXPECTED_HOURS})
+
+    padded = _pad_to_binding_constraint_hourly_rows(matrix)
+
+    assert padded.shape == (BINDING_CONSTRAINT_HOURLY_ROWS, 2)
+    # Original rows are preserved unchanged
+    assert (padded.iloc[0:EXPECTED_HOURS, 0] == 1.0).all()
+    assert (padded.iloc[0:EXPECTED_HOURS, 1] == 2.0).all()
+    # Extra rows (the "366th day") are zero
+    assert (padded.iloc[EXPECTED_HOURS:BINDING_CONSTRAINT_HOURLY_ROWS] == 0.0).all(axis=None)
+
+
+def test_pad_to_binding_constraint_hourly_rows_raises_on_unexpected_row_count():
+    matrix = pd.DataFrame({0: [1.0] * 100})
+
+    with pytest.raises(FlowbasedGenerationError):
+        _pad_to_binding_constraint_hourly_rows(matrix)
 
 
 # --- create_flowbased_areas_and_links ---

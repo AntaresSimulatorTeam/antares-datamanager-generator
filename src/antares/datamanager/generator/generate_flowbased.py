@@ -200,6 +200,7 @@ def generate_flowbased_binding_constraints(
     for constraint_name, weight_row in weight_df.iterrows():
         terms = _build_constraint_terms(weight_row)
         rhs = build_rhs_matrix(id_day_types, vect_b_lookup, str(constraint_name))
+        rhs = _pad_to_binding_constraint_hourly_rows(rhs)
         study.create_binding_constraint(
             name=str(constraint_name), properties=properties, terms=terms, less_term_matrix=rhs
         )
@@ -361,38 +362,30 @@ def _build_hub_features(study: Study) -> dict[str, dict[str, pd.DataFrame]]:
     return features
 
 
-# rf prediction -> idDayType, per day and per reference year column
-# daily mean -> z-score -> predict once a day (one idDayType),
+# rf prediction -> idDayType, per hour and per reference year column. Confirmed against the
 
 
-def _hourly_to_daily_mean(hourly: pd.DataFrame) -> pd.DataFrame:
-    """(8760, n_columns) -> (365, n_columns), mean of each day's 24 hourly rows.
+def _hourly_season_mask(first_month: Month) -> np.ndarray[Any, np.dtype[np.bool_]]:
+    daily_mask = SeasonManager(first_month).is_winter()
+    return np.repeat(daily_mask, 24)
 
-    (hours 0-23 = day 1, 24-47 = day 2, ...)
+
+def _zscore_pooled(hourly: pd.DataFrame) -> pd.DataFrame:
+    """Z-score an (8760, n_columns) hourly df using one mean/std pooled over every value
+    (all hours x all columns), matching R's `scale()` in the old generator (sample std, ddof=1).
     """
-    values = hourly.to_numpy()
-    daily_values = values.reshape(365, 24, values.shape[1]).mean(axis=1)
-    return pd.DataFrame(daily_values, columns=hourly.columns)
-
-
-def _zscore_pooled(daily: pd.DataFrame) -> pd.DataFrame:
-    """Z-score a (365, n_columns) daily mean df using one mean/std pooled over every value
-    (all days x all columns), matching R's `scale()` in old generator (sample std, ddof=1).
-    """
-    values = daily.to_numpy(dtype=float)
+    values = hourly.to_numpy(dtype=float)
     mean = float(values.mean())
     std = float(values.std(ddof=1))
     if std < 1e-9:  # == 0.0
         raise FlowbasedGenerationError("Cannot z-score a constant series (std == 0)")
-    return (daily - mean) / std
+    return (hourly - mean) / std
 
 
-def _build_feature_frame(
-    daily_normalized_features: dict[str, dict[str, pd.DataFrame]], column_index: int
-) -> pd.DataFrame:
+def _build_feature_frame(normalized_features: dict[str, dict[str, pd.DataFrame]], column_index: int) -> pd.DataFrame:
     columns = {
         f"{area}_{variable}_normalized": series.iloc[:, column_index]
-        for area, series_by_variable in daily_normalized_features.items()
+        for area, series_by_variable in normalized_features.items()
         for variable, series in series_by_variable.items()
     }
     return pd.DataFrame(columns)
@@ -415,12 +408,6 @@ def _map_cluster_to_id_day_type(cluster: str, cluster_to_id_day_type: dict[str, 
     return cluster_to_id_day_type[cluster]
 
 
-def _broadcast_daily_to_hourly(daily_id_day_types: pd.DataFrame) -> pd.DataFrame:
-    """(365, n_columns) -> (8760, n_columns), each day's value repeated across its 24 hours."""
-    hourly_values = np.repeat(daily_id_day_types.to_numpy(), repeats=24, axis=0)
-    return pd.DataFrame(hourly_values, columns=daily_id_day_types.columns)
-
-
 def compute_id_day_types(
     summer_model: Any,
     winter_model: Any,
@@ -428,31 +415,30 @@ def compute_id_day_types(
     type_days: list[dict[str, Any]],
     first_month: Month,
 ) -> pd.DataFrame:
-    """Predict `idDayType` once per day, for every reference climatic year column, then
-    put each day's value into 24 hours.
+    """Predict `idDayType` for every hour, for every reference climatic year column.
 
     Computed once, shared by all 100 FBxxx constraints.
 
     Returns shape (8760, n_columns), columns 0..n_columns-1.
     """
-    is_winter = SeasonManager(first_month).is_winter()
+    is_winter = _hourly_season_mask(first_month)
     cluster_to_id_day_type = {str(entry["clustering"]): int(entry["id_type_day"]) for entry in type_days}
 
-    daily_normalized_features = {
-        area: {variable: _zscore_pooled(_hourly_to_daily_mean(series)) for variable, series in by_variable.items()}
+    normalized_features = {
+        area: {variable: _zscore_pooled(series) for variable, series in by_variable.items()}
         for area, by_variable in hub_features.items()
     }
 
-    n_columns = next(iter(daily_normalized_features[HUB_AREAS[0]].values())).shape[1]
+    n_columns = next(iter(normalized_features[HUB_AREAS[0]].values())).shape[1]
     id_day_type_columns = {}
     for column_index in range(n_columns):
-        column_features = _build_feature_frame(daily_normalized_features, column_index)
+        column_features = _build_feature_frame(normalized_features, column_index)
         clusters = _predict_column_clusters(summer_model, winter_model, column_features, is_winter)
         id_day_type_columns[column_index] = [
             _map_cluster_to_id_day_type(cluster, cluster_to_id_day_type) for cluster in clusters
         ]
 
-    return _broadcast_daily_to_hourly(pd.DataFrame(id_day_type_columns))
+    return pd.DataFrame(id_day_type_columns)
 
 
 # idDayType -> RHS
@@ -487,6 +473,17 @@ def build_rhs_matrix(
     if rhs.isna().any(axis=None):
         raise FlowbasedGenerationError(f"idDayType value has no matching vect_b for constraint '{constraint_name}'")
     return rhs
+
+
+# Extra rows must be zero padded before being handed to create_binding_constraint
+BINDING_CONSTRAINT_HOURLY_ROWS = 8784
+
+
+def _pad_to_binding_constraint_hourly_rows(matrix: pd.DataFrame) -> pd.DataFrame:
+    if len(matrix) != EXPECTED_HOURS:
+        raise FlowbasedGenerationError(f"Expected {EXPECTED_HOURS} rows before padding, got {len(matrix)}")
+    padding = pd.DataFrame(0.0, index=range(BINDING_CONSTRAINT_HOURLY_ROWS - EXPECTED_HOURS), columns=matrix.columns)
+    return pd.concat([matrix, padding], ignore_index=True)
 
 
 # weight.txt -> binding constraint terms
