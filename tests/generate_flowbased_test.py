@@ -376,7 +376,7 @@ def _structural_flowbased_data() -> dict:
 def test_create_flowbased_areas_and_links_creates_virtual_areas():
     study = MagicMock()
 
-    create_flowbased_areas_and_links(study, _structural_flowbased_data(), set())
+    create_flowbased_areas_and_links(study, _structural_flowbased_data())
 
     created_areas = {call.kwargs["area_name"] for call in study.create_area.call_args_list}
     assert created_areas == {"alegro1", "alegro2", "alegro3", "model_description_fb", "zz_flowbased"}
@@ -385,7 +385,7 @@ def test_create_flowbased_areas_and_links_creates_virtual_areas():
 def test_create_flowbased_areas_and_links_creates_hub_links_as_infinite():
     study = MagicMock()
 
-    create_flowbased_areas_and_links(study, _structural_flowbased_data(), set())
+    create_flowbased_areas_and_links(study, _structural_flowbased_data())
 
     hub_calls = {
         call.kwargs["area_from"]: call.kwargs["properties"]
@@ -405,7 +405,7 @@ def test_create_flowbased_areas_and_links_transmission_capacities_is_case_insens
         for area in ("at", "be", "de", "fr", "nl")
     ] + _alegro_link_entries()
 
-    create_flowbased_areas_and_links(study, flowbased_data, set())
+    create_flowbased_areas_and_links(study, flowbased_data)
 
     fr_call = next(call for call in study.create_link.call_args_list if call.kwargs.get("area_from") == "fr")
     assert fr_call.kwargs["properties"].transmission_capacities == TransmissionCapacities.INFINITE
@@ -414,7 +414,7 @@ def test_create_flowbased_areas_and_links_transmission_capacities_is_case_insens
 def test_create_flowbased_areas_and_links_creates_alegro_links_with_capacity_matrices():
     study = MagicMock()
 
-    create_flowbased_areas_and_links(study, _structural_flowbased_data(), set())
+    create_flowbased_areas_and_links(study, _structural_flowbased_data())
 
     alegro_pairs = {
         (call.kwargs["area_from"], call.kwargs["area_to"])
@@ -431,7 +431,7 @@ def test_create_flowbased_areas_and_links_allows_alegro_links_with_different_cap
     flowbased_data = _structural_flowbased_data()
     flowbased_data["links"][-1] = {**flowbased_data["links"][-1], "winter_HP_direct_MW": 500}
 
-    create_flowbased_areas_and_links(study, flowbased_data, set())
+    create_flowbased_areas_and_links(study, flowbased_data)
 
     assert study.create_link.call_count == len(flowbased_data["links"])
 
@@ -444,7 +444,7 @@ def test_create_flowbased_areas_and_links_raises_on_unknown_transmission_capacit
             entry["transmission_capacities"] = "NOT_A_REAL_VALUE"
 
     with pytest.raises(FlowbasedGenerationError):
-        create_flowbased_areas_and_links(study, flowbased_data, set())
+        create_flowbased_areas_and_links(study, flowbased_data)
 
 
 def test_create_flowbased_areas_and_links_raises_on_malformed_link_name():
@@ -453,7 +453,7 @@ def test_create_flowbased_areas_and_links_raises_on_malformed_link_name():
     flowbased_data["links"].append({"transmission_capacities": "INFINITE", "name": "not_a_pair"})
 
     with pytest.raises(FlowbasedGenerationError):
-        create_flowbased_areas_and_links(study, flowbased_data, set())
+        create_flowbased_areas_and_links(study, flowbased_data)
 
 
 # --- FlowbasedFileReader ---

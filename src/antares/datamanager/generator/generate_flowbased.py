@@ -211,7 +211,7 @@ def generate_flowbased_binding_constraints(
 # virtual zones + hub/alegro links
 
 
-def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any], used_files: Set[Path]) -> None:
+def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any]) -> None:
     """Create the flowbased virtual zones and their links.
 
     Needed by both RHS possibilities (recalcul and lecture directe)
@@ -219,7 +219,6 @@ def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any
     Args:
         study: The Antares study being generated.
         flowbased_data: The JSON `flowbased` block (`virtual_nodes`, `links`).
-        used_files: Set of `.arrow`/raw files opened, tracked for post generation cleanup.
 
     Raises:
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
@@ -383,7 +382,7 @@ def _zscore_pooled(daily: pd.DataFrame) -> pd.DataFrame:
     values = daily.to_numpy(dtype=float)
     mean = float(values.mean())
     std = float(values.std(ddof=1))
-    if std == 0.0:
+    if std < 1e-9: # == 0.0
         raise FlowbasedGenerationError("Cannot z-score a constant series (std == 0)")
     return (daily - mean) / std
 

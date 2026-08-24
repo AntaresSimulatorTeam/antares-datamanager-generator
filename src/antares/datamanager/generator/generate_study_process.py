@@ -89,7 +89,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
 
         if study_data.flowbased:
-            create_flowbased_areas_and_links(study, study_data.flowbased, used_files)
+            create_flowbased_areas_and_links(study, study_data.flowbased)
             if study_data.flowbased.get("recalculate_ts"):
                 generate_flowbased_binding_constraints(study, study_data.flowbased, study_data, used_files)
 
