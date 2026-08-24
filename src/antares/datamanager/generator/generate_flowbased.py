@@ -159,35 +159,51 @@ class FlowbasedFileReader:
 
     @staticmethod
     def read_ts_file(ts_path: Path) -> pd.DataFrame:
-        """Read the day type time series (`ts.txt`).
+        """Read the day type / domain time series (`ts.txt`).
 
-        One row per hour, one column per climatic year
+        Expected format: daily rows (365 days) or hourly rows (8760 hours).
+        Columns: metadata columns ('Date', 'Id_day') + one column per climatic year (containing Id_domaine).
 
         Args:
             ts_path: Path to `ts.txt`
 
         Returns:
-            A DataFrame indexed by constraint name (`Name` column), one column per link.
-
-        Raises:
-            FlowbasedGenerationError: If the file is missing or cannot be parsed.
+            A DataFrame with 8760 hourly rows, columns 0..N-1 containing the domain IDs.
         """
         try:
             ts_df = pd.read_csv(ts_path, sep=r"\s+", quotechar='"')
         except (OSError, pd.errors.ParserError) as exc:
             raise FlowbasedGenerationError(f"Could not read ts file {ts_path}: {exc}") from exc
 
-        ts_df = pd.DataFrame(
-            ts_df.drop(columns=["Date"]).to_numpy(),
-            columns=range(ts_df.shape[1] - 1),
-        )
+        # Suppression des colonnes de métadonnées (insensibles à la casse)
+        cols_to_drop = [col for col in ts_df.columns if str(col).lower() in {"date", "id_day"}]
+        data_df = ts_df.drop(columns=cols_to_drop)
+
+        if data_df.empty:
+            raise FlowbasedGenerationError(f"No domain columns found in {ts_path} after dropping metadata columns")
+
+        # Si le fichier est au pas journalier (365 ou 366 jours), étendre à 8760 heures (24h par jour)
+        if len(data_df) in (365, 366):
+            # On prend les 365 premiers jours pour obtenir 365 * 24 = 8760 heures
+            daily_values = data_df.iloc[:365].to_numpy()
+            hourly_values = np.repeat(daily_values, 24, axis=0)
+            data_df = pd.DataFrame(hourly_values)
+        elif len(data_df) == EXPECTED_HOURS:
+            data_df = pd.DataFrame(data_df.to_numpy())
+        else:
+            raise FlowbasedGenerationError(
+                f"Unexpected number of rows in {ts_path}: {len(data_df)} (expected 365 daily rows or {EXPECTED_HOURS} hourly rows)"
+            )
+
+        # Réindexer les colonnes de 0 à N-1
+        data_df.columns = pd.RangeIndex(data_df.shape[1])
 
         logger.info(
             "Loaded flowbased ts file",
-            extra={"ts_path": str(ts_path), "rows": len(ts_df)},
+            extra={"ts_path": str(ts_path), "rows": len(data_df), "columns": data_df.shape[1]},
         )
 
-        return ts_df
+        return data_df
 
 
 def generate_flowbased_binding_constraints(
@@ -219,7 +235,7 @@ def generate_flowbased_binding_constraints(
             raise FlowbasedGenerationError("flowbased.type_days is required for the recalculate path")
 
         summer_model, winter_model = _load_models(trajectory_directory, used_files)
-        hub_features = _build_hub_features(study_data)
+        hub_features = _build_hub_features(study)
         id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, study_data.first_month)
     else:
         id_day_types = _read_ts_file(trajectory_directory, used_files)
@@ -574,7 +590,7 @@ def create_restriction_ahc(study: Study, limitation_mw: float = 10000.0) -> None
 
     # Création du cluster thermique avec sa capacité nominale (ex: 10000 MW)
     area_obj.create_thermal_cluster(
-        cluster_name=cluster_name,
+        thermal_name=cluster_name,
         properties=ThermalClusterProperties(
             nominal_capacity=limitation_mw,
             unit_count=1,
@@ -592,9 +608,9 @@ def create_restriction_ahc(study: Study, limitation_mw: float = 10000.0) -> None
 
     # 3. Définition des termes (coefficients PTDF et cluster)
     terms = [
-        ConstraintTerm(data=LinkData(area1="ch", area2="fr"), weight=1.0),
-        ConstraintTerm(data=LinkData(area1="fr", area2="itn"), weight=-1.0),
-        ConstraintTerm(data=LinkData(area1="fr", area2="zz_flowbased"), weight=-1.0),
+        ConstraintTerm(data=LinkData(area1="CH", area2="FR"), weight=1.0),
+        ConstraintTerm(data=LinkData(area1="FR", area2="ITN"), weight=-1.0),
+        ConstraintTerm(data=LinkData(area1="FR", area2="zz_flowbased"), weight=-1.0),
         ConstraintTerm(
             data=ClusterData(area=area_name, cluster=cluster_name),
             weight=-1.0,
@@ -603,7 +619,7 @@ def create_restriction_ahc(study: Study, limitation_mw: float = 10000.0) -> None
 
     # 4. Matrice second membre (RHS) : 0 pour 8760 heures
     # Le cluster virtuel avec coefficient -1 porte la limitation
-    less_term_matrix = pd.DataFrame(np.zeros((EXPECTED_HOURS, 1)))
+    less_term_matrix = pd.DataFrame(np.zeros((8784, 1)))
 
     # 5. Création de la contrainte couplante dans l'étude
     study.create_binding_constraint(
