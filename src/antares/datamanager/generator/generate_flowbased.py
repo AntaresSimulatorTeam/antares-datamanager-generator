@@ -374,12 +374,15 @@ def _hourly_season_mask(first_month: Month) -> np.ndarray[Any, np.dtype[np.bool_
 def _zscore_pooled(hourly: pd.DataFrame) -> pd.DataFrame:
     """Z-score an (8760, n_columns) hourly df using one mean/std pooled over every value
     (all hours x all columns), matching R's `scale()` in the old generator (sample std, ddof=1).
+
+    A constant series (std == 0) is returned as an all zero series because its z-score is a
+    zero division
     """
     values = hourly.to_numpy(dtype=float)
     mean = float(values.mean())
     std = float(values.std(ddof=1))
     if std < 1e-9:  # == 0.0
-        raise FlowbasedGenerationError("Cannot z-score a constant series (std == 0)")
+        return pd.DataFrame(0.0, index=hourly.index, columns=hourly.columns)
     return (hourly - mean) / std
 
 

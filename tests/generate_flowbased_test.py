@@ -309,11 +309,13 @@ def test_zscore_pooled_matches_manual_computation():
     pd.testing.assert_frame_equal(result, expected)
 
 
-def test_zscore_pooled_raises_on_constant_series():
+def test_zscore_pooled_returns_zeros_for_constant_series():
     hourly = pd.DataFrame({0: [5.0, 5.0], 1: [5.0, 5.0]})
 
-    with pytest.raises(FlowbasedGenerationError):
-        _zscore_pooled(hourly)
+    result = _zscore_pooled(hourly)
+
+    assert (result == 0.0).all(axis=None)
+    assert result.shape == hourly.shape
 
 
 def test_compute_id_day_types_predicts_independently_per_hour(tmp_path):
