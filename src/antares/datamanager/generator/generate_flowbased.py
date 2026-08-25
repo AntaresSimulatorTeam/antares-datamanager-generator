@@ -187,23 +187,20 @@ class FlowbasedFileReader:
             # On prend les 365 premiers jours pour obtenir 365 * 24 = 8760 heures
             daily_values = data_df.iloc[:365].to_numpy()
             hourly_values = np.repeat(daily_values, 24, axis=0)
-            data_df = pd.DataFrame(hourly_values)
+            result_df = pd.DataFrame(hourly_values)
         elif len(data_df) == EXPECTED_HOURS:
-            data_df = pd.DataFrame(data_df.to_numpy())
+            result_df = pd.DataFrame(data_df.to_numpy())
         else:
             raise FlowbasedGenerationError(
                 f"Unexpected number of rows in {ts_path}: {len(data_df)} (expected 365 daily rows or {EXPECTED_HOURS} hourly rows)"
             )
 
-        # Réindexer les colonnes de 0 à N-1
-        data_df.columns = pd.RangeIndex(data_df.shape[1])
-
         logger.info(
             "Loaded flowbased ts file",
-            extra={"ts_path": str(ts_path), "rows": len(data_df), "columns": data_df.shape[1]},
+            extra={"ts_path": str(ts_path), "rows": len(result_df), "columns": result_df.shape[1]},
         )
 
-        return data_df
+        return result_df
 
 
 def generate_flowbased_binding_constraints(
