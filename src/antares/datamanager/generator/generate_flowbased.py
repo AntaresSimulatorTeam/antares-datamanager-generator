@@ -11,6 +11,7 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Any, Set, cast
 
@@ -342,10 +343,27 @@ def _validate_row_count(area: str, series_by_variable: dict[str, pd.DataFrame]) 
             )
 
 
+def _validate_column_counts(hub_features: dict[str, dict[str, pd.DataFrame]]) -> None:
+    """
+    Throws a clear message naming exactly which series don't match, if columns are not
+    consistent between all series. (Assumed correct before flowbased)
+    """
+    column_counts = {
+        f"{area}.{variable}": df.shape[1]
+        for area, by_variable in hub_features.items()
+        for variable, df in by_variable.items()
+    }
+    if len(set(column_counts.values())) <= 1:
+        return
+
+    expected = Counter(column_counts.values()).most_common(1)[0][0]
+    outliers = {key: count for key, count in column_counts.items() if count != expected}
+    raise FlowbasedGenerationError(
+        f"Mismatched scenario column counts: expected {expected}, but these series don't match: {outliers}"
+    )
+
+
 def _build_hub_features(study: Study) -> dict[str, dict[str, pd.DataFrame]]:
-    """
-    Column (scenario) counts are assumed already validated/consistent before flowbased runs
-    """
     areas = study.get_areas()
     features: dict[str, dict[str, pd.DataFrame]] = {}
     for area_id in HUB_AREAS:
@@ -360,6 +378,7 @@ def _build_hub_features(study: Study) -> dict[str, dict[str, pd.DataFrame]]:
         }
         _validate_row_count(area_id, series_by_variable)
         features[area_id] = series_by_variable
+    _validate_column_counts(features)
     return features
 
 
