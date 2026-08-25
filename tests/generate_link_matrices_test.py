@@ -12,7 +12,6 @@
 
 import pytest
 
-import numpy as np
 from antares.craft import Month
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
 from antares.datamanager.utils.season_utils import SeasonManager
