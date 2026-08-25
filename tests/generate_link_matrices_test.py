@@ -12,7 +12,10 @@
 
 import pytest
 
+import numpy as np
+from antares.craft import Month
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
+from antares.datamanager.utils.season_utils import SeasonManager
 
 
 @pytest.fixture
@@ -31,31 +34,34 @@ def link_data_example() -> dict[str, int]:
     }
 
 
-def get_season_period(index: int) -> tuple[str, str]:
+def get_season_period(index: int, first_month: Month = Month.JANUARY) -> tuple[str, str]:
     hour = index % 24
-    day_of_year = (index // 24) + 1
-    season = "winter" if (day_of_year <= 90 or day_of_year >= 274) else "summer"
+    day = index // 24
+    season_manager = SeasonManager(first_month)
+    season = "winter" if season_manager.is_winter()[day] else "summer"
     period = "HP" if 8 <= hour <= 19 else "HC"
     return season, period
 
 
 @pytest.mark.parametrize("index", [0, 100, 2500, 7000, 8500])
 @pytest.mark.parametrize("mode", ["direct", "indirect"])
+@pytest.mark.parametrize("first_month", [Month.JANUARY, Month.JULY])
 def test_generate_link_capacity_data_by_index_auto_keys(
     link_data_example: dict[str, int],
     index: int,
     mode: str,
+    first_month: Month,
 ) -> None:
     """
     Check that for a given index and mode, the value in the generated DataFrame
     matches the expected value computed from the season and period.
     """
 
-    season, period = get_season_period(index)
+    season, period = get_season_period(index, first_month=first_month)
     key = f"{season}{period.capitalize()}{mode.capitalize()}Mw"
     expected_value = link_data_example[key]
 
-    df = generate_link_capacity_df(link_data_example, mode=mode)
+    df = generate_link_capacity_df(link_data_example, mode=mode, first_month=first_month)
     actual_value = df.iloc[index, 0]  # First column, unnamed
 
     assert actual_value == expected_value, (
@@ -194,7 +200,9 @@ def test_generate_link_capacity_df_case_insensitivity() -> None:
         "HvdcNbDirect": 1,
         "HvdcFoRateDirect": 0.0,
     }
-    df = generate_link_capacity_df(link_data, "direct", seed_tsgen_link=global_seed, link_name=link_name)
+    df = generate_link_capacity_df(
+        link_data, "direct", seed_tsgen_link=global_seed, link_name=link_name, first_month=Month.JANUARY
+    )
 
     # Check some values
     # Winter HC: (1000 - 500) + 500 = 1000
