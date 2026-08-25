@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import Any, Set, cast
+from typing import Any, Optional, Set, cast
 
 import numpy as np
 import pandas as pd
@@ -37,7 +37,6 @@ from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df
 from antares.datamanager.generator.generate_res_clusters import map_res_group_to_aw
 from antares.datamanager.logs.logging_setup import get_logger
-from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.random_forest_reader import load_forest_model, predict_clusters_batch
 from antares.datamanager.utils.season_utils import SeasonManager
 
@@ -208,7 +207,7 @@ class FlowbasedFileReader:
 
 
 def generate_flowbased_binding_constraints(
-    study: Study, flowbased_data: dict[str, Any], study_data: StudyData, used_files: Set[Path]
+    study: Study, flowbased_data: dict[str, Any], first_month: Month, nb_years: Any, used_files: Set[Path]
 ) -> None:
     """Create the 100 FBxxx flowbased binding constraints (Possibilite 2 / recalculate).
 
@@ -217,7 +216,6 @@ def generate_flowbased_binding_constraints(
 
     Args:
         study: The Antares study being generated.
-        flowbased_data: The JSON `flowbased` block (`ts_path`, `type_days`, ...).
         study_data: The full parsed study data.
         used_files: Set of `.arrow`/raw files opened, tracked for post generation cleanup.
 
@@ -237,7 +235,7 @@ def generate_flowbased_binding_constraints(
 
         summer_model, winter_model = _load_models(trajectory_directory, used_files)
         hub_features = _build_hub_features(study)
-        id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, study_data.first_month)
+        id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, first_month)
     else:
         id_day_types = _read_ts_file(trajectory_directory, used_files)
 
@@ -252,7 +250,7 @@ def generate_flowbased_binding_constraints(
     )
 
     for constraint_name, weight_row in weight_df.iterrows():
-        terms = _build_constraint_terms(weight_row)
+        terms = _build_constraint_terms(weight_row, flowbased_data, study.get_areas())
         rhs = build_rhs_matrix(id_day_types, vect_b_lookup, str(constraint_name))
         rhs = _pad_to_binding_constraint_hourly_rows(rhs)
         study.create_binding_constraint(
@@ -260,13 +258,15 @@ def generate_flowbased_binding_constraints(
         )
         logger.info(f"Created flowbased binding constraint {constraint_name}")
 
-    _wire_scenario_builder(study, group_name, n_columns, study_data.nb_years)
+    _wire_scenario_builder(study, group_name, n_columns, nb_years)
 
 
 # virtual zones + hub/alegro links
 
 
-def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any]) -> None:
+def create_flowbased_areas_and_links(
+    study: Study, flowbased_data: dict[str, Any], first_month: Optional[Month]
+) -> None:
     """Create the flowbased virtual zones and their links.
 
     Needed by both RHS possibilities (recalcul and lecture directe)
@@ -277,6 +277,9 @@ def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any
 
     Raises:
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
+        :param study:
+        :param flowbased_data:
+        :param first_month:
     """
     for area_name in flowbased_data.get("virtual_nodes") or []:
         study.create_area(area_name=area_name)
@@ -284,7 +287,7 @@ def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any
 
     for entry in flowbased_data.get("links") or []:
         area1, area2 = _parse_link_name(entry.get("name"))
-        _create_flowbased_link(study, area1, area2, entry)
+        _create_flowbased_link(study, area1, area2, entry, first_month)
 
     # Création du cluster et de la contrainte restriction_ahc si model_description_fb est présent
     if "model_description_fb" in (flowbased_data.get("virtual_nodes") or []):
@@ -299,7 +302,9 @@ def _parse_link_name(name: Any) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
-def _create_flowbased_link(study: Study, area1: str, area2: str, link_entry: dict[str, Any]) -> None:
+def _create_flowbased_link(
+    study: Study, area1: str, area2: str, link_entry: dict[str, Any], first_month: Optional[Month]
+) -> None:
     """`transmission_capacities` is always present, ENABLED or INFINITE. Capacity fields
     (winter_HP_direct_MW, ...) are only read when ENABLED;"""
     transmission_capacities = _parse_transmission_capacities(link_entry.get("transmission_capacities", "ENABLED"))
@@ -313,8 +318,12 @@ def _create_flowbased_link(study: Study, area1: str, area2: str, link_entry: dic
         return
 
     link_data = _to_link_capacity_data(link_entry, area1, area2)
-    link.set_capacity_direct(generate_link_capacity_df(link_data, "direct", link_name=link_name))
-    link.set_capacity_indirect(generate_link_capacity_df(link_data, "indirect", link_name=link_name))
+    link.set_capacity_direct(
+        generate_link_capacity_df(link_data, "direct", 0, link_name=link_name, first_month=first_month)
+    )
+    link.set_capacity_indirect(
+        generate_link_capacity_df(link_data, "indirect", 0, link_name=link_name, first_month=first_month)
+    )
     logger.info(f"Created flowbased link {link_name}")
 
 
@@ -577,13 +586,30 @@ def _pad_to_binding_constraint_hourly_rows(matrix: pd.DataFrame) -> pd.DataFrame
 # weight.txt -> binding constraint terms
 
 
-def _build_constraint_terms(weight_row: pd.Series[Any]) -> list[ConstraintTerm]:
+def _build_constraint_terms(
+    weight_row: pd.Series[Any], flowbased_data: dict[str, Any], areas: Any
+) -> list[ConstraintTerm]:
     terms = []
+    virtual_nodes = flowbased_data.get("virtual_nodes")
+    valid_nodes = set(virtual_nodes or ()) | set(areas or ())
+
     for link_column, coefficient in weight_row.items():
         area1, separator, area2 = str(link_column).partition(".")
-        if not separator:
+
+        # 1. Vérification du format en premier
+        if not separator or not area1 or not area2:
             raise FlowbasedGenerationError(f"Unexpected weight.txt column name '{link_column}', expected 'area1.area2'")
-        terms.append(ConstraintTerm(data=LinkData(area1=area1.lower(), area2=area2.lower()), weight=float(coefficient)))
+
+        # 2. Filtrage des nœuds ignorés / non présents
+        if area1 not in valid_nodes or area2 not in valid_nodes:
+            continue
+
+        terms.append(
+            ConstraintTerm(
+                data=LinkData(area1=area1.lower(), area2=area2.lower()),
+                weight=float(coefficient),
+            )
+        )
     return terms
 
 
