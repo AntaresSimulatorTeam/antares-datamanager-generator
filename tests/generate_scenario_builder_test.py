@@ -20,7 +20,7 @@ from antares.datamanager.generator.generate_scenario_builder import generate_sce
 from antares.datamanager.models.study_data_json_model import StudyData
 
 
-def test_generate_scenario_builder_no_modulo():
+def test_generate_scenario_builder_no_climatic_data():
     study = MagicMock(spec=Study)
     study_data = StudyData(name="test_study", scenario_builder_config={})
     used_files = set()
@@ -56,7 +56,7 @@ def test_generate_scenario_builder_load(mock_settings, mock_read_feather):
     study_data = StudyData(
         name="test_study",
         nb_years=10,
-        scenario_builder_config={"modulo": ["load", "hydro"]},
+        scenario_builder_config={"Climatic data": ["load", "hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
     )
 
@@ -102,7 +102,7 @@ def test_generate_scenario_builder_load_no_fr(mock_settings, mock_read_feather):
     study_data = StudyData(
         name="test_study",
         nb_years=5,
-        scenario_builder_config={"modulo": ["load"]},
+        scenario_builder_config={"Climatic data": ["load"]},
         area_loads={"area1": ["load_a1.arrow"]},
     )
 
@@ -138,7 +138,7 @@ def test_generate_scenario_builder_validation_error(mock_settings, mock_read_fea
     study_data = StudyData(
         name="test_study",
         nb_years=10,
-        scenario_builder_config={"modulo": ["load", "hydro"]},
+        scenario_builder_config={"Climatic data": ["load", "hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
     )
@@ -154,7 +154,7 @@ def test_generate_scenario_builder_validation_error(mock_settings, mock_read_fea
 @patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
 @patch("antares.datamanager.generator.generate_scenario_builder.settings")
 def test_generate_scenario_builder_reference_from_hydro(mock_settings, mock_read_feather):
-    # Test that if load is NOT in modulo and NOT in study, reference is taken from hydro
+    # Test that if load is NOT in climatic data and NOT in study, reference is taken from hydro
     mock_settings.hydro_ts_directory = Path("/tmp/hydro")
     mock_settings.nb_years = 5
 
@@ -173,7 +173,7 @@ def test_generate_scenario_builder_reference_from_hydro(mock_settings, mock_read
     study_data = StudyData(
         name="test_study",
         nb_years=5,
-        scenario_builder_config={"modulo": ["hydro"]},
+        scenario_builder_config={"Climatic data": ["hydro"]},
         area_loads={},  # No load
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
     )
@@ -188,7 +188,7 @@ def test_generate_scenario_builder_reference_from_hydro(mock_settings, mock_read
 @patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
 @patch("antares.datamanager.generator.generate_scenario_builder.settings")
 def test_generate_scenario_builder_reference_from_load_even_if_not_in_modulo(mock_settings, mock_read_feather):
-    # Test that if load is NOT in modulo but IS in study, it is used as reference
+    # Test that if load is NOT in climatic data but IS in study, it is used as reference
     mock_settings.load_output_directory = Path("/tmp/load")
     mock_settings.hydro_ts_directory = Path("/tmp/hydro")
     mock_settings.nb_years = 5
@@ -210,7 +210,7 @@ def test_generate_scenario_builder_reference_from_load_even_if_not_in_modulo(moc
     study_data = StudyData(
         name="test_study",
         nb_years=5,
-        scenario_builder_config={"modulo": ["hydro"]},
+        scenario_builder_config={"Climatic data": ["hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
     )
@@ -218,7 +218,7 @@ def test_generate_scenario_builder_reference_from_load_even_if_not_in_modulo(moc
     with patch("antares.datamanager.generator.generate_scenario_builder.Path.exists", return_value=True):
         generate_scenario_builder(study, study_data, set())
 
-    # Reference should be 10 (from load), even if load is not in modulo
+    # Reference should be 10 (from load), even if load is not in climatic data
     expected_scenario = [1, 2, 3, 4, 5]  # Only 5 years requested in study
     sb.hydro.get_area("FR").set_new_scenario.assert_called_with(expected_scenario)
 
@@ -241,7 +241,7 @@ def test_generate_scenario_builder_priority_to_load(mock_settings, mock_read_fea
     # In my current implementation, it checks load first, then others.
     # In this test, we want to make sure it picks load's 10, not hydro's 20.
 
-    # Sequence of calls in _generate_scenarised_series:
+    # Sequence of calls in _generate_scenerased_climatic_data_series:
     # 1. _get_nb_ts(study_data, "load") -> returns 10
     # 2. _get_nb_ts(study_data, "load") (during validation) -> returns 10
     # 3. _get_nb_ts(study_data, "hydro") (during validation) -> returns 20 -> should RAISE error if both exist and differ
@@ -256,7 +256,7 @@ def test_generate_scenario_builder_priority_to_load(mock_settings, mock_read_fea
     study_data = StudyData(
         name="test_study",
         nb_years=5,
-        scenario_builder_config={"modulo": ["load", "hydro"]},
+        scenario_builder_config={"Climatic data": ["load", "hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
     )
@@ -299,7 +299,7 @@ def test_generate_scenario_builder_res_group_normalization(mock_settings, mock_r
     study_data = StudyData(
         name="test",
         nb_years=5,
-        scenario_builder_config={"modulo": ["wind_onshore"]},
+        scenario_builder_config={"Climatic data": ["wind_onshore"]},
         area_res={"AT": {"clusters": {"c1": {"properties": {"group": "wind_onshore"}, "series": ["w.arrow"]}}}},
     )
 
@@ -348,7 +348,7 @@ def test_generate_scenario_builder_multi_area_res_search(mock_settings, mock_rea
     study_data = StudyData(
         name="test_study",
         nb_years=5,
-        scenario_builder_config={"modulo": ["load", "wind_onshore"]},
+        scenario_builder_config={"Climatic data": ["load", "wind_onshore"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_res={
             "FR": {"clusters": {}},  # No RES clusters for FR
@@ -389,7 +389,7 @@ def test_generate_scenario_builder_res_direct_tech_structure(mock_settings, mock
     study_data = StudyData(
         name="test_study",
         nb_years=5,
-        scenario_builder_config={"modulo": ["load", "wind_onshore"]},
+        scenario_builder_config={"Climatic data": ["load", "wind_onshore"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_res={"AT": {"wind_onshore": {"capacity": 2000, "series": ["wind_at.arrow"]}}},
     )
@@ -399,3 +399,392 @@ def test_generate_scenario_builder_res_direct_tech_structure(mock_settings, mock
             generate_scenario_builder(study, study_data, set())
 
         assert "Found 186 for wind_onshore but expected 200" in str(excinfo.value)
+
+
+@patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
+@patch("antares.datamanager.generator.generate_scenario_builder.settings")
+def test_generate_scenario_builder_thermal_nuclearfr(mock_settings, mock_read_feather):
+    mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
+    mock_settings.nb_years = 5
+
+    df_limit = MagicMock()
+    df_limit.shape = (8760, 3)
+    df_daily = MagicMock()
+    df_daily.shape = (365, 3)
+    df_weekly = MagicMock()
+    df_weekly.shape = (52, 3)
+
+    mock_read_feather.side_effect = [df_limit, df_daily, df_weekly]
+
+    study = MagicMock()
+    sb = MagicMock()
+    mock_bc_group = MagicMock()
+    sb.binding_constraint.get_group.return_value = mock_bc_group
+    study.get_scenario_builder.return_value = sb
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=5,
+        scenario_builder_config={"Thermal": ["nuclearfr", "z_p2g_asservi", "nucleary_nuc_modulation"]},
+        nuclear_modulation_binding_constraints={
+            "group": "scenarised200",
+            "nbTsColumns": 200,
+            "constraints": [
+                {"name": "Nuc_modulation_limit", "series": "limit.arrow"},
+                {"name": "Nuc_modulation_daily", "series": "daily.arrow"},
+                {"name": "Nuc_modulation_weekly", "series": "weekly.arrow"},
+            ],
+        },
+    )
+
+    with patch("antares.datamanager.generator.generate_scenario_builder.Path.exists", return_value=True):
+        generate_scenario_builder(study, study_data, set())
+
+    sb.binding_constraint.get_group.assert_called_with("scenarised200")
+    expected_scenario = [1, 2, 3, 1, 2]
+    mock_bc_group.set_new_scenario.assert_called_with(expected_scenario)
+    study.set_scenario_builder.assert_called_with(sb)
+
+
+@patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
+@patch("antares.datamanager.generator.generate_scenario_builder.settings")
+def test_generate_scenario_builder_thermal_nuclearfr_column_mismatch_raises(mock_settings, mock_read_feather):
+    mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
+
+    df_limit = MagicMock()
+    df_limit.shape = (8760, 3)
+    df_daily = MagicMock()
+    df_daily.shape = (365, 5)  # Mismatch
+
+    mock_read_feather.side_effect = [df_limit, df_daily]
+
+    study = MagicMock()
+    sb = MagicMock()
+    study.get_scenario_builder.return_value = sb
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=5,
+        scenario_builder_config={"Thermal": ["nuclearfr"]},
+        nuclear_modulation_binding_constraints={
+            "group": "scenarised200",
+            "constraints": [
+                {"name": "nuc_modulation_limit", "series": "limit.arrow"},
+                {"name": "nuc_modulation_daily", "series": "daily.arrow"},
+            ],
+        },
+    )
+
+    with patch("antares.datamanager.generator.generate_scenario_builder.Path.exists", return_value=True):
+        with pytest.raises(ValueError) as excinfo:
+            generate_scenario_builder(study, study_data, set())
+
+    assert "Timeseries must have the same number of columns for nuclear modulation constraints" in str(excinfo.value)
+    assert "Found 5 for nuc_modulation_daily but expected 3" in str(excinfo.value)
+
+
+def test_generate_scenario_builder_thermal_empty_nuclear_modulation():
+    study = MagicMock()
+    sb = MagicMock()
+    study.get_scenario_builder.return_value = sb
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=5,
+        scenario_builder_config={"Thermal": ["nuclearfr"]},
+        nuclear_modulation_binding_constraints=None,
+    )
+
+    generate_scenario_builder(study, study_data, set())
+    study.set_scenario_builder.assert_called_with(sb)
+    sb.binding_constraint.get_group.assert_not_called()
+
+
+@patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
+@patch("antares.datamanager.generator.generate_scenario_builder.settings")
+def test_generate_scenario_builder_thermal_nuclearfr_fallback_nb_ts_columns(mock_settings, mock_read_feather):
+    mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
+
+    study = MagicMock()
+    sb = MagicMock()
+    mock_bc_group = MagicMock()
+    sb.binding_constraint.get_group.return_value = mock_bc_group
+    study.get_scenario_builder.return_value = sb
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=3,
+        scenario_builder_config={"Thermal": ["nuclearfr"]},
+        nuclear_modulation_binding_constraints={
+            "group": "scenarised200",
+            "nbTsColumns": 2,
+            "constraints": [],
+        },
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    sb.binding_constraint.get_group.assert_called_with("scenarised200")
+    expected_scenario = [1, 2, 1]
+    mock_bc_group.set_new_scenario.assert_called_with(expected_scenario)
+
+
+@patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
+@patch("antares.datamanager.generator.generate_scenario_builder.settings")
+def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_feather(mock_settings, mock_read_feather):
+    mock_settings.nuclear_availability_ts_directory = Path("/tmp/nuclear_ts")
+    mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
+
+    df_nuc1 = MagicMock()
+    df_nuc1.shape = (8760, 4)
+    df_nuc2 = MagicMock()
+    df_nuc2.shape = (8760, 2)
+
+    def read_feather_side_effect(path):
+        if "nuc1.arrow" in str(path):
+            return df_nuc1
+        elif "nuc2.arrow" in str(path):
+            return df_nuc2
+        return MagicMock()
+
+    mock_read_feather.side_effect = read_feather_side_effect
+
+    study = MagicMock()
+    sb = MagicMock()
+    mock_thermal_cluster_1 = MagicMock()
+    mock_thermal_cluster_2 = MagicMock()
+    mock_thermal_cluster_gas = MagicMock()
+
+    def get_cluster_side_effect(area_id, cluster_id):
+        if cluster_id == "fr_nuc_1":
+            return mock_thermal_cluster_1
+        elif cluster_id == "fr_nuc_2":
+            return mock_thermal_cluster_2
+        return mock_thermal_cluster_gas
+
+    sb.thermal.get_cluster.side_effect = get_cluster_side_effect
+    study.get_scenario_builder.return_value = sb
+
+    # Area FR
+    mock_fr_area = MagicMock()
+    mock_fr_area.id = "fr"
+    mock_fr_area.name = "FR"
+
+    cluster_1 = MagicMock()
+    cluster_1.properties.group = "nuclear"
+    cluster_2 = MagicMock()
+    cluster_2.properties.group = "nuclear"
+    cluster_gas = MagicMock()
+    cluster_gas.properties.group = "gas"
+
+    mock_fr_area.get_thermals.return_value = {
+        "fr_nuc_1": cluster_1,
+        "fr_nuc_2": cluster_2,
+        "fr_gas": cluster_gas,
+    }
+
+    # Area BE with nuclear (should not be touched by nuclearfr)
+    mock_be_area = MagicMock()
+    mock_be_area.id = "be"
+    mock_be_area.name = "BE"
+    cluster_be_nuc = MagicMock()
+    cluster_be_nuc.properties.group = "nuclear"
+    mock_be_area.get_thermals.return_value = {"be_nuc_1": cluster_be_nuc}
+
+    study.get_areas.return_value = {"fr": mock_fr_area, "be": mock_be_area}
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=5,
+        scenario_builder_config={"Thermal": ["nuclearfr"]},
+        area_nuclear={
+            "fr": {
+                "clusters": {
+                    "fr_nuc_1": {"series": "nuc1.arrow"},
+                    "fr_nuc_2": {"series": "nuc2.arrow"},
+                }
+            }
+        },
+    )
+
+    with patch("antares.datamanager.generator.generate_scenario_builder.Path.exists", return_value=True):
+        generate_scenario_builder(study, study_data, set())
+
+    # Cluster 1: nb_ts = 4 -> scenario for 5 years: [1, 2, 3, 4, 1]
+    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 2, 3, 4, 1])
+    # Cluster 2: nb_ts = 2 -> scenario for 5 years: [1, 2, 1, 2, 1]
+    mock_thermal_cluster_2.set_new_scenario.assert_called_with([1, 2, 1, 2, 1])
+    # Gas cluster should not have scenario set
+    mock_thermal_cluster_gas.set_new_scenario.assert_not_called()
+
+
+def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_matrix():
+    study = MagicMock()
+    sb = MagicMock()
+    mock_thermal_cluster_1 = MagicMock()
+    sb.thermal.get_cluster.return_value = mock_thermal_cluster_1
+    study.get_scenario_builder.return_value = sb
+
+    mock_fr_area = MagicMock()
+    mock_fr_area.id = "fr"
+    mock_fr_area.name = "FR"
+
+    cluster_1 = MagicMock()
+    cluster_1.properties.group = "nuclear"
+    matrix_mock = MagicMock()
+    matrix_mock.shape = (8760, 3)
+    cluster_1.get_series_matrix.return_value = matrix_mock
+
+    mock_fr_area.get_thermals.return_value = {"fr_nuc_1": cluster_1}
+    study.get_areas.return_value = {"fr": mock_fr_area}
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=5,
+        scenario_builder_config={"Thermal": ["nuclearfr"]},
+        area_nuclear={},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    # nb_ts = 3 -> scenario for 5 years: [1, 2, 3, 1, 2]
+    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 2, 3, 1, 2])
+    sb.thermal.get_cluster.assert_called_with("fr", "fr_nuc_1")
+
+
+def test_generate_scenario_builder_thermal_nuclear_fr_clusters_fallback_default_1():
+    study = MagicMock()
+    sb = MagicMock()
+    mock_thermal_cluster_1 = MagicMock()
+    sb.thermal.get_cluster.return_value = mock_thermal_cluster_1
+    study.get_scenario_builder.return_value = sb
+
+    mock_fr_area = MagicMock()
+    mock_fr_area.id = "fr"
+    mock_fr_area.name = "FR"
+
+    cluster_1 = MagicMock()
+    cluster_1.properties.group = "nuclear"
+    cluster_1.get_series_matrix.return_value = None
+
+    mock_fr_area.get_thermals.return_value = {"fr_nuc_1": cluster_1}
+    study.get_areas.return_value = {"fr": mock_fr_area}
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=3,
+        scenario_builder_config={"Thermal": ["nuclearfr"]},
+        area_nuclear={},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    # nb_ts fallback = 1 -> scenario for 3 years: [1, 1, 1]
+    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 1, 1])
+
+
+def test_generate_scenario_builder_links_from_study_link():
+    study = MagicMock()
+    sb = MagicMock()
+    mock_link_sb = MagicMock()
+    sb.link.get_link.return_value = mock_link_sb
+    study.get_scenario_builder.return_value = sb
+
+    mock_link = MagicMock()
+    mock_df = MagicMock()
+    mock_df.shape = (8760, 4)
+    mock_link.get_capacity_direct.return_value = mock_df
+
+    study.get_links.return_value = {"nl / z_p2h_pachybride": mock_link}
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=6,
+        scenario_builder_config={"Links": ["nl/z_p2h_pachybride"]},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    sb.link.get_link.assert_called_with("nl / z_p2h_pachybride")
+    mock_link_sb.set_new_scenario.assert_called_with([1, 2, 3, 4, 1, 2])
+    study.set_scenario_builder.assert_called_with(sb)
+
+
+@patch("antares.datamanager.generator.generate_scenario_builder.generate_link_capacity_df")
+def test_generate_scenario_builder_links_from_study_data(mock_gen_cap):
+    study = MagicMock()
+    sb = MagicMock()
+    mock_link_sb = MagicMock()
+    sb.link.get_link.return_value = mock_link_sb
+    study.get_scenario_builder.return_value = sb
+    study.get_links.return_value = {}
+
+    mock_df = MagicMock()
+    mock_df.shape = (8760, 3)
+    mock_gen_cap.return_value = mock_df
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=4,
+        scenario_builder_config={"Links": ["at/fr"]},
+        links={"at/fr": {"winterhcdirectmw": 1000}},
+        seed_tsgen_link=42,
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    sb.link.get_link.assert_called_with("at / fr")
+    mock_link_sb.set_new_scenario.assert_called_with([1, 2, 3, 1])
+    mock_gen_cap.assert_called_once_with(
+        {"winterhcdirectmw": 1000},
+        "direct",
+        seed_tsgen_link=42,
+        link_name="at-fr",
+    )
+
+
+def test_generate_scenario_builder_links_fallback_default_1():
+    study = MagicMock()
+    sb = MagicMock()
+    mock_link_sb = MagicMock()
+    sb.link.get_link.return_value = mock_link_sb
+    study.get_scenario_builder.return_value = sb
+    study.get_links.return_value = {}
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=3,
+        scenario_builder_config={"links": ["nl/z_p2h_pachybride"]},
+        links={},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    sb.link.get_link.assert_called_with("nl / z_p2h_pachybride")
+    mock_link_sb.set_new_scenario.assert_called_with([1, 1, 1])
+
+
+def test_generate_scenario_builder_links_reversed_order_and_casing():
+    study = MagicMock()
+    sb = MagicMock()
+    mock_link_sb = MagicMock()
+    sb.link.get_link.return_value = mock_link_sb
+    study.get_scenario_builder.return_value = sb
+
+    mock_link = MagicMock()
+    mock_df = MagicMock()
+    mock_df.shape = (8760, 2)
+    mock_link.get_capacity_direct.return_value = mock_df
+
+    study.get_links.return_value = {"at / fr": mock_link}
+
+    study_data = StudyData(
+        name="test_study",
+        nb_years=3,
+        scenario_builder_config={"LINKS": ["FR / AT"]},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    sb.link.get_link.assert_called_with("at / fr")
+    mock_link_sb.set_new_scenario.assert_called_with([1, 2, 1])
