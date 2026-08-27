@@ -10,12 +10,14 @@
 #
 # This file is part of the Antares project.
 
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
 
+from antares.craft import Month
 from antares.datamanager.core.settings import settings
+from antares.datamanager.utils.season_utils import SeasonManager
 from antares.datamanager.utils.seed_factory import SeedFactory
 from antares.tsgen.duration_generator import ProbabilityLaw
 from antares.tsgen.random_generator import MersenneTwisterRNG
@@ -88,7 +90,11 @@ def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_lin
 
 
 def generate_link_capacity_df(
-    link_data: dict[str, int], mode: str, seed_tsgen_link: int = 0, link_name: str = ""
+    link_data: dict[str, int],
+    mode: str,
+    seed_tsgen_link: int = 0,
+    link_name: str = "",
+    first_month: Optional[Month] = None,
 ) -> pd.DataFrame:
     """
     Generate a DataFrame representing link capacity based on input parameters.
@@ -118,14 +124,25 @@ def generate_link_capacity_df(
 
     Raises:
         ValueError: If the `mode` argument is not "direct" or "indirect".
+        :param link_name:
+        :param seed_tsgen_link:
+        :param mode:
+        :param link_data:
+        :param first_month:
     """
     is_full_hvdc = False
     hvdc_ts = None
+
+    if first_month is None:
+        first_month = settings.study_setting_first_month
+
+    season_manager = SeasonManager(first_month)
+    daily_seasons = np.where(season_manager.is_winter(), "winter", "summer")
+    seasons = np.repeat(daily_seasons, 24)  # 8760 heures
+
     total_hours = 8760
     indices = np.arange(total_hours)
     hours = indices % 24
-    day_of_year = (indices // 24) + 1
-    seasons = np.where((day_of_year <= 90) | (day_of_year >= 274), "winter", "summer")
     periods = np.where((hours >= 8) & (hours <= 19), "HP", "HC")
 
     # Make link_data case-insensitive by creating a lowercase copy

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import Any, Set, cast
+from typing import Any, Optional, Set, cast
 
 import numpy as np
 import pandas as pd
@@ -22,10 +22,12 @@ from antares.craft import (
     BindingConstraintFrequency,
     BindingConstraintOperator,
     BindingConstraintProperties,
+    ClusterData,
     ConstraintTerm,
     LinkData,
     LinkProperties,
     Month,
+    ThermalClusterProperties,
     TransmissionCapacities,
 )
 from antares.craft.model.area import Area
@@ -35,7 +37,6 @@ from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df
 from antares.datamanager.generator.generate_res_clusters import map_res_group_to_aw
 from antares.datamanager.logs.logging_setup import get_logger
-from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.random_forest_reader import load_forest_model, predict_clusters_batch
 from antares.datamanager.utils.season_utils import SeasonManager
 
@@ -74,6 +75,7 @@ SUMMER_MODEL_FILENAME = "random_forest_summer.pmml"
 WINTER_MODEL_FILENAME = "random_forest_winter.pmml"
 WEIGHT_FILENAME = "weight.txt"
 SECOND_MEMBER_FILENAME = "second_member.txt"
+TS_FILENAME = "ts.txt"
 
 _REQUIRED_LINK_CAPACITY_KEYS = (
     "winter_HC_direct_MW",
@@ -155,12 +157,54 @@ class FlowbasedFileReader:
         )
         return second_member_df
 
+    @staticmethod
+    def read_ts_file(ts_path: Path) -> pd.DataFrame:
+        """Read the day type / domain time series (`ts.txt`).
 
-# TODO: (READ MODE) binding constraints must be
-# created in BOTH modes. Only the RHS is different between read and reculaculate (where pmml is used)
-# This method has to be splitted into shared and not shared behavior
+        Expected format: daily rows (365 days) or hourly rows (8760 hours).
+        Columns: metadata columns ('Date', 'Id_day') + one column per climatic year (containing Id_domaine).
+
+        Args:
+            ts_path: Path to `ts.txt`
+
+        Returns:
+            A DataFrame with 8760 hourly rows, columns 0..N-1 containing the domain IDs.
+        """
+        try:
+            ts_df = pd.read_csv(ts_path, sep=r"\s+", quotechar='"')
+        except (OSError, pd.errors.ParserError) as exc:
+            raise FlowbasedGenerationError(f"Could not read ts file {ts_path}: {exc}") from exc
+
+        # Suppression des colonnes de métadonnées (insensibles à la casse)
+        cols_to_drop = [col for col in ts_df.columns if str(col).lower() in {"date", "id_day"}]
+        data_df = ts_df.drop(columns=cols_to_drop)
+
+        if data_df.empty:
+            raise FlowbasedGenerationError(f"No domain columns found in {ts_path} after dropping metadata columns")
+
+        # Si le fichier est au pas journalier (365 ou 366 jours), étendre à 8760 heures (24h par jour)
+        if len(data_df) in (365, 366):
+            # On prend les 365 premiers jours pour obtenir 365 * 24 = 8760 heures
+            daily_values = data_df.iloc[:365].to_numpy()
+            hourly_values = np.repeat(daily_values, 24, axis=0)
+            result_df = pd.DataFrame(hourly_values)
+        elif len(data_df) == EXPECTED_HOURS:
+            result_df = pd.DataFrame(data_df.to_numpy())
+        else:
+            raise FlowbasedGenerationError(
+                f"Unexpected number of rows in {ts_path}: {len(data_df)} (expected 365 daily rows or {EXPECTED_HOURS} hourly rows)"
+            )
+
+        logger.info(
+            "Loaded flowbased ts file",
+            extra={"ts_path": str(ts_path), "rows": len(result_df), "columns": result_df.shape[1]},
+        )
+
+        return result_df
+
+
 def generate_flowbased_binding_constraints(
-    study: Study, flowbased_data: dict[str, Any], study_data: StudyData, used_files: Set[Path]
+    study: Study, flowbased_data: dict[str, Any], first_month: Month, nb_years: Any, used_files: Set[Path]
 ) -> None:
     """Create the 100 FBxxx flowbased binding constraints (Possibilite 2 / recalculate).
 
@@ -169,7 +213,6 @@ def generate_flowbased_binding_constraints(
 
     Args:
         study: The Antares study being generated.
-        flowbased_data: The JSON `flowbased` block (`ts_path`, `type_days`, ...).
         study_data: The full parsed study data.
         used_files: Set of `.arrow`/raw files opened, tracked for post generation cleanup.
 
@@ -177,19 +220,24 @@ def generate_flowbased_binding_constraints(
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
     """
     trajectory_directory = _resolve_trajectory_directory(flowbased_data)
-    type_days = flowbased_data.get("type_days") or []
-    if not type_days:
-        raise FlowbasedGenerationError("flowbased.type_days is required for the recalculate path")
 
-    summer_model, winter_model = _load_models(trajectory_directory, used_files)
     weight_df = _read_weight_file(trajectory_directory, used_files)
     second_member_df = _read_second_member_file(trajectory_directory, used_files)
     vect_b_lookup = build_vect_b_lookup_table(second_member_df)
 
-    hub_features = _build_hub_features(study)
-    id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, study_data.first_month)
+    if flowbased_data.get("recalculate_ts"):
+        type_days = flowbased_data.get("type_days") or []
+        if not type_days:
+            raise FlowbasedGenerationError("flowbased.type_days is required for the recalculate path")
+
+        summer_model, winter_model = _load_models(trajectory_directory, used_files)
+        hub_features = _build_hub_features(study)
+        id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, first_month)
+    else:
+        id_day_types = _read_ts_file(trajectory_directory, used_files)
 
     n_columns = id_day_types.shape[1]
+
     group_name = f"{SCENARIO_BUILDER_GROUP_PREFIX}{n_columns}"
     properties = BindingConstraintProperties(
         enabled=True,
@@ -199,7 +247,7 @@ def generate_flowbased_binding_constraints(
     )
 
     for constraint_name, weight_row in weight_df.iterrows():
-        terms = _build_constraint_terms(weight_row)
+        terms = _build_constraint_terms(weight_row, flowbased_data, study.get_areas())
         rhs = build_rhs_matrix(id_day_types, vect_b_lookup, str(constraint_name))
         rhs = _pad_to_binding_constraint_hourly_rows(rhs)
         study.create_binding_constraint(
@@ -207,13 +255,15 @@ def generate_flowbased_binding_constraints(
         )
         logger.info(f"Created flowbased binding constraint {constraint_name}")
 
-    _wire_scenario_builder(study, group_name, n_columns, study_data.nb_years)
+    _wire_scenario_builder(study, group_name, n_columns, nb_years)
 
 
 # virtual zones + hub/alegro links
 
 
-def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any]) -> None:
+def create_flowbased_areas_and_links(
+    study: Study, flowbased_data: dict[str, Any], first_month: Optional[Month]
+) -> None:
     """Create the flowbased virtual zones and their links.
 
     Needed by both RHS possibilities (recalcul and lecture directe)
@@ -224,6 +274,9 @@ def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any
 
     Raises:
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
+        :param study:
+        :param flowbased_data:
+        :param first_month:
     """
     for area_name in flowbased_data.get("virtual_nodes") or []:
         study.create_area(area_name=area_name)
@@ -231,7 +284,11 @@ def create_flowbased_areas_and_links(study: Study, flowbased_data: dict[str, Any
 
     for entry in flowbased_data.get("links") or []:
         area1, area2 = _parse_link_name(entry.get("name"))
-        _create_flowbased_link(study, area1, area2, entry)
+        _create_flowbased_link(study, area1, area2, entry, first_month)
+
+    # Création du cluster et de la contrainte restriction_ahc si model_description_fb est présent
+    if "model_description_fb" in (flowbased_data.get("virtual_nodes") or []):
+        create_restriction_ahc(study)
 
 
 def _parse_link_name(name: Any) -> tuple[str, str]:
@@ -242,7 +299,9 @@ def _parse_link_name(name: Any) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
-def _create_flowbased_link(study: Study, area1: str, area2: str, link_entry: dict[str, Any]) -> None:
+def _create_flowbased_link(
+    study: Study, area1: str, area2: str, link_entry: dict[str, Any], first_month: Optional[Month]
+) -> None:
     """`transmission_capacities` is always present, ENABLED or INFINITE. Capacity fields
     (winter_HP_direct_MW, ...) are only read when ENABLED;"""
     transmission_capacities = _parse_transmission_capacities(link_entry.get("transmission_capacities", "ENABLED"))
@@ -256,8 +315,12 @@ def _create_flowbased_link(study: Study, area1: str, area2: str, link_entry: dic
         return
 
     link_data = _to_link_capacity_data(link_entry, area1, area2)
-    link.set_capacity_direct(generate_link_capacity_df(link_data, "direct", link_name=link_name))
-    link.set_capacity_indirect(generate_link_capacity_df(link_data, "indirect", link_name=link_name))
+    link.set_capacity_direct(
+        generate_link_capacity_df(link_data, "direct", 0, link_name=link_name, first_month=first_month)
+    )
+    link.set_capacity_indirect(
+        generate_link_capacity_df(link_data, "indirect", 0, link_name=link_name, first_month=first_month)
+    )
     logger.info(f"Created flowbased link {link_name}")
 
 
@@ -306,6 +369,12 @@ def _read_second_member_file(trajectory_directory: Path, used_files: Set[Path]) 
     second_member_path = trajectory_directory / SECOND_MEMBER_FILENAME
     used_files.add(second_member_path)
     return FlowbasedFileReader.read_second_member_file(second_member_path)
+
+
+def _read_ts_file(trajectory_directory: Path, used_files: Set[Path]) -> pd.DataFrame:
+    ts_path = trajectory_directory / TS_FILENAME
+    used_files.add(ts_path)
+    return FlowbasedFileReader.read_ts_file(ts_path)
 
 
 # feature extraction (Load / Wind / Solar / RoR for the 5 hub countries)
@@ -514,13 +583,30 @@ def _pad_to_binding_constraint_hourly_rows(matrix: pd.DataFrame) -> pd.DataFrame
 # weight.txt -> binding constraint terms
 
 
-def _build_constraint_terms(weight_row: pd.Series[Any]) -> list[ConstraintTerm]:
+def _build_constraint_terms(
+    weight_row: pd.Series[Any], flowbased_data: dict[str, Any], areas: Any
+) -> list[ConstraintTerm]:
     terms = []
+    virtual_nodes = flowbased_data.get("virtual_nodes")
+    valid_nodes = set(virtual_nodes or ()) | set(areas or ())
+
     for link_column, coefficient in weight_row.items():
         area1, separator, area2 = str(link_column).partition(".")
-        if not separator:
+
+        # 1. Vérification du format en premier
+        if not separator or not area1 or not area2:
             raise FlowbasedGenerationError(f"Unexpected weight.txt column name '{link_column}', expected 'area1.area2'")
-        terms.append(ConstraintTerm(data=LinkData(area1=area1.lower(), area2=area2.lower()), weight=float(coefficient)))
+
+        # 2. Filtrage des nœuds ignorés / non présents
+        if area1 not in valid_nodes or area2 not in valid_nodes:
+            continue
+
+        terms.append(
+            ConstraintTerm(
+                data=LinkData(area1=area1.lower(), area2=area2.lower()),
+                weight=float(coefficient),
+            )
+        )
     return terms
 
 
@@ -533,3 +619,58 @@ def _wire_scenario_builder(study: Study, group_name: str, n_columns: int, nb_yea
     group_matrix.set_new_scenario([year % n_columns for year in range(nb_years)])
     study.set_scenario_builder(scenario_builder)
     logger.info(f"Wired flowbased scenario builder group={group_name} nb_years={nb_years} n_columns={n_columns}")
+
+
+def create_restriction_ahc(study: Study, limitation_mw: float = 10000.0) -> None:
+    """Crée le cluster thermique virtuel et la contrainte couplante restriction_ahc.
+
+    Équation :
+        1 * (ch%fr) - 1 * (fr%itn) - 1 * (fr%zz_flowbased) - 1 * (model_description_fb.restriction_ahc) <= 0
+    """
+    area_name = "model_description_fb"
+    cluster_name = "restriction_ahc"
+
+    # 1. Récupération de la zone et création du cluster thermique virtuel
+    area_obj = study.get_areas()[area_name]
+
+    # Création du cluster thermique avec sa capacité nominale (ex: 10000 MW)
+    area_obj.create_thermal_cluster(
+        thermal_name=cluster_name,
+        properties=ThermalClusterProperties(
+            nominal_capacity=limitation_mw,
+            unit_count=1,
+            enabled=True,
+        ),
+    )
+    logger.info(f"Created virtual thermal cluster {cluster_name} in area {area_name}")
+
+    # 2. Définition des propriétés de la contrainte couplante
+    properties = BindingConstraintProperties(
+        enabled=True,
+        time_step=BindingConstraintFrequency.HOURLY,
+        operator=BindingConstraintOperator.LESS,
+    )
+
+    # 3. Définition des termes (coefficients PTDF et cluster)
+    terms = [
+        ConstraintTerm(data=LinkData(area1="ch", area2="fr"), weight=1.0),
+        ConstraintTerm(data=LinkData(area1="fr", area2="itn"), weight=-1.0),
+        ConstraintTerm(data=LinkData(area1="fr", area2="zz_flowbased"), weight=-1.0),
+        ConstraintTerm(
+            data=ClusterData(area=area_name, cluster=cluster_name),
+            weight=-1.0,
+        ),
+    ]
+
+    # 4. Matrice second membre (RHS) : 0 pour 8760 heures
+    # Le cluster virtuel avec coefficient -1 porte la limitation
+    less_term_matrix = pd.DataFrame(1000, index=range(8784), columns=[0])
+
+    # 5. Création de la contrainte couplante dans l'étude
+    study.create_binding_constraint(
+        name="restriction_ahc",
+        properties=properties,
+        terms=terms,
+        less_term_matrix=less_term_matrix,
+    )
+    logger.info("Created restriction_ahc binding constraint")
