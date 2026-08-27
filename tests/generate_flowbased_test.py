@@ -597,19 +597,19 @@ def test_create_restriction_ahc_creates_thermal_cluster_and_binding_constraint()
 
     # 1 * (ch%fr)
     term_ch_fr = next(
-        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "CH" and t.data.area2 == "FR"
+        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "ch" and t.data.area2 == "fr"
     )
     assert term_ch_fr.weight == 1.0
 
     # -1 * (fr%itn)
     term_fr_itn = next(
-        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "FR" and t.data.area2 == "ITN"
+        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "fr" and t.data.area2 == "itn"
     )
     assert term_fr_itn.weight == -1.0
 
     # -1 * (fr%zz_flowbased)
     term_fr_zz = next(
-        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "FR" and t.data.area2 == "zz_flowbased"
+        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "fr" and t.data.area2 == "zz_flowbased"
     )
     assert term_fr_zz.weight == -1.0
 
@@ -623,7 +623,7 @@ def test_create_restriction_ahc_creates_thermal_cluster_and_binding_constraint()
     less_term_matrix = constraint_kwargs["less_term_matrix"]
     assert isinstance(less_term_matrix, pd.DataFrame)
     assert less_term_matrix.shape == (8784, 1)
-    assert (less_term_matrix == 0).all().all()
+    assert (less_term_matrix == 1000).all().all()
 
 
 def test_create_restriction_ahc_with_custom_limitation_mw():
