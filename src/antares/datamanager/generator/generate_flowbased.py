@@ -653,9 +653,9 @@ def create_restriction_ahc(study: Study, limitation_mw: float = 10000.0) -> None
 
     # 3. Définition des termes (coefficients PTDF et cluster)
     terms = [
-        ConstraintTerm(data=LinkData(area1="CH", area2="FR"), weight=1.0),
-        ConstraintTerm(data=LinkData(area1="FR", area2="ITN"), weight=-1.0),
-        ConstraintTerm(data=LinkData(area1="FR", area2="zz_flowbased"), weight=-1.0),
+        ConstraintTerm(data=LinkData(area1="ch", area2="fr"), weight=1.0),
+        ConstraintTerm(data=LinkData(area1="fr", area2="itn"), weight=-1.0),
+        ConstraintTerm(data=LinkData(area1="fr", area2="zz_flowbased"), weight=-1.0),
         ConstraintTerm(
             data=ClusterData(area=area_name, cluster=cluster_name),
             weight=-1.0,
@@ -664,7 +664,7 @@ def create_restriction_ahc(study: Study, limitation_mw: float = 10000.0) -> None
 
     # 4. Matrice second membre (RHS) : 0 pour 8760 heures
     # Le cluster virtuel avec coefficient -1 porte la limitation
-    less_term_matrix = pd.DataFrame(np.zeros((8784, 1)))
+    less_term_matrix = pd.DataFrame(1000, index=range(8784), columns=[0])
 
     # 5. Création de la contrainte couplante dans l'étude
     study.create_binding_constraint(
