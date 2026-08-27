@@ -14,8 +14,10 @@ import pytest
 
 from pathlib import Path
 
+import pandas as pd
+
 from antares.datamanager.exceptions.exceptions import PmmlModelError
-from antares.datamanager.utils.random_forest_reader import load_forest_model, predict_cluster
+from antares.datamanager.utils.random_forest_reader import load_forest_model, predict_cluster, predict_clusters_batch
 
 # Sample PMML file
 
@@ -103,6 +105,27 @@ def test_should_predict_cluster_from_majority_vote(sample_pmml_path):
     assert predict_cluster(model, low) == "cat_a"
     assert predict_cluster(model, high) == "cat_b"
     assert predict_cluster(model, mixed) == "cat_b"
+
+
+def test_should_predict_clusters_batch_for_multiple_rows(sample_pmml_path):
+    model = load_forest_model(sample_pmml_path)
+
+    features_df = pd.DataFrame(
+        [
+            {"x1": 0.1, "x2": 0.1, "x3": 0.1},
+            {"x1": 0.9, "x2": 0.9, "x3": 0.9},
+            {"x1": 0.1, "x2": 0.9, "x3": 0.9},
+        ]
+    )
+
+    assert predict_clusters_batch(model, features_df) == ["cat_a", "cat_b", "cat_b"]
+
+
+def test_should_raise_pmml_model_error_when_batch_prediction_fails(sample_pmml_path):
+    model = load_forest_model(sample_pmml_path)
+
+    with pytest.raises(PmmlModelError):
+        predict_clusters_batch(model, pd.DataFrame([{"x1": 0.1}]))
 
 
 def test_should_raise_pmml_model_error_when_file_is_missing():
