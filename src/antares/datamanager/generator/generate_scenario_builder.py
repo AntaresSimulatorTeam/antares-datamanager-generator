@@ -34,65 +34,113 @@ EXCLUDED_LOAD_HYDRO_AREAS: Set[str] = {
 }
 
 
+def _get_config_list(config: dict[str, Any], aliases: tuple[str, ...]) -> list[Any]:
+    normalized_aliases = {a.lower().replace("_", " ").strip() for a in aliases}
+    for k, v in config.items():
+        if k.lower().replace("_", " ").strip() in normalized_aliases and isinstance(v, list):
+            return v
+    for a in aliases:
+        raw_val = config.get(a)
+        if isinstance(raw_val, list):
+            return raw_val
+    return []
+
+
+def _build_scenario_series(nb_years: int, nb_ts: int) -> list[int | None]:
+    if nb_ts <= 0:
+        nb_ts = 1
+    repeat_count = (nb_years // nb_ts) + 1
+    return [val for val in (list(range(1, nb_ts + 1)) * repeat_count)[:nb_years]]
+
+
+def _find_cluster_info(clusters_data: dict[str, Any], cluster_id: str, cluster_name: str | None = None) -> Any:
+    if not isinstance(clusters_data, dict):
+        return None
+    if cluster_id in clusters_data:
+        return clusters_data[cluster_id]
+    if cluster_name and cluster_name in clusters_data:
+        return clusters_data[cluster_name]
+    clean_id = transform_name_to_id(cluster_id)
+    for name_key, val in clusters_data.items():
+        name_key_str = str(name_key)
+        if (
+            name_key_str == cluster_id
+            or transform_name_to_id(name_key_str) == cluster_id
+            or (clean_id and transform_name_to_id(name_key_str) == clean_id)
+        ):
+            return val
+    return None
+
+
+def _get_area_sts_data(study_data: StudyData, area_id_str: str, area_name_str: str) -> dict[str, Any]:
+    for k, v in study_data.area_sts.items():
+        if str(k).lower() in (area_id_str.lower(), area_name_str.lower()) or (
+            transform_name_to_id(str(k)) in (transform_name_to_id(area_id_str), transform_name_to_id(area_name_str))
+        ):
+            if isinstance(v, dict):
+                return v
+    return {}
+
+
+def _get_sts_cluster_group_and_info(
+    storage_obj: Any,
+    storage_id_str: str,
+    storage_name_str: str,
+    area_sts_data: dict[str, Any],
+) -> tuple[Any, dict[str, Any] | None]:
+    group_val = None
+    props = getattr(storage_obj, "properties", None)
+    if props is not None and hasattr(props, "group") and props.group:
+        group_val = props.group.value if hasattr(props.group, "value") else props.group
+
+    cluster_info = _find_cluster_info(area_sts_data, storage_id_str, storage_name_str)
+
+    if not group_val and cluster_info and isinstance(cluster_info, dict):
+        cluster_props = cluster_info.get("properties", {})
+        if isinstance(cluster_props, dict) and cluster_props.get("group"):
+            raw_grp = cluster_props["group"]
+            group_val = raw_grp.value if hasattr(raw_grp, "value") else raw_grp
+
+    return group_val, cluster_info
+
+
+def _strip_zone_prefix_suffix(name_str: str, clean_zone: str) -> str:
+    name_lower = name_str.lower()
+    if name_lower.startswith(clean_zone + "_"):
+        return name_str[len(clean_zone) + 1 :]
+    if name_lower.startswith(clean_zone):
+        return name_str[len(clean_zone) :]
+    if name_lower.endswith("_" + clean_zone):
+        return name_str[: -len(clean_zone) - 1]
+    if name_lower.endswith(clean_zone):
+        return name_str[: -len(clean_zone)]
+    return name_str
+
+
 def generate_scenario_builder(study: Study, study_data: StudyData, used_files: Set[Path]) -> None:
     """
     Introduces scenario building configuration for the study.
     Executed as the last step of study generation.
     """
-    climatic_data_raw = []
-    for k, v in study_data.scenario_builder_config.items():
-        if k.lower().replace("_", " ").strip() == "climatic data" and isinstance(v, list):
-            climatic_data_raw = v
-            break
-    if not climatic_data_raw and "Climatic data" in study_data.scenario_builder_config:
-        raw_val = study_data.scenario_builder_config.get("Climatic data")
-        if isinstance(raw_val, list):
-            climatic_data_raw = raw_val
-
+    climatic_data_raw = _get_config_list(study_data.scenario_builder_config, ("climatic data", "Climatic data"))
     climatic_data = [
         str(item).replace("@", "").replace("*", "").strip() for item in climatic_data_raw if item is not None
     ]
 
-    thermal_data_raw = []
-    for k, v in study_data.scenario_builder_config.items():
-        if k.lower().strip() == "thermal" and isinstance(v, list):
-            thermal_data_raw = v
-            break
-    if not thermal_data_raw and "Thermal" in study_data.scenario_builder_config:
-        raw_val = study_data.scenario_builder_config.get("Thermal")
-        if isinstance(raw_val, list):
-            thermal_data_raw = raw_val
+    thermal_data_raw = _get_config_list(study_data.scenario_builder_config, ("thermal", "Thermal"))
     thermal_data = [str(item).strip() for item in thermal_data_raw if item is not None]
 
-    links_data = []
-    for k, v in study_data.scenario_builder_config.items():
-        if k.lower() == "links" and isinstance(v, list):
-            links_data = v
-            break
+    links_data = _get_config_list(study_data.scenario_builder_config, ("links", "Links"))
 
-    sts_inflows_data = []
-    for k, v in study_data.scenario_builder_config.items():
-        if k.lower().replace("_", " ").strip() in ("sts inflows", "sts inflow", "stsinflows") and isinstance(v, list):
-            sts_inflows_data = v
-            break
-    if not sts_inflows_data and "STS Inflows" in study_data.scenario_builder_config:
-        raw_val = study_data.scenario_builder_config.get("STS Inflows")
-        if isinstance(raw_val, list):
-            sts_inflows_data = raw_val
+    sts_inflows_data = _get_config_list(
+        study_data.scenario_builder_config,
+        ("sts inflows", "sts inflow", "stsinflows", "STS Inflows"),
+    )
 
-    sts_constraints_data = []
-    for k, v in study_data.scenario_builder_config.items():
-        if k.lower().replace("_", " ").strip() in (
-            "sts constraints",
-            "sts constraint",
-            "stsconstraints",
-        ) and isinstance(v, list):
-            sts_constraints_data = v
-            break
-    if not sts_constraints_data and "STS Constraints" in study_data.scenario_builder_config:
-        raw_val = study_data.scenario_builder_config.get("STS Constraints")
-        if isinstance(raw_val, list):
-            sts_constraints_data = raw_val
+    sts_constraints_data = _get_config_list(
+        study_data.scenario_builder_config,
+        ("sts constraints", "sts constraint", "stsconstraints", "STS Constraints"),
+    )
 
     if not climatic_data and not thermal_data and not links_data and not sts_inflows_data and not sts_constraints_data:
         logger.info(
@@ -247,11 +295,8 @@ def _generate_scenarised_climatic_data_series(
                 logger.error(msg)
                 raise ValueError(msg)
 
-    nb_years = study_data.nb_years
-
     # modulo calculation (1 to nb_ts repeated for nb_years)
-    repeat_count = (nb_years // expected_nb_ts) + 1
-    scenario_series: list[int | None] = [val for val in (list(range(1, expected_nb_ts + 1)) * repeat_count)[:nb_years]]
+    scenario_series = _build_scenario_series(study_data.nb_years, expected_nb_ts)
 
     logger.info(f"Applying scenario series of length {len(scenario_series)} (nb_ts={expected_nb_ts}) to all areas.")
 
@@ -393,9 +438,7 @@ def _generate_nuclear_modulation_binding_constraints_scenario(sb: "ScenarioBuild
             )
             expected_nb_ts = 1
 
-    nb_years = study_data.nb_years
-    repeat_count = (nb_years // expected_nb_ts) + 1
-    scenario_series: list[int | None] = [val for val in (list(range(1, expected_nb_ts + 1)) * repeat_count)[:nb_years]]
+    scenario_series = _build_scenario_series(study_data.nb_years, expected_nb_ts)
 
     group = nuclear_modulation.get("group")
     if group:
@@ -477,27 +520,10 @@ def _generate_nuclear_thermal_clusters_scenario(
         nb_ts = 0
 
         # 1. Look up cluster config in study_data.area_nuclear or study_data.area_thermals
-        cluster_info = None
-        if cluster_id in nuclear_clusters_data:
-            cluster_info = nuclear_clusters_data[cluster_id]
-        elif getattr(cluster_obj, "name", None) in nuclear_clusters_data:
-            cluster_info = nuclear_clusters_data[cluster_obj.name]
-        else:
-            for name_key, val in nuclear_clusters_data.items():
-                if transform_name_to_id(name_key) == cluster_id:
-                    cluster_info = val
-                    break
-
+        cluster_name = getattr(cluster_obj, "name", None)
+        cluster_info = _find_cluster_info(nuclear_clusters_data, cluster_id, cluster_name)
         if not cluster_info:
-            if cluster_id in thermals_clusters_data:
-                cluster_info = thermals_clusters_data[cluster_id]
-            elif getattr(cluster_obj, "name", None) in thermals_clusters_data:
-                cluster_info = thermals_clusters_data[cluster_obj.name]
-            else:
-                for name_key, val in thermals_clusters_data.items():
-                    if transform_name_to_id(name_key) == cluster_id:
-                        cluster_info = val
-                        break
+            cluster_info = _find_cluster_info(thermals_clusters_data, cluster_id, cluster_name)
 
         if cluster_info and isinstance(cluster_info, dict):
             series_file = cluster_info.get("series")
@@ -525,9 +551,7 @@ def _generate_nuclear_thermal_clusters_scenario(
             )
             nb_ts = 1
 
-        nb_years = study_data.nb_years
-        repeat_count = (nb_years // nb_ts) + 1
-        scenario_series: list[int | None] = [val for val in (list(range(1, nb_ts + 1)) * repeat_count)[:nb_years]]
+        scenario_series = _build_scenario_series(study_data.nb_years, nb_ts)
 
         logger.info(
             f"Applying nuclear thermal scenario series of length {len(scenario_series)} "
@@ -623,9 +647,7 @@ def _generate_scenarised_links_series(
             logger.warning(f"Could not determine number of TS for link '{link_id}'. Using default value 1.")
             nb_ts = 1
 
-        nb_years = study_data.nb_years
-        repeat_count = (nb_years // nb_ts) + 1
-        scenario_series: list[int | None] = [val for val in (list(range(1, nb_ts + 1)) * repeat_count)[:nb_years]]
+        scenario_series = _build_scenario_series(study_data.nb_years, nb_ts)
 
         logger.info(
             f"Applying link scenario series of length {len(scenario_series)} (nb_ts={nb_ts}) to link '{link_id}'."
@@ -664,25 +686,8 @@ def _match_sts_cluster_group(
     trans_sname = transform_name_to_id(storage_name_str.lower())
 
     # Strip zone prefix / suffix
-    sid_no_area = storage_id_str
-    if storage_id_str.lower().startswith(clean_zone + "_"):
-        sid_no_area = storage_id_str[len(clean_zone) + 1 :]
-    elif storage_id_str.lower().startswith(clean_zone):
-        sid_no_area = storage_id_str[len(clean_zone) :]
-    elif storage_id_str.lower().endswith("_" + clean_zone):
-        sid_no_area = storage_id_str[: -len(clean_zone) - 1]
-    elif storage_id_str.lower().endswith(clean_zone):
-        sid_no_area = storage_id_str[: -len(clean_zone)]
-
-    sname_no_area = storage_name_str
-    if storage_name_str.lower().startswith(clean_zone + "_"):
-        sname_no_area = storage_name_str[len(clean_zone) + 1 :]
-    elif storage_name_str.lower().startswith(clean_zone):
-        sname_no_area = storage_name_str[len(clean_zone) :]
-    elif storage_name_str.lower().endswith("_" + clean_zone):
-        sname_no_area = storage_name_str[: -len(clean_zone) - 1]
-    elif storage_name_str.lower().endswith(clean_zone):
-        sname_no_area = storage_name_str[: -len(clean_zone)]
+    sid_no_area = _strip_zone_prefix_suffix(storage_id_str, clean_zone)
+    sname_no_area = _strip_zone_prefix_suffix(storage_name_str, clean_zone)
 
     clean_sid_no_area = sid_no_area.replace("_", "").replace(" ", "").lower()
     trans_sid_no_area = transform_name_to_id(sid_no_area.lower())
@@ -809,14 +814,7 @@ def _generate_scenarised_sts_inflows_series(
         area_name_str = str(getattr(area_obj, "name", area_id_str))
 
         # Look up area STS data in study_data
-        area_sts_data = {}
-        for k, v in study_data.area_sts.items():
-            if str(k).lower() in (area_id_str.lower(), area_name_str.lower()) or (
-                transform_name_to_id(str(k)) in (transform_name_to_id(area_id_str), transform_name_to_id(area_name_str))
-            ):
-                if isinstance(v, dict):
-                    area_sts_data = v
-                break
+        area_sts_data = _get_area_sts_data(study_data, area_id_str, area_name_str)
 
         for storage_id, storage_obj in storages.items():
             storage_id_str = str(getattr(storage_obj, "id", storage_id))
@@ -825,33 +823,9 @@ def _generate_scenarised_sts_inflows_series(
             if (area_id_str, storage_id_str) in configured_clusters:
                 continue
 
-            # Determine cluster group from storage_obj properties or study_data
-            group_val = None
-            props = getattr(storage_obj, "properties", None)
-            if props is not None and hasattr(props, "group") and props.group:
-                group_val = props.group.value if hasattr(props.group, "value") else props.group
-
-            # Look up cluster config in study_data.area_sts
-            cluster_info = None
-            if storage_id_str in area_sts_data:
-                cluster_info = area_sts_data[storage_id_str]
-            elif storage_name_str in area_sts_data:
-                cluster_info = area_sts_data[storage_name_str]
-            else:
-                for name_key, val in area_sts_data.items():
-                    if (
-                        transform_name_to_id(str(name_key)) == storage_id_str
-                        or str(name_key) == storage_id_str
-                        or transform_name_to_id(str(name_key)) == transform_name_to_id(storage_id_str)
-                    ):
-                        cluster_info = val
-                        break
-
-            if not group_val and cluster_info and isinstance(cluster_info, dict):
-                cluster_props = cluster_info.get("properties", {})
-                if isinstance(cluster_props, dict) and cluster_props.get("group"):
-                    raw_grp = cluster_props["group"]
-                    group_val = raw_grp.value if hasattr(raw_grp, "value") else raw_grp
+            group_val, cluster_info = _get_sts_cluster_group_and_info(
+                storage_obj, storage_id_str, storage_name_str, area_sts_data
+            )
 
             # Check if this cluster matches any of the patterns
             matches = False
@@ -949,9 +923,7 @@ def _generate_scenarised_sts_inflows_series(
                 )
                 nb_ts = 1
 
-            nb_years = study_data.nb_years
-            repeat_count = (nb_years // nb_ts) + 1
-            scenario_series: list[int | None] = [val for val in (list(range(1, nb_ts + 1)) * repeat_count)[:nb_years]]
+            scenario_series = _build_scenario_series(study_data.nb_years, nb_ts)
 
             logger.info(
                 f"Applying STS inflows scenario series of length {len(scenario_series)} "
@@ -1002,8 +974,6 @@ def _generate_scenarised_sts_constraints_series(
             constraint_pattern = parts[2]
 
         clean_zone = zone_pattern.lower()
-        clean_group = group_pattern.replace("_", "").replace(" ", "").lower()
-        trans_group = transform_name_to_id(group_pattern.lower())
         clean_constraint = constraint_pattern.replace("_", "").replace(" ", "").lower()
         clean_constraint_id = transform_name_to_id(constraint_pattern.lower())
 
@@ -1029,112 +999,25 @@ def _generate_scenarised_sts_constraints_series(
             if not storages:
                 continue
 
-            # Look up area STS data in study_data
-            area_sts_data = {}
-            for k, v in study_data.area_sts.items():
-                if str(k).lower() in (area_id_str.lower(), area_name_str.lower()) or (
-                    transform_name_to_id(str(k))
-                    in (transform_name_to_id(area_id_str), transform_name_to_id(area_name_str))
-                ):
-                    if isinstance(v, dict):
-                        area_sts_data = v
-                    break
+            area_sts_data = _get_area_sts_data(study_data, area_id_str, area_name_str)
 
             for storage_id, storage_obj in storages.items():
                 storage_id_str = str(getattr(storage_obj, "id", storage_id))
                 storage_name_str = str(getattr(storage_obj, "name", storage_id_str))
 
-                # Look up cluster info in study_data
-                cluster_info = None
-                if storage_id_str in area_sts_data:
-                    cluster_info = area_sts_data[storage_id_str]
-                elif storage_name_str in area_sts_data:
-                    cluster_info = area_sts_data[storage_name_str]
-                else:
-                    for name_key, val in area_sts_data.items():
-                        if transform_name_to_id(str(name_key)) == storage_id_str or str(name_key) == storage_id_str:
-                            cluster_info = val
-                            break
-
-                # Determine storage group
-                group_val = ""
-                props = getattr(storage_obj, "properties", None)
-                if props is not None and hasattr(props, "group") and props.group:
-                    raw_grp = props.group.value if hasattr(props.group, "value") else props.group
-                    group_val = str(raw_grp).replace("_", "").replace(" ", "").lower()
-
-                if not group_val and cluster_info and isinstance(cluster_info, dict):
-                    cluster_props = cluster_info.get("properties", {})
-                    if isinstance(cluster_props, dict) and cluster_props.get("group"):
-                        raw_grp = cluster_props["group"]
-                        grp = raw_grp.value if hasattr(raw_grp, "value") else raw_grp
-                        group_val = str(grp).replace("_", "").replace(" ", "").lower()
+                group_val, cluster_info = _get_sts_cluster_group_and_info(
+                    storage_obj, storage_id_str, storage_name_str, area_sts_data
+                )
 
                 # Match group
-                if group_pattern != "*":
-                    clean_group_val = group_val.replace("_", "").replace(" ", "").lower() if group_val else ""
-                    trans_group_val = transform_name_to_id(group_val.lower()) if group_val else ""
-
-                    clean_sid = storage_id_str.replace("_", "").replace(" ", "").lower()
-                    trans_sid = transform_name_to_id(storage_id_str.lower())
-                    clean_sname = storage_name_str.replace("_", "").replace(" ", "").lower()
-                    trans_sname = transform_name_to_id(storage_name_str.lower())
-
-                    # Extract versions without area prefix or suffix (e.g. fr_pondage_2h or psp_at)
-                    sid_no_area = storage_id_str
-                    if storage_id_str.lower().startswith(clean_zone + "_"):
-                        sid_no_area = storage_id_str[len(clean_zone) + 1 :]
-                    elif storage_id_str.lower().startswith(clean_zone):
-                        sid_no_area = storage_id_str[len(clean_zone) :]
-                    elif storage_id_str.lower().endswith("_" + clean_zone):
-                        sid_no_area = storage_id_str[: -len(clean_zone) - 1]
-                    elif storage_id_str.lower().endswith(clean_zone):
-                        sid_no_area = storage_id_str[: -len(clean_zone)]
-
-                    sname_no_area = storage_name_str
-                    if storage_name_str.lower().startswith(clean_zone + "_"):
-                        sname_no_area = storage_name_str[len(clean_zone) + 1 :]
-                    elif storage_name_str.lower().startswith(clean_zone):
-                        sname_no_area = storage_name_str[len(clean_zone) :]
-                    elif storage_name_str.lower().endswith("_" + clean_zone):
-                        sname_no_area = storage_name_str[: -len(clean_zone) - 1]
-                    elif storage_name_str.lower().endswith(clean_zone):
-                        sname_no_area = storage_name_str[: -len(clean_zone)]
-
-                    clean_sid_no_area = sid_no_area.replace("_", "").replace(" ", "").lower()
-                    trans_sid_no_area = transform_name_to_id(sid_no_area.lower())
-                    clean_sname_no_area = sname_no_area.replace("_", "").replace(" ", "").lower()
-                    trans_sname_no_area = transform_name_to_id(sname_no_area.lower())
-
-                    valid_matches = {
-                        clean_sid,
-                        trans_sid,
-                        clean_sname,
-                        trans_sname,
-                        clean_sid_no_area,
-                        trans_sid_no_area,
-                        clean_sname_no_area,
-                        trans_sname_no_area,
-                    }
-                    if clean_group_val:
-                        valid_matches.add(clean_group_val)
-                        valid_matches.add(trans_group_val)
-
-                    group_matches = (
-                        clean_group in valid_matches
-                        or trans_group in valid_matches
-                        or clean_sid == f"{clean_zone}{clean_group}"
-                        or clean_sname == f"{clean_zone}{clean_group}"
-                        or trans_sid == f"{transform_name_to_id(clean_zone)}_{trans_group}"
-                        or trans_sname == f"{transform_name_to_id(clean_zone)}_{trans_group}"
-                    )
-
-                    if not group_matches and clean_group_val:
-                        if clean_group_val.startswith(clean_group) or trans_group_val.startswith(trans_group):
-                            group_matches = True
-
-                    if not group_matches:
-                        continue
+                if not _match_sts_cluster_group(
+                    group_pattern=group_pattern,
+                    group_val=group_val,
+                    storage_id_str=storage_id_str,
+                    storage_name_str=storage_name_str,
+                    clean_zone=clean_zone,
+                ):
+                    continue
 
                 # Find matching additional constraints on this storage
                 matched_constraints: dict[str, str] = {}
@@ -1237,9 +1120,7 @@ def _generate_scenarised_sts_constraints_series(
                         )
                         nb_ts = 1
 
-                    nb_years = study_data.nb_years
-                    repeat_count = (nb_years // nb_ts) + 1
-                    scenario_series = [val for val in (list(range(1, nb_ts + 1)) * repeat_count)[:nb_years]]
+                    scenario_series = _build_scenario_series(study_data.nb_years, nb_ts)
 
                     logger.info(
                         f"Applying STS constraints scenario series of length {len(scenario_series)} "
