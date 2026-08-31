@@ -909,7 +909,9 @@ def _generate_scenarised_sts_inflows_series(
                             nb_ts = 1
                             break
                     except Exception as e:
-                        logger.debug(f"Could not get storage inflows from cluster {storage_id_str} via {method_name}: {e}")
+                        logger.debug(
+                            f"Could not get storage inflows from cluster {storage_id_str} via {method_name}: {e}"
+                        )
 
             # 2. Fallback: try to get nb_ts from series file in study_data
             if nb_ts == 0 and cluster_info and isinstance(cluster_info, dict):
