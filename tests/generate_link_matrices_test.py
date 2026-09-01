@@ -56,11 +56,13 @@ def test_generate_link_capacity_data_by_index_auto_keys(
     matches the expected value computed from the season and period.
     """
 
-    season, period = get_season_period(index, first_month=first_month)
+    season, period = get_season_period(index, first_month=Month.JULY)
     key = f"{season}{period.capitalize()}{mode.capitalize()}Mw"
     expected_value = link_data_example[key]
 
-    df = generate_link_capacity_df(link_data_example, mode=mode, first_month=first_month)
+    df = generate_link_capacity_df(
+        link_data_example, mode=mode, seed_tsgen_link=0, link_name="test", first_month=Month.JULY
+    )
     actual_value = df.iloc[index, 0]  # First column, unnamed
 
     assert actual_value == expected_value, (
@@ -73,8 +75,12 @@ def test_array_length(link_data_example: dict[str, int]) -> None:
     """
     Confirm that the capacity DataFrame has 8760 rows for both direct and indirect modes.
     """
-    df_direct = generate_link_capacity_df(link_data_example, mode="direct")
-    df_indirect = generate_link_capacity_df(link_data_example, mode="indirect")
+    df_direct = generate_link_capacity_df(
+        link_data_example, mode="direct", seed_tsgen_link=0, link_name="test", first_month=Month.JULY
+    )
+    df_indirect = generate_link_capacity_df(
+        link_data_example, mode="indirect", seed_tsgen_link=0, link_name="test", first_month=Month.JULY
+    )
 
     assert len(df_direct) == 8760, "Direct DataFrame should have 8760 hours."
     assert len(df_indirect) == 8760, "Indirect DataFrame should have 8760 hours."
@@ -137,7 +143,7 @@ def test_generate_link_capacity_df_hvdc() -> None:
         "hvdcFoRateIndirect": 0.05,
     }
     df_direct = generate_link_capacity_df(
-        link_data_full_hvdc, "direct", seed_tsgen_link=global_seed, link_name=link_name
+        link_data_full_hvdc, "direct", seed_tsgen_link=global_seed, link_name=link_name, first_month=Month.JULY
     )
     assert df_direct.shape == (8760, 60)
     # Since fo_rate is 0.1, we expect some values to be less than 1000
@@ -145,7 +151,7 @@ def test_generate_link_capacity_df_hvdc() -> None:
     assert (df_direct.values >= 0).all()
 
     df_indirect = generate_link_capacity_df(
-        link_data_full_hvdc, "indirect", seed_tsgen_link=global_seed, link_name=link_name
+        link_data_full_hvdc, "indirect", seed_tsgen_link=global_seed, link_name=link_name, first_month=Month.JULY
     )
     assert df_indirect.shape == (8760, 60)
     assert (df_indirect.values <= 2000).all()
@@ -168,7 +174,7 @@ def test_generate_link_capacity_df_hvdc() -> None:
         "hvdcFoRateIndirect": 0.0,
     }
     df_direct_hybrid = generate_link_capacity_df(
-        link_data_hybrid, "direct", seed_tsgen_link=global_seed, link_name=link_name
+        link_data_hybrid, "direct", seed_tsgen_link=global_seed, link_name=link_name, first_month=Month.JULY
     )
     assert df_direct_hybrid.shape == (8760, 60)
     # 1500 (total) - 1000 (hvdc) = 500 (hvac)
@@ -176,7 +182,7 @@ def test_generate_link_capacity_df_hvdc() -> None:
     assert (df_direct_hybrid.values == 1500).all()
 
     df_indirect_hybrid = generate_link_capacity_df(
-        link_data_hybrid, "indirect", seed_tsgen_link=global_seed, link_name=link_name
+        link_data_hybrid, "indirect", seed_tsgen_link=global_seed, link_name=link_name, first_month=Month.JULY
     )
     assert df_indirect_hybrid.shape == (8760, 60)
     # 2500 (total) - 1000 (hvdc) = 1500 (hvac)

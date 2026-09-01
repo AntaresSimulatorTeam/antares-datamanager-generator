@@ -54,13 +54,9 @@ def calculate_min_stable_power(
 def generate_thermal_clusters(
     area_obj: Area,
     thermals: Dict[str, Any],
-    first_month: Optional[Month] = None,
+    first_month: Month,
     used_files: Optional[Set[Path]] = None,
 ) -> None:
-    # Use global setting if not provided explicitly
-    if first_month is None:
-        first_month = settings.study_setting_first_month
-
     # Thermals
     for cluster_name, values in thermals.items():
         logger.info(f"Creating thermal cluster: {cluster_name}")
@@ -144,13 +140,7 @@ def _build_npo_max_daily(
     return npo_max_daily
 
 
-def create_prepro_data_matrix(
-    data: Dict[str, Any], unit_count: int, first_month: Optional[Month] = None
-) -> pd.DataFrame:
-    # Use global setting if not provided explicitly
-    if first_month is None:
-        first_month = settings.study_setting_first_month
-
+def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int, first_month: Month | None = None) -> pd.DataFrame:
     # If no data is provided OR if critical keys are missing, return the default 365x6 matrix
     # Critical keys: fo_duration, po_duration, npo_max_winter, npo_max_summer
     if not data or any(k not in data for k in ["fo_duration", "po_duration", "npo_max_winter", "npo_max_summer"]):

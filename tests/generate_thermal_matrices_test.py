@@ -35,7 +35,7 @@ def test_npo_max_default_when_zero():
     }
 
     unit_count = 12
-    df = create_prepro_data_matrix(data, unit_count)
+    df = create_prepro_data_matrix(data, unit_count, Month.JULY)
 
     npo_max = df.iloc[:, 5]
     # Starting July 1st
@@ -66,7 +66,7 @@ def test_prepro_basic_shape():
         "nb_unit": 2,
     }
 
-    df = create_prepro_data_matrix(data, unit_count=2)
+    df = create_prepro_data_matrix(data, unit_count=2, first_month=Month.JULY)
 
     assert df.shape == (365, 6)
 
@@ -83,7 +83,7 @@ def test_monthly_to_daily_expansion():
         "nb_unit": 1,
     }
 
-    df = create_prepro_data_matrix(data, unit_count=1)
+    df = create_prepro_data_matrix(data, unit_count=1, first_month=Month.JULY)
 
     fo_rate = df.iloc[:, 2]
 
@@ -105,7 +105,7 @@ def test_npo_min_is_zero():
         "nb_unit": 1,
     }
 
-    df = create_prepro_data_matrix(data, unit_count=1)
+    df = create_prepro_data_matrix(data, unit_count=1, first_month=Month.JULY)
     npo_min = df.iloc[:, 4]
 
     assert (npo_min == 0).all()
@@ -124,7 +124,7 @@ def test_npo_max_season_logic():
     }
 
     unit_count = 4
-    df = create_prepro_data_matrix(data, unit_count)
+    df = create_prepro_data_matrix(data, unit_count, Month.JULY)
 
     npo_max = df.iloc[:, 5]
     factor = unit_count / data["nb_unit"]
@@ -153,11 +153,11 @@ def test_invalid_monthly_rate_length():
     }
 
     with pytest.raises(ValueError):
-        create_prepro_data_matrix(data, unit_count=1)
+        create_prepro_data_matrix(data, unit_count=1, first_month=Month.JULY)
 
 
 def test_create_prepro_data_matrix_when_data_is_none_returns_365_default_rows():
-    df = create_prepro_data_matrix(None, unit_count=5)
+    df = create_prepro_data_matrix(None, unit_count=5, first_month=Month.JULY)
 
     expected = pd.DataFrame([[1, 1, 0, 0, 0, 0]] * 365)
 
@@ -179,7 +179,7 @@ def test_season_boundaries():
     }
 
     unit_count = 1
-    df = create_prepro_data_matrix(data, unit_count)
+    df = create_prepro_data_matrix(data, unit_count, Month.JULY)
     npo_max = df.iloc[:, 5]
 
     # September 29th is Row 90
@@ -220,12 +220,6 @@ def test_flexibility_dynamic_parameter():
 
 
 def test_flexibility_january_start(monkeypatch):
-    """Verify that if STUDY_SETTING_FIRST_MONTH is JANUARY, the matrix starts on Jan 1st."""
-    monkeypatch.setenv("STUDY_SETTING_FIRST_MONTH", "JANUARY")
-    # Reload settings to pick up the new env var if needed,
-    # but here we rely on the fact that Settings.study_setting_first_month
-    # calls os.getenv every time.
-
     data = {
         "fo_duration": 1,
         "po_duration": 2,
@@ -236,7 +230,7 @@ def test_flexibility_january_start(monkeypatch):
         "nb_unit": 1,
     }
 
-    df = create_prepro_data_matrix(data, unit_count=1)
+    df = create_prepro_data_matrix(data, unit_count=1, first_month=Month.JANUARY)
 
     # Row 0 should be January (if JANUARY start)
     # fo_monthly_rate[0] is 1

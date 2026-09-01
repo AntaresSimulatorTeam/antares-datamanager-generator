@@ -18,6 +18,7 @@ from antares.craft import (
     AdequacyPatchParametersUpdate,
     AdvancedParametersUpdate,
     GeneralParametersUpdate,
+    Month,
     OptimizationParametersUpdate,
     SeedParametersUpdate,
     StudySettingsUpdate,
@@ -115,10 +116,11 @@ def build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) -
                 adequacy_patch_params = AdequacyPatchParametersUpdate(**filtered_adequacy_patch)
 
     # Ensure required general parameters are set (only add if not already set)
+    # NB_YEARS default antares is 1 first_month_in_year set to JULY because BP configuration
     if general_params is None:
         general_params = GeneralParametersUpdate(
-            nb_years=study_data.nb_years,
-            first_month_in_year=study_data.first_month,
+            nb_years=1,
+            first_month_in_year=Month.JULY,
         )
 
     return StudySettingsUpdate(

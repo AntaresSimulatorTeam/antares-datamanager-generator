@@ -20,11 +20,14 @@ class SeasonManager:
     """
     A utility class to manage seasonal and monthly mapping for a 365-day year,
     starting from a configurable first month.
+    Month.JULY because BP configuration
     """
 
     DAYS_IN_MONTH_JAN_TO_DEC = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
-    def __init__(self, first_month: Month):
+    def __init__(self, first_month: Month | None = None):
+        if first_month is None:
+            first_month = Month.JULY
         self.first_month = first_month
         self.months_list = list(first_month.__class__)
         self.first_month_idx = self.months_list.index(first_month) + 1  # 1-indexed
