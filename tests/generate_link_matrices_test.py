@@ -13,7 +13,13 @@
 import pytest
 
 from antares.craft import Month
-from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
+from antares.datamanager.generator.generate_link_matrices import (
+    create_constant_link_capacity_matrix,
+    generate_constant_capacity_df,
+    generate_constant_link_capacity_df,
+    generate_link_capacity_df,
+    generate_link_parameters_df,
+)
 from antares.datamanager.utils.season_utils import SeasonManager
 
 
@@ -221,3 +227,63 @@ def test_generate_link_capacity_df_case_insensitivity() -> None:
     # Summer: Day 100 (April)
     assert df.iloc[100 * 24, 0] == 1200  # April, 00:00 -> Summer HC
     assert df.iloc[100 * 24 + 8, 0] == 1300  # April, 08:00 -> Summer HP
+
+
+def test_generate_constant_link_capacity_df_numeric() -> None:
+    """
+    Test generate_constant_link_capacity_df with integer and float values.
+    """
+    # Integer value
+    df_int = generate_constant_link_capacity_df(1000)
+    assert df_int.shape == (8760, 1)
+    assert (df_int.values == 1000).all()
+
+    # Float value
+    df_float = generate_constant_link_capacity_df(500.5)
+    assert df_float.shape == (8760, 1)
+    assert (df_float.values == 500.5).all()
+
+    # Default value (0.0)
+    df_default = generate_constant_link_capacity_df()
+    assert df_default.shape == (8760, 1)
+    assert (df_default.values == 0.0).all()
+
+
+def test_generate_constant_link_capacity_df_dict() -> None:
+    """
+    Test generate_constant_link_capacity_df with a dictionary input.
+    """
+    # Lowercase key
+    df_dict = generate_constant_link_capacity_df({"capacity": 1500})
+    assert df_dict.shape == (8760, 1)
+    assert (df_dict.values == 1500).all()
+
+    # Mixed-case key
+    df_dict_mixed = generate_constant_link_capacity_df({"Capacity": 2000})
+    assert df_dict_mixed.shape == (8760, 1)
+    assert (df_dict_mixed.values == 2000).all()
+
+
+def test_generate_constant_link_capacity_df_none_and_nan() -> None:
+    """
+    Test generate_constant_link_capacity_df with None and NaN values.
+    """
+    df_none = generate_constant_link_capacity_df(None)
+    assert df_none.shape == (8760, 1)
+    assert (df_none.values == 0.0).all()
+
+    df_nan = generate_constant_link_capacity_df(float("nan"))
+    assert df_nan.shape == (8760, 1)
+    assert (df_nan.values == 0.0).all()
+
+
+def test_generate_constant_link_capacity_aliases() -> None:
+    """
+    Test that aliases produce the same result as generate_constant_link_capacity_df.
+    """
+    df1 = generate_constant_capacity_df(1000)
+    df2 = create_constant_link_capacity_matrix(1000)
+    assert df1.shape == (8760, 1)
+    assert df2.shape == (8760, 1)
+    assert (df1.values == 1000).all()
+    assert (df2.values == 1000).all()

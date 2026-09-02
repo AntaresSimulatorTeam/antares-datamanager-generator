@@ -35,3 +35,4 @@ class StudyData:
     seed_tsgen_link: int = 0
     settings: dict[str, Any] = field(default_factory=dict)
     adequacy_patch: dict[str, Any] = field(default_factory=dict)
+    p2g: dict[str, Any] = field(default_factory=dict)
