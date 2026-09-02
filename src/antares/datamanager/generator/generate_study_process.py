@@ -171,9 +171,6 @@ def read_study_data_from_json(study_id: str) -> StudyData:
     binding_constraints = raw_study_data.get("binding_constraints", {})
     study_settings = raw_study_data.get("settings", {})
     scenario_builder_config = study_settings.get("scenariobuilder", {})
-    general_settings = study_settings.get("general_parameters", {})
-
-    nb_years = general_settings.get("nb_years", settings.nb_years)
 
     study_data = StudyData(
         name=study_name,

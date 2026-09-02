@@ -35,7 +35,6 @@ def test_generate_scenario_builder_no_climatic_data():
 def test_generate_scenario_builder_load(mock_settings, mock_read_feather):
     # Mock settings
     mock_settings.load_output_directory = Path("/tmp/load")
-    mock_settings.nb_years = 10
 
     # Mock pandas df to return 5 columns (5 TS)
     mock_df = MagicMock()
@@ -44,6 +43,7 @@ def test_generate_scenario_builder_load(mock_settings, mock_read_feather):
 
     # Mock study and areas
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 10
     area1 = MagicMock()
     area2 = MagicMock()
     study.get_areas.return_value = {"area1": area1, "area2": area2}
@@ -55,7 +55,6 @@ def test_generate_scenario_builder_load(mock_settings, mock_read_feather):
     # Study data
     study_data = StudyData(
         name="test_study",
-        nb_years=10,
         scenario_builder_config={"Climatic data": ["load", "hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
     )
@@ -90,6 +89,7 @@ def test_generate_scenario_builder_load_no_fr(mock_settings, mock_read_feather):
     study = MagicMock()
     area1 = MagicMock()
     study.get_areas.return_value = {"area1": area1}
+    study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
     # Initialize all area mocks to avoid AttributeError
     sb.load.get_area.return_value = MagicMock()
@@ -101,7 +101,6 @@ def test_generate_scenario_builder_load_no_fr(mock_settings, mock_read_feather):
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Climatic data": ["load"]},
         area_loads={"area1": ["load_a1.arrow"]},
     )
@@ -137,7 +136,6 @@ def test_generate_scenario_builder_validation_error(mock_settings, mock_read_fea
 
     study_data = StudyData(
         name="test_study",
-        nb_years=10,
         scenario_builder_config={"Climatic data": ["load", "hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
@@ -156,7 +154,6 @@ def test_generate_scenario_builder_validation_error(mock_settings, mock_read_fea
 def test_generate_scenario_builder_reference_from_hydro(mock_settings, mock_read_feather):
     # Test that if load is NOT in climatic data and NOT in study, reference is taken from hydro
     mock_settings.hydro_ts_directory = Path("/tmp/hydro")
-    mock_settings.nb_years = 5
 
     # Mock hydro with 3 TS
     df_hydro = MagicMock()
@@ -164,6 +161,7 @@ def test_generate_scenario_builder_reference_from_hydro(mock_settings, mock_read
     mock_read_feather.return_value = df_hydro
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     study.get_areas.return_value = {"FR": MagicMock()}
     sb = MagicMock()
     # Initialize area mocks
@@ -172,7 +170,6 @@ def test_generate_scenario_builder_reference_from_hydro(mock_settings, mock_read
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Climatic data": ["hydro"]},
         area_loads={},  # No load
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
@@ -191,7 +188,6 @@ def test_generate_scenario_builder_reference_from_load_even_if_not_in_modulo(moc
     # Test that if load is NOT in climatic data but IS in study, it is used as reference
     mock_settings.load_output_directory = Path("/tmp/load")
     mock_settings.hydro_ts_directory = Path("/tmp/hydro")
-    mock_settings.nb_years = 5
 
     # Mock load with 10 TS, hydro with 10 TS
     df_load = MagicMock()
@@ -202,6 +198,7 @@ def test_generate_scenario_builder_reference_from_load_even_if_not_in_modulo(moc
     mock_read_feather.side_effect = [df_load, df_hydro]
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     study.get_areas.return_value = {"FR": MagicMock()}
     sb = MagicMock()
     sb.hydro.get_area.return_value = MagicMock()
@@ -209,7 +206,6 @@ def test_generate_scenario_builder_reference_from_load_even_if_not_in_modulo(moc
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Climatic data": ["hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
@@ -229,7 +225,6 @@ def test_generate_scenario_builder_priority_to_load(mock_settings, mock_read_fea
     # Test that load is ALWAYS the priority for nb_ts if it exists
     mock_settings.load_output_directory = Path("/tmp/load")
     mock_settings.hydro_ts_directory = Path("/tmp/hydro")
-    mock_settings.nb_years = 5
 
     # Mock load with 10 TS, hydro with 20 TS
     df_load = MagicMock()
@@ -249,13 +244,13 @@ def test_generate_scenario_builder_priority_to_load(mock_settings, mock_read_fea
     mock_read_feather.side_effect = [df_load, df_load, df_hydro]
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     study.get_areas.return_value = {"FR": MagicMock()}
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Climatic data": ["load", "hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
@@ -284,6 +279,7 @@ def test_generate_scenario_builder_climatic_data_excludes_y_nuc_modulation_from_
     mock_read_feather.side_effect = [df_load, df_load, df_hydro]
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     area_fr = MagicMock()
     area_fr.name = "FR"
     area_y = MagicMock()
@@ -329,7 +325,6 @@ def test_generate_scenario_builder_climatic_data_excludes_y_nuc_modulation_from_
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"Climatic data": ["load", "hydro"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_hydro={"FR": {"series": ["hydro_fr.arrow"]}},
@@ -355,13 +350,14 @@ def test_generate_scenario_builder_climatic_data_excludes_y_nuc_modulation_from_
 def test_generate_scenario_builder_res_group_normalization(mock_settings, mock_read_feather):
     # Test that wind_onshore is correctly identified even with different group naming styles
     mock_settings.res_ts_directory = Path("/tmp/res")
-    mock_settings.nb_years = 5
 
     df_res = MagicMock()
     df_res.shape = (8760, 187)
     mock_read_feather.return_value = df_res
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+    study.get_settings.return_value.general_parameters.nb_years = 5
     area_at = MagicMock()
     study.get_areas.return_value = {"AT": area_at}
 
@@ -380,7 +376,6 @@ def test_generate_scenario_builder_res_group_normalization(mock_settings, mock_r
     # Case: group name is "wind_onshore" (underscores)
     study_data = StudyData(
         name="test",
-        nb_years=5,
         scenario_builder_config={"Climatic data": ["wind_onshore"]},
         area_res={"AT": {"clusters": {"c1": {"properties": {"group": "wind_onshore"}, "series": ["w.arrow"]}}}},
     )
@@ -407,7 +402,6 @@ def test_generate_scenario_builder_multi_area_res_search(mock_settings, mock_rea
     # Test that _get_nb_ts searches across all areas if FR has no data for that category
     mock_settings.load_output_directory = Path("/tmp/load")
     mock_settings.res_ts_directory = Path("/tmp/res")
-    mock_settings.nb_years = 5
 
     # Mock load with 200 TS
     df_load = MagicMock()
@@ -423,13 +417,13 @@ def test_generate_scenario_builder_multi_area_res_search(mock_settings, mock_rea
     mock_read_feather.side_effect = [df_load, df_load, df_wind]
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     study.get_areas.return_value = {"FR": MagicMock(), "AT": MagicMock()}
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Climatic data": ["load", "wind_onshore"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_res={
@@ -451,7 +445,6 @@ def test_generate_scenario_builder_res_direct_tech_structure(mock_settings, mock
     # Test that _get_nb_ts correctly handles RES structured by technology (Case 1)
     mock_settings.load_output_directory = Path("/tmp/load")
     mock_settings.res_ts_directory = Path("/tmp/res")
-    mock_settings.nb_years = 5
 
     # Mock load with 200 TS
     df_load = MagicMock()
@@ -464,13 +457,13 @@ def test_generate_scenario_builder_res_direct_tech_structure(mock_settings, mock
     mock_read_feather.side_effect = [df_load, df_load, df_wind]
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     study.get_areas.return_value = {"FR": MagicMock(), "AT": MagicMock()}
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Climatic data": ["load", "wind_onshore"]},
         area_loads={"FR": ["load_fr.arrow"]},
         area_res={"AT": {"wind_onshore": {"capacity": 2000, "series": ["wind_at.arrow"]}}},
@@ -487,7 +480,6 @@ def test_generate_scenario_builder_res_direct_tech_structure(mock_settings, mock
 @patch("antares.datamanager.generator.generate_scenario_builder.settings")
 def test_generate_scenario_builder_thermal_nuclearfr(mock_settings, mock_read_feather):
     mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
-    mock_settings.nb_years = 5
 
     df_limit = MagicMock()
     df_limit.shape = (8760, 3)
@@ -499,6 +491,7 @@ def test_generate_scenario_builder_thermal_nuclearfr(mock_settings, mock_read_fe
     mock_read_feather.side_effect = [df_limit, df_daily, df_weekly]
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
     mock_bc_group = MagicMock()
     sb.binding_constraint.get_group.return_value = mock_bc_group
@@ -506,7 +499,6 @@ def test_generate_scenario_builder_thermal_nuclearfr(mock_settings, mock_read_fe
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Thermal": ["nuclearfr", "z_p2g_asservi", "nucleary_nuc_modulation"]},
         nuclear_modulation_binding_constraints={
             "group": "scenarised200",
@@ -541,12 +533,12 @@ def test_generate_scenario_builder_thermal_nuclearfr_column_mismatch_raises(mock
     mock_read_feather.side_effect = [df_limit, df_daily]
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Thermal": ["nuclearfr"]},
         nuclear_modulation_binding_constraints={
             "group": "scenarised200",
@@ -572,7 +564,6 @@ def test_generate_scenario_builder_thermal_empty_nuclear_modulation():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Thermal": ["nuclearfr"]},
         nuclear_modulation_binding_constraints=None,
     )
@@ -588,6 +579,7 @@ def test_generate_scenario_builder_thermal_nuclearfr_fallback_nb_ts_columns(mock
     mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     mock_bc_group = MagicMock()
     sb.binding_constraint.get_group.return_value = mock_bc_group
@@ -595,7 +587,6 @@ def test_generate_scenario_builder_thermal_nuclearfr_fallback_nb_ts_columns(mock
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"Thermal": ["nuclearfr"]},
         nuclear_modulation_binding_constraints={
             "group": "scenarised200",
@@ -632,6 +623,7 @@ def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_feather(mock
     mock_read_feather.side_effect = read_feather_side_effect
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
     mock_thermal_cluster_1 = MagicMock()
     mock_thermal_cluster_2 = MagicMock()
@@ -677,7 +669,6 @@ def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_feather(mock
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Thermal": ["nuclearfr"]},
         area_nuclear={
             "fr": {
@@ -702,6 +693,8 @@ def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_feather(mock
 
 def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_matrix():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
     sb = MagicMock()
     mock_thermal_cluster_1 = MagicMock()
     sb.thermal.get_cluster.return_value = mock_thermal_cluster_1
@@ -722,7 +715,6 @@ def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_matrix():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Thermal": ["nuclearfr"]},
         area_nuclear={},
     )
@@ -736,6 +728,8 @@ def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_matrix():
 
 def test_generate_scenario_builder_thermal_nuclear_fr_clusters_fallback_default_1():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
+
     sb = MagicMock()
     mock_thermal_cluster_1 = MagicMock()
     sb.thermal.get_cluster.return_value = mock_thermal_cluster_1
@@ -754,7 +748,6 @@ def test_generate_scenario_builder_thermal_nuclear_fr_clusters_fallback_default_
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"Thermal": ["nuclearfr"]},
         area_nuclear={},
     )
@@ -785,6 +778,8 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_from_feathe
     mock_read_feather.side_effect = read_feather_side_effect
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
     sb = MagicMock()
     mock_thermal_cluster_1 = MagicMock()
     mock_thermal_cluster_2 = MagicMock()
@@ -830,7 +825,6 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_from_feathe
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"Thermal": ["y_nuc_modulation"]},
         area_nuclear={
             "y_nuc_modulation": {
@@ -855,6 +849,8 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_from_feathe
 
 def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_from_matrix():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
     sb = MagicMock()
     mock_thermal_cluster_1 = MagicMock()
     sb.thermal.get_cluster.return_value = mock_thermal_cluster_1
@@ -875,7 +871,6 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_from_matrix
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"thermal": ["nucleary_nuc_modulation"]},
         area_nuclear={},
     )
@@ -889,6 +884,8 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_from_matrix
 
 def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_fallback_default_1():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
+
     sb = MagicMock()
     mock_thermal_cluster_1 = MagicMock()
     sb.thermal.get_cluster.return_value = mock_thermal_cluster_1
@@ -907,7 +904,6 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_fallback_de
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"Thermal": ["y_nuc_modulation"]},
         area_nuclear={},
     )
@@ -920,6 +916,7 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_fallback_de
 
 def test_generate_scenario_builder_links_from_study_link():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 6
     sb = MagicMock()
     mock_link_sb = MagicMock()
     sb.link.get_link.return_value = mock_link_sb
@@ -934,7 +931,6 @@ def test_generate_scenario_builder_links_from_study_link():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=6,
         scenario_builder_config={"Links": ["nl/z_p2h_pachybride"]},
     )
 
@@ -948,6 +944,7 @@ def test_generate_scenario_builder_links_from_study_link():
 @patch("antares.datamanager.generator.generate_scenario_builder.generate_link_capacity_df")
 def test_generate_scenario_builder_links_from_study_data(mock_gen_cap):
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 4
     sb = MagicMock()
     mock_link_sb = MagicMock()
     sb.link.get_link.return_value = mock_link_sb
@@ -960,7 +957,6 @@ def test_generate_scenario_builder_links_from_study_data(mock_gen_cap):
 
     study_data = StudyData(
         name="test_study",
-        nb_years=4,
         scenario_builder_config={"Links": ["at/fr"]},
         links={"at/fr": {"winterhcdirectmw": 1000}},
         seed_tsgen_link=42,
@@ -980,6 +976,7 @@ def test_generate_scenario_builder_links_from_study_data(mock_gen_cap):
 
 def test_generate_scenario_builder_links_fallback_default_1():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     mock_link_sb = MagicMock()
     sb.link.get_link.return_value = mock_link_sb
@@ -988,7 +985,6 @@ def test_generate_scenario_builder_links_fallback_default_1():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"links": ["nl/z_p2h_pachybride"]},
         links={},
     )
@@ -1001,6 +997,7 @@ def test_generate_scenario_builder_links_fallback_default_1():
 
 def test_generate_scenario_builder_links_reversed_order_and_casing():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     mock_link_sb = MagicMock()
     sb.link.get_link.return_value = mock_link_sb
@@ -1015,7 +1012,6 @@ def test_generate_scenario_builder_links_reversed_order_and_casing():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"LINKS": ["FR / AT"]},
     )
 
@@ -1031,6 +1027,7 @@ def test_generate_scenario_builder_sts_inflows_from_feather(mock_settings, mock_
     mock_settings.sts_ts_directory = Path("/mock/sts_ts")
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
     mock_storage_sb_1 = MagicMock()
     mock_storage_sb_2 = MagicMock()
@@ -1072,7 +1069,6 @@ def test_generate_scenario_builder_sts_inflows_from_feather(mock_settings, mock_
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"STS Inflows": ["psp_closed", "psp_open", "pondage"]},
         area_sts={
             "area1": {
@@ -1101,6 +1097,7 @@ def test_generate_scenario_builder_sts_inflows_from_feather(mock_settings, mock_
 
 def test_generate_scenario_builder_sts_inflows_priority_to_study_matrix():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     mock_storage_sb = MagicMock()
     sb.storage_inflows.get_storage.return_value = mock_storage_sb
@@ -1126,7 +1123,6 @@ def test_generate_scenario_builder_sts_inflows_priority_to_study_matrix():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"STS Inflows": ["psp_open@*"]},
         area_sts={
             "fr": {
@@ -1145,6 +1141,7 @@ def test_generate_scenario_builder_sts_inflows_priority_to_study_matrix():
 
 def test_generate_scenario_builder_sts_inflows_from_matrix():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 4
     sb = MagicMock()
     mock_storage_sb = MagicMock()
     sb.storage_inflows.get_storage.return_value = mock_storage_sb
@@ -1166,7 +1163,6 @@ def test_generate_scenario_builder_sts_inflows_from_matrix():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=4,
         scenario_builder_config={"sts_inflows": ["pondage"]},
         area_sts={},
     )
@@ -1180,6 +1176,7 @@ def test_generate_scenario_builder_sts_inflows_from_matrix():
 
 def test_generate_scenario_builder_sts_inflows_fallback_1():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     mock_storage_sb = MagicMock()
     sb.storage_inflows.get_storage.return_value = mock_storage_sb
@@ -1198,7 +1195,6 @@ def test_generate_scenario_builder_sts_inflows_fallback_1():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"STS Inflows": ["psp_closed"]},
         area_sts={},
     )
@@ -1237,6 +1233,7 @@ def test_generate_scenario_builder_with_wildcards_and_at_syntax(mock_settings, m
     mock_read_feather.side_effect = read_feather_side_effect
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 4
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1339,7 +1336,6 @@ def test_generate_scenario_builder_with_wildcards_and_at_syntax(mock_settings, m
 
     study_data = StudyData(
         name="test_study",
-        nb_years=4,
         scenario_builder_config={
             "Climatic data": [
                 "load",
@@ -1418,6 +1414,7 @@ def test_generate_scenario_builder_sts_constraints_from_feather(mock_settings, m
     mock_read_feather.return_value = df_sts_constraint
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1442,7 +1439,6 @@ def test_generate_scenario_builder_sts_constraints_from_feather(mock_settings, m
 
     study_data = StudyData(
         name="test_study",
-        nb_years=5,
         scenario_builder_config={"STS Constraints": ["AT@PSP@VE"]},
         area_sts={
             "AT": {
@@ -1473,6 +1469,7 @@ def test_generate_scenario_builder_sts_constraints_from_matrix(mock_settings, mo
     mock_settings.sts_ts_directory = Path("/tmp/sts")
 
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1500,7 +1497,6 @@ def test_generate_scenario_builder_sts_constraints_from_matrix(mock_settings, mo
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"STS Constraints": ["AT@PSP@psp"]},
         area_sts={
             "AT": {
@@ -1521,6 +1517,7 @@ def test_generate_scenario_builder_sts_constraints_from_matrix(mock_settings, mo
 
 def test_generate_scenario_builder_sts_constraints_fallback_default_1():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1545,7 +1542,6 @@ def test_generate_scenario_builder_sts_constraints_fallback_default_1():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"STS Constraints": ["AT@PSP@ve"]},
         area_sts={},
     )
@@ -1558,6 +1554,7 @@ def test_generate_scenario_builder_sts_constraints_fallback_default_1():
 
 def test_generate_scenario_builder_sts_constraints_filters_only_targeted_constraint():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1592,7 +1589,6 @@ def test_generate_scenario_builder_sts_constraints_filters_only_targeted_constra
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"STS Constraints": ["FR@PONDAGE_2h@v2g_limit_fr"]},
         area_sts={},
     )
@@ -1607,6 +1603,7 @@ def test_generate_scenario_builder_sts_constraints_filters_only_targeted_constra
 
 def test_generate_scenario_builder_sts_constraints_filters_only_targeted_cluster():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1650,7 +1647,6 @@ def test_generate_scenario_builder_sts_constraints_filters_only_targeted_cluster
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"STS Constraints": ["FR@PONDAGE_2h@v2g_limit_fr"]},
         area_sts={},
     )
@@ -1665,6 +1661,7 @@ def test_generate_scenario_builder_sts_constraints_filters_only_targeted_cluster
 
 def test_generate_scenario_builder_sts_inflows_psp_open_closed_and_pondage():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1715,7 +1712,6 @@ def test_generate_scenario_builder_sts_inflows_psp_open_closed_and_pondage():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"STS Inflows": ["psp_closed@*", "psp_open@*", "pondage@*"]},
         area_sts={},
     )
@@ -1737,6 +1733,7 @@ def test_generate_scenario_builder_sts_inflows_psp_open_closed_and_pondage():
 
 def test_generate_scenario_builder_sts_inflows_zone_specific():
     study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1770,7 +1767,6 @@ def test_generate_scenario_builder_sts_inflows_zone_specific():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
         scenario_builder_config={"STS Inflows": ["psp_closed@fr"]},
         area_sts={},
     )

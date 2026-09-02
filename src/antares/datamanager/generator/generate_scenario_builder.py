@@ -296,7 +296,7 @@ def _generate_scenarised_climatic_data_series(
                 raise ValueError(msg)
 
     # modulo calculation (1 to nb_ts repeated for nb_years)
-    scenario_series = _build_scenario_series(study_data.nb_years, expected_nb_ts)
+    scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, expected_nb_ts)
 
     logger.info(f"Applying scenario series of length {len(scenario_series)} (nb_ts={expected_nb_ts}) to all areas.")
 
@@ -380,13 +380,17 @@ def _generate_nuclear_fr_scenario(sb: "ScenarioBuilder", study: Study, study_dat
     Generate scenario for nuclear modulation binding constraints and nuclear thermal clusters for area FR.
     """
     # 1.Generate scenario for nuclear modulation binding constraints if defined
-    _generate_nuclear_modulation_binding_constraints_scenario(sb, study_data)
+    _generate_nuclear_modulation_binding_constraints_scenario(
+        sb, study_data, study.get_settings().general_parameters.nb_years
+    )
 
     # 2.Generate scenario for thermal clusters belonging to group 'nuclear' for area FR
     _generate_nuclear_fr_thermal_clusters_scenario(sb, study, study_data)
 
 
-def _generate_nuclear_modulation_binding_constraints_scenario(sb: "ScenarioBuilder", study_data: StudyData) -> None:
+def _generate_nuclear_modulation_binding_constraints_scenario(
+    sb: "ScenarioBuilder", study_data: StudyData, nb_years: int
+) -> None:
     """
     Scenarize nuclear modulation binding constraints (Nuc_modulation_limit, Nuc_modulation_daily, Nuc_modulation_weekly).
     """
@@ -438,7 +442,7 @@ def _generate_nuclear_modulation_binding_constraints_scenario(sb: "ScenarioBuild
             )
             expected_nb_ts = 1
 
-    scenario_series = _build_scenario_series(study_data.nb_years, expected_nb_ts)
+    scenario_series = _build_scenario_series(nb_years, expected_nb_ts)
 
     group = nuclear_modulation.get("group")
     if group:
@@ -551,7 +555,7 @@ def _generate_nuclear_thermal_clusters_scenario(
             )
             nb_ts = 1
 
-        scenario_series = _build_scenario_series(study_data.nb_years, nb_ts)
+        scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
         logger.info(
             f"Applying nuclear thermal scenario series of length {len(scenario_series)} "
@@ -647,7 +651,7 @@ def _generate_scenarised_links_series(
             logger.warning(f"Could not determine number of TS for link '{link_id}'. Using default value 1.")
             nb_ts = 1
 
-        scenario_series = _build_scenario_series(study_data.nb_years, nb_ts)
+        scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
         logger.info(
             f"Applying link scenario series of length {len(scenario_series)} (nb_ts={nb_ts}) to link '{link_id}'."
@@ -923,7 +927,7 @@ def _generate_scenarised_sts_inflows_series(
                 )
                 nb_ts = 1
 
-            scenario_series = _build_scenario_series(study_data.nb_years, nb_ts)
+            scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
             logger.info(
                 f"Applying STS inflows scenario series of length {len(scenario_series)} "
@@ -1120,7 +1124,7 @@ def _generate_scenarised_sts_constraints_series(
                         )
                         nb_ts = 1
 
-                    scenario_series = _build_scenario_series(study_data.nb_years, nb_ts)
+                    scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
                     logger.info(
                         f"Applying STS constraints scenario series of length {len(scenario_series)} "
