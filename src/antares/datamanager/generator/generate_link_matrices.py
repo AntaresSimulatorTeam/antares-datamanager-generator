@@ -10,7 +10,7 @@
 #
 # This file is part of the Antares project.
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -92,9 +92,9 @@ def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_lin
 def generate_link_capacity_df(
     link_data: dict[str, int],
     mode: str,
-    seed_tsgen_link: int = 0,
-    link_name: str = "",
-    first_month: Optional[Month] = None,
+    seed_tsgen_link: int,
+    link_name: str,
+    first_month: Month | None = None,
 ) -> pd.DataFrame:
     """
     Generate a DataFrame representing link capacity based on input parameters.
@@ -116,6 +116,7 @@ def generate_link_capacity_df(
             applicable. Defaults to 0.
         link_name (str, optional): An identifier for the link, used for generating
             HVDC time-series if applicable. Defaults to an empty string.
+        Month set to JULY if not configured
 
     Returns:
         pd.DataFrame: A DataFrame representing the link capacity over 8760 hours
@@ -132,9 +133,6 @@ def generate_link_capacity_df(
     """
     is_full_hvdc = False
     hvdc_ts = None
-
-    if first_month is None:
-        first_month = settings.study_setting_first_month
 
     season_manager = SeasonManager(first_month)
     daily_seasons = np.where(season_manager.is_winter(), "winter", "summer")

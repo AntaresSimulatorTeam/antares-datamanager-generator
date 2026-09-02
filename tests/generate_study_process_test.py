@@ -112,25 +112,6 @@ def test_read_study_data_from_json(mock_settings, mock_open_file, mock_json_data
 
 @patch("builtins.open", new_callable=mock_open)
 @patch("antares.datamanager.generator.generate_study_process.settings")
-def test_read_study_data_from_json_with_nb_years(mock_settings, mock_open_file, mock_json_data):
-    mock_settings.study_json_directory = Path("/mock/path")
-    mock_settings.nb_years = 5
-
-    # Case 1: nb_years is provided in JSON
-    mock_json_data["test_study"]["nb_years"] = 10
-    mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
-    study_data = read_study_data_from_json("test_study")
-    assert study_data.nb_years == 10
-
-    # Case 2: nb_years is NOT provided in JSON, should use settings
-    del mock_json_data["test_study"]["nb_years"]
-    mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
-    study_data = read_study_data_from_json("test_study")
-    assert study_data.nb_years == 5
-
-
-@patch("builtins.open", new_callable=mock_open)
-@patch("antares.datamanager.generator.generate_study_process.settings")
 def test_read_study_data_from_json_parses_nuclear_clusters_and_binding_constraints(
     mock_settings, mock_open_file, mock_json_data
 ):
@@ -408,7 +389,6 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
         area_loads={"area1": ["load1"], "area2": ["load2"]},
         area_thermals={"area1": {}, "area2": {}},
         enable_random_ts=True,
-        nb_years=3,
     )
     mock_read_study_data_from_json.return_value = study_data
 
@@ -1092,15 +1072,13 @@ def test_build_study_settings_empty_settings_dict():
 
     study_data = StudyData(
         name="test_study",
-        nb_years=3,
-        first_month=Month.JANUARY,
     )
 
     settings_update = build_study_settings({}, study_data)
 
     assert settings_update.general_parameters is not None
-    assert settings_update.general_parameters.nb_years == 3
-    assert settings_update.general_parameters.first_month_in_year == Month.JANUARY
+    assert settings_update.general_parameters.nb_years == 1
+    assert settings_update.general_parameters.first_month_in_year == Month.JULY
     assert settings_update.adequacy_patch_parameters is None
     assert settings_update.optimization_parameters is None
     assert settings_update.advanced_parameters is None
@@ -1108,13 +1086,10 @@ def test_build_study_settings_empty_settings_dict():
 
 
 def test_build_study_settings_with_general_parameters_only():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
     study_data = StudyData(
         name="test_study",
-        nb_years=2,
-        first_month=Month.FEBRUARY,
     )
 
     settings_dict = {
@@ -1140,13 +1115,10 @@ def test_build_study_settings_with_general_parameters_only():
 
 
 def test_build_study_settings_with_adequacy_parameters_only():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
     study_data = StudyData(
         name="test_study",
-        nb_years=2,
-        first_month=Month.FEBRUARY,
     )
 
     settings_dict = {
@@ -1182,14 +1154,9 @@ def test_build_study_settings_with_adequacy_parameters_only():
 
 
 def test_build_study_settings_with_optimization_parameters():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
-    study_data = StudyData(
-        name="test_study",
-        nb_years=1,
-        first_month=Month.JANUARY,
-    )
+    study_data = StudyData(name="test_study")
 
     settings_dict = {
         "optimization_parameters": {
@@ -1212,14 +1179,9 @@ def test_build_study_settings_with_optimization_parameters():
 
 
 def test_build_study_settings_with_advanced_parameters():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
-    study_data = StudyData(
-        name="test_study",
-        nb_years=1,
-        first_month=Month.JANUARY,
-    )
+    study_data = StudyData(name="test_study")
 
     settings_dict = {
         "advanced_parameters": {
@@ -1240,14 +1202,9 @@ def test_build_study_settings_with_advanced_parameters():
 
 
 def test_build_study_settings_with_seed_parameters():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
-    study_data = StudyData(
-        name="test_study",
-        nb_years=1,
-        first_month=Month.JANUARY,
-    )
+    study_data = StudyData(name="test_study")
 
     settings_dict = {
         "seeds_parameters": {
@@ -1270,14 +1227,9 @@ def test_build_study_settings_with_seed_parameters():
 
 
 def test_build_study_settings_with_all_parameters():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
-    study_data = StudyData(
-        name="test_study",
-        nb_years=5,
-        first_month=Month.MARCH,
-    )
+    study_data = StudyData(name="test_study")
 
     settings_dict = {
         "general_parameters": {
@@ -1312,14 +1264,9 @@ def test_build_study_settings_with_all_parameters():
 
 
 def test_build_study_settings_filters_none_values():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
-    study_data = StudyData(
-        name="test_study",
-        nb_years=1,
-        first_month=Month.JANUARY,
-    )
+    study_data = StudyData(name="test_study")
 
     settings_dict = {
         "general_parameters": {
@@ -1347,16 +1294,12 @@ def test_build_study_settings_general_parameters_override_study_data_values():
     from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
-    study_data = StudyData(
-        name="test_study",
-        nb_years=2,
-        first_month=Month.FEBRUARY,
-    )
+    study_data = StudyData(name="test_study")
 
     settings_dict = {
         "general_parameters": {
             "nb_years": 5,  # Override study_data value
-            "first_month_in_year": Month.JULY,  # Override study_data value
+            "first_month_in_year": Month.FEBRUARY,  # Override study_data value
             "mode": "economy",
         }
     }
@@ -1365,19 +1308,14 @@ def test_build_study_settings_general_parameters_override_study_data_values():
 
     assert settings_update.general_parameters is not None
     assert settings_update.general_parameters.nb_years == 5
-    assert settings_update.general_parameters.first_month_in_year == Month.JULY
+    assert settings_update.general_parameters.first_month_in_year == Month.FEBRUARY
     assert settings_update.general_parameters.mode == "economy"
 
 
 def test_build_study_settings_empty_parameter_sections():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
-    study_data = StudyData(
-        name="test_study",
-        nb_years=1,
-        first_month=Month.JANUARY,
-    )
+    study_data = StudyData(name="test_study")
 
     settings_dict = {
         "general_parameters": {},
@@ -1396,14 +1334,9 @@ def test_build_study_settings_empty_parameter_sections():
 
 
 def test_build_study_settings_mixed_none_and_valid_values():
-    from antares.craft import Month
     from antares.datamanager.models.study_data_json_model import StudyData
 
-    study_data = StudyData(
-        name="test_study",
-        nb_years=3,
-        first_month=Month.JANUARY,
-    )
+    study_data = StudyData(name="test_study")
 
     settings_dict = {
         "general_parameters": {

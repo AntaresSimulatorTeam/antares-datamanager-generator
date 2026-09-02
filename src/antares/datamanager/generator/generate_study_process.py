@@ -27,7 +27,6 @@ from antares.craft import (
     ClusterData,
     ConstraintTerm,
     LinkPropertiesUpdate,
-    Month,
 )
 from antares.craft.model.area import Area, AreaProperties, AreaUi
 from antares.craft.model.study import Study, import_study_api
@@ -89,14 +88,20 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
 
         if study_data.flowbased:
-            create_flowbased_areas_and_links(study, study_data.flowbased, study_data.first_month)
+            create_flowbased_areas_and_links(
+                study, study_data.flowbased, study.get_settings().general_parameters.first_month_in_year
+            )
             generate_flowbased_binding_constraints(
-                study, study_data.flowbased, study_data.first_month, study_data.nb_years, used_files
+                study,
+                study_data.flowbased,
+                study.get_settings().general_parameters.first_month_in_year,
+                study.get_settings().general_parameters.nb_years,
+                used_files,
             )
 
         if (study_data.area_thermals or study_data.area_dsr) and study_data.enable_random_ts:
-            logger.info(f"Generating timeseries for {study_data.nb_years} years")
-            study.generate_thermal_timeseries(settings.nb_years)
+            logger.info(f"Generating timeseries for {study.get_settings().general_parameters.nb_years} years")
+            study.generate_thermal_timeseries(study.get_settings().general_parameters.nb_years)
 
         if settings.generation_mode == GenerationMode.LOCAL:
             _package_and_upload_local_study(study_data.name)
@@ -152,12 +157,6 @@ def read_study_data_from_json(study_id: str) -> StudyData:
     study_name = list(data.keys())[0]
     raw_study_data = data.get(study_name, {})
 
-    first_month_val = raw_study_data.get("first_month")
-    if first_month_val:
-        first_month = Month(first_month_val)
-    else:
-        first_month = settings.study_setting_first_month
-
     # Handle adequacy patch settings
     settings_val = raw_study_data.get("settings", {})
     if not isinstance(settings_val, dict):
@@ -175,8 +174,6 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         links=raw_study_data.get("links", {}),
         enable_random_ts=raw_study_data.get("enable_random_ts", True),
         seed_tsgen_link=raw_study_data.get("global_seed", 0),
-        nb_years=raw_study_data.get("nb_years", settings.nb_years),
-        first_month=first_month,
         adequacy_patch=adequacy_patch,
         nuclear_modulation_binding_constraints=binding_constraints.get("nuclear_modulation"),
         nuclear_talon_binding_constraint=binding_constraints.get("nuclear_talon"),
@@ -367,15 +364,26 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
             else:
                 generate_misc_timeseries(area_obj, area_name, misc, used_files)
 
-            generate_thermal_clusters(area_obj, thermals, first_month=study_data.first_month, used_files=used_files)
+            generate_thermal_clusters(
+                area_obj,
+                thermals,
+                first_month=study.get_settings().general_parameters.first_month_in_year,
+                used_files=used_files,
+            )
             if nuclear_clusters:
                 generate_thermal_clusters(
-                    area_obj, nuclear_clusters, first_month=study_data.first_month, used_files=used_files
+                    area_obj,
+                    nuclear_clusters,
+                    first_month=study.get_settings().general_parameters.first_month_in_year,
+                    used_files=used_files,
                 )
                 generate_nuclear_availability(area_obj, nuclear_clusters, used_files=used_files)
             generate_sts_clusters(area_obj, sts, used_files)
             df_dsr_constraints = generate_dsr_clusters(
-                area_obj, dsr, first_month=study_data.first_month, used_files=used_files
+                area_obj,
+                dsr,
+                first_month=study.get_settings().general_parameters.first_month_in_year,
+                used_files=used_files,
             )
             _create_dsr_binding_constraints(study, area_name, df_dsr_constraints)
             generate_res_clusters(area_obj, area_name, res, used_files)
@@ -395,10 +403,18 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]], global_se
         link_data_lower = {k.lower(): v for k, v in link_data.items()}
 
         df_capacity_direct = generate_link_capacity_df(
-            link_data, "direct", seed_tsgen_link=global_seed, link_name=f"{area_from}-{area_to}"
+            link_data,
+            "direct",
+            seed_tsgen_link=global_seed,
+            link_name=f"{area_from}-{area_to}",
+            first_month=study.get_settings().general_parameters.first_month_in_year,
         )
         df_capacity_indirect = generate_link_capacity_df(
-            link_data, "indirect", seed_tsgen_link=global_seed, link_name=f"{area_from}-{area_to}"
+            link_data,
+            "indirect",
+            seed_tsgen_link=global_seed,
+            link_name=f"{area_from}-{area_to}",
+            first_month=study.get_settings().general_parameters.first_month_in_year,
         )
 
         try:

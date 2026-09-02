@@ -13,9 +13,6 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from antares.craft import Month
-from antares.datamanager.core.settings import settings
-
 
 @dataclass
 class StudyData:
@@ -36,7 +33,5 @@ class StudyData:
     enable_random_ts: bool = True
     # TODO JSON must contain this field, mean while it is default to 0
     seed_tsgen_link: int = 0
-    nb_years: int = field(default_factory=lambda: settings.nb_years)
-    first_month: Month = field(default_factory=lambda: settings.study_setting_first_month)
     settings: dict[str, Any] = field(default_factory=dict)
     adequacy_patch: dict[str, Any] = field(default_factory=dict)

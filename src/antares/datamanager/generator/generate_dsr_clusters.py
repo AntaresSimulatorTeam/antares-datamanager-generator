@@ -214,9 +214,6 @@ def create_dsr_prepro_data_matrix(data: Dict[str, Any], first_month: Optional[Mo
     if len(fo_monthly_rate) != 12:
         raise ValueError("fo_monthly_rate must have 12 values")
 
-    if first_month is None:
-        first_month = settings.study_setting_first_month
-
     season_manager = SeasonManager(first_month)
     month_order = season_manager.get_month_order()
     days_in_month = season_manager.get_days_per_month()

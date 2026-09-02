@@ -169,7 +169,7 @@ def flowbased_fixture(tmp_path: Path) -> dict:
     rows = "\n".join(f"{i} 3 4" for i in range(1, 8761))
     (trajectory_dir / TS_FILENAME).write_text(header + rows + "\n")
 
-    study_data = StudyData(name="test-study", first_month=Month.JULY, nb_years=5)
+    study_data = StudyData(name="test-study")
     flowbased_data = {
         "recalculate_ts": True,
         "ts_path": "flowbased/model_2024",  # real payloads carry this "flowbased/" prefix, must be stripped
@@ -200,8 +200,8 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
     generate_flowbased_binding_constraints(
         study,
         flowbased_fixture["flowbased_data"],
-        flowbased_fixture["study_data"].first_month,
-        flowbased_fixture["study_data"].nb_years,
+        Month.JULY,
+        1,
         used_files,
     )
 
@@ -253,8 +253,8 @@ def test_generate_flowbased_read_binding_constraints_builds_expected_rhs(mock_se
     generate_flowbased_binding_constraints(
         study,
         flowbased_data,
-        flowbased_fixture["study_data"].first_month,
-        flowbased_fixture["study_data"].nb_years,
+        Month.JULY,
+        1,
         used_files,
     )
 
@@ -291,8 +291,8 @@ def test_generate_flowbased_binding_constraints_wires_scenario_builder(mock_sett
     generate_flowbased_binding_constraints(
         study,
         flowbased_fixture["flowbased_data"],
-        flowbased_fixture["study_data"].first_month,
-        flowbased_fixture["study_data"].nb_years,
+        Month.JULY,
+        5,
         used_files,
     )
 
@@ -313,8 +313,8 @@ def test_generate_flowbased_binding_constraints_tracks_used_files(mock_settings,
     generate_flowbased_binding_constraints(
         study,
         flowbased_fixture["flowbased_data"],
-        flowbased_fixture["study_data"].first_month,
-        flowbased_fixture["study_data"].nb_years,
+        Month.JULY,
+        1,
         used_files,
     )
 
@@ -336,8 +336,8 @@ def test_generate_flowbased_binding_constraints_raises_when_ts_path_missing(mock
         generate_flowbased_binding_constraints(
             flowbased_fixture["study"],
             flowbased_data,
-            flowbased_fixture["study_data"].first_month,
-            flowbased_fixture["study_data"].nb_years,
+            Month.JULY,
+            1,
             set(),
         )
 

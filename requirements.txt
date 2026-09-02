@@ -2,7 +2,7 @@ python-dateutil~=2.9.0
 fastapi==0.115.8
 uvicorn[standard]==0.34.0
 httpx==0.27.0
-antares-craft~=0.15.0
+antares-craft~=0.17.0
 dotenv~=0.9.9
 python-dotenv~=1.0.1
 annotated-types==0.7.0
@@ -68,7 +68,6 @@ requests-mock==1.12.1
 ruff==0.11.12
 setuptools-scm==8.1.0
 six==1.17.0
-sklearn-pmml-model==1.0.8
 tox==4.25.0
 tox-uv==1.25.0
 types-psutil==7.0.0.20250601
