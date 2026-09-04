@@ -37,7 +37,7 @@ from antares.datamanager.generator.generate_p2g import (
     generate_h2_profile_time_series,
     generate_modulation_df_from_csv,
     generate_p2g,
-    generate_profile_H2,
+    generate_profile_h2,
     get_mean_load_factor,
 )
 
@@ -56,6 +56,8 @@ def _make_mock_res_cluster(time_series: pd.DataFrame | None, name: str = "cluste
 
 
 def test_get_mean_load_factor_none_or_empty():
+    assert get_mean_load_factor(None) == 0.0
+
     cluster_none = _make_mock_res_cluster(None)
     assert get_mean_load_factor(cluster_none) == 0.0
 
@@ -75,13 +77,21 @@ def test_get_mean_load_factor_valid():
 
 
 def test_generate_h2_profile_time_series_missing_ts():
+    cluster_pv_valid = _make_mock_res_cluster(pd.DataFrame(np.ones((EXPECTED_HOURS, 1))))
+    cluster_wind_valid = _make_mock_res_cluster(pd.DataFrame(np.ones((EXPECTED_HOURS, 1))))
+
+    with pytest.raises(P2GGenerationError, match="manquantes"):
+        generate_h2_profile_time_series(None, cluster_wind_valid, 100.0, 100.0, 50.0)
+
+    with pytest.raises(P2GGenerationError, match="manquantes"):
+        generate_h2_profile_time_series(cluster_pv_valid, None, 100.0, 100.0, 50.0)
+
     cluster_pv = _make_mock_res_cluster(None)
     cluster_wind = _make_mock_res_cluster(pd.DataFrame(np.ones((EXPECTED_HOURS, 1))))
 
     with pytest.raises(P2GGenerationError, match="manquantes"):
         generate_h2_profile_time_series(cluster_pv, cluster_wind, 100.0, 100.0, 50.0)
 
-    cluster_pv_valid = _make_mock_res_cluster(pd.DataFrame(np.ones((EXPECTED_HOURS, 1))))
     cluster_wind_none = _make_mock_res_cluster(None)
 
     with pytest.raises(P2GGenerationError, match="manquantes"):
@@ -192,7 +202,7 @@ def test_generate_modulation_df_from_csv_success(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Tests: generate_profile_H2
+# Tests: generate_profile_h2
 # ---------------------------------------------------------------------------
 
 
@@ -209,7 +219,7 @@ def test_generate_profile_H2_with_zero_load_factors():
         "Part_PV_mix": 0.4,
     }
 
-    result = generate_profile_H2(res_clusters, area_link, parameters)
+    result = generate_profile_h2(res_clusters, area_link, parameters)
     assert result.shape == (EXPECTED_HOURS, 1)
     assert np.all(result.to_numpy() == 0.0)
 
@@ -229,7 +239,7 @@ def test_generate_profile_H2_nominal():
         "Part_PV_mix": 0.5,
     }
 
-    result = generate_profile_H2(res_clusters, area_link, parameters)
+    result = generate_profile_h2(res_clusters, area_link, parameters)
     assert result.shape == (EXPECTED_HOURS, 1)
     assert not result.empty
     assert (result.to_numpy() <= 1000.0).all()

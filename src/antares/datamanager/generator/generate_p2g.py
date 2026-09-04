@@ -1,3 +1,16 @@
+# Copyright (c) 2024, RTE (https://www.rte-france.com)
+#
+# See AUTHORS.txt
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+#
+# This file is part of the Antares project.
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +25,6 @@ from antares.craft import (
     LinkData,
     ThermalClusterProperties,
 )
-from antares.craft.model.renewable import RenewableCluster
 from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import P2GGenerationError
@@ -28,6 +40,9 @@ EXPECTED_HOURS = 8760
 
 
 def get_mean_load_factor(res_cluster: Any) -> float:
+    if res_cluster is None:
+        return 0.0
+
     time_series = res_cluster.get_timeseries()
     if time_series is None or time_series.empty:
         return 0.0
@@ -36,8 +51,8 @@ def get_mean_load_factor(res_cluster: Any) -> float:
 
 
 def generate_h2_profile_time_series(
-    cluster_solar_pv: RenewableCluster,
-    cluster_wind_onshore: RenewableCluster,
+    cluster_solar_pv: Any,
+    cluster_wind_onshore: Any,
     capacity_pv_virtual: float,
     capacity_onshore_virtual: float,
     capacity_p2g: float,
@@ -51,6 +66,9 @@ def generate_h2_profile_time_series(
     Retourne un DataFrame ayant les mêmes dimensions (8760 lignes) et colonnes
     que cluster_wind_onshore.
     """
+    if cluster_solar_pv is None or cluster_wind_onshore is None:
+        raise P2GGenerationError("Les séries temporelles de l'un des clusters EnR sont manquantes.")
+
     ts_pv = cluster_solar_pv.get_timeseries()
     ts_wind = cluster_wind_onshore.get_timeseries()
 
@@ -130,7 +148,7 @@ def generate_modulation_df_from_csv(
     return pd.DataFrame(data_4cols)
 
 
-def generate_profile_H2(res_clusters: dict[str, Any], area_link: Any, parameters: Any) -> pd.DataFrame:
+def generate_profile_h2(res_clusters: dict[str, Any], area_link: Any, parameters: Any) -> pd.DataFrame:
     fc_elec = parameters.get("FC_electrolyseur")
     fc_enr = parameters.get("Facteur_surdimension_ENR")
     part_pv_mix = parameters.get("Part_PV_mix")
@@ -332,42 +350,67 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         logger.info(f"Created P2G link {link_name}")
 
 
-def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[str, Any], nb_years: int) -> pd.DataFrame:
+def _accumulate_profile(total: pd.DataFrame | None, current: pd.DataFrame) -> pd.DataFrame:
+    if total is None:
+        return current.copy()
+    if total.columns.equals(current.columns):
+        return total + current
+    return pd.DataFrame(
+        total.to_numpy() + current.to_numpy(),
+        index=total.index,
+        columns=total.columns,
+    )
+
+
+def _process_single_asservi_link(
+    study: Study,
+    area_name: str,
+    virtual_area: str,
+    area_link: Any,
+    area_list: Any,
+    parameters: dict[str, Any],
+) -> pd.DataFrame | None:
+    link = study.create_link(area_from=area_name, area_to=virtual_area)
+    area_data = area_list.get(area_name.lower()) if isinstance(area_list, dict) else None
+    if area_data is None:
+        return None
+
+    res_clusters = area_data.get_renewables()
+    if res_clusters is None:
+        return None
+
+    link_time_series = generate_profile_h2(
+        res_clusters=res_clusters,
+        area_link=area_link,
+        parameters=parameters,
+    )
+    if not isinstance(link_time_series, pd.DataFrame):
+        link_time_series = pd.DataFrame(link_time_series)
+
+    link.set_capacity_direct(link_time_series)
+    logger.info(f"Created P2G link {area_name}-{virtual_area}")
+    return link_time_series
+
+
+def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: Any, nb_years: int) -> pd.DataFrame | None:
     links_data = type_data.get("links", {})
     if not links_data:
         return None
-    area_list = study.get_areas()
-    total_profile_h2: pd.DataFrame | None = None
-    for area_name, area_link in links_data.items():
-        link_name = f"{area_name}-{virtual_area}"
-        link = study.create_link(area_from=area_name, area_to=virtual_area)
 
-        # Profil H2 par lien
-        # Génération du profil H2 (8760 x N colonnes) pour ce pays
-        area_data = area_list[area_name.lower()]
-        if area_data is None:
-            continue
-        res_clusters = area_data.get_renewables()
-        if res_clusters is None:
-            continue
-        else:
-            link_time_series = generate_profile_H2(
-                res_clusters=res_clusters, area_link=area_link, parameters=type_data.get("parameters", {})
-            )
-            if not isinstance(link_time_series, pd.DataFrame):
-                link_time_series = pd.DataFrame(link_time_series)
-            link.set_capacity_direct(link_time_series)
-            # Somme matricielle des profils H2 de chaque pays
-            if total_profile_h2 is None:
-                total_profile_h2 = link_time_series.copy()
-            else:
-                if total_profile_h2.columns.equals(link_time_series.columns):
-                    total_profile_h2 = total_profile_h2 + link_time_series
-                else:
-                    total_profile_h2 = pd.DataFrame(
-                        total_profile_h2.to_numpy() + link_time_series.to_numpy(),
-                        index=total_profile_h2.index,
-                        columns=total_profile_h2.columns,
-                    )
-            logger.info(f"Created P2G link {link_name}")
+    area_list = study.get_areas()
+    parameters = type_data.get("parameters", {})
+    total_profile_h2: pd.DataFrame | None = None
+
+    for area_name, area_link in links_data.items():
+        profile = _process_single_asservi_link(
+            study=study,
+            area_name=area_name,
+            virtual_area=virtual_area,
+            area_link=area_link,
+            area_list=area_list,
+            parameters=parameters,
+        )
+        if profile is not None:
+            total_profile_h2 = _accumulate_profile(total_profile_h2, profile)
+
     return total_profile_h2
