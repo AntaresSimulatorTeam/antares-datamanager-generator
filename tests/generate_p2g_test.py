@@ -10,12 +10,12 @@
 #
 # This file is part of the Antares project.
 
-from pathlib import Path
+import pytest
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from antares.craft import (
     BindingConstraintFrequency,
@@ -26,7 +26,6 @@ from antares.craft import (
 from antares.craft.model.renewable import RenewableCluster
 from antares.datamanager.exceptions.exceptions import P2GGenerationError
 from antares.datamanager.generator.generate_p2g import (
-    AREA_PREFIX,
     BINDING_CONSTRAINT_HOURLY_ROWS,
     EXPECTED_HOURS,
     P2G_FATAL_BAND_PREFIX,

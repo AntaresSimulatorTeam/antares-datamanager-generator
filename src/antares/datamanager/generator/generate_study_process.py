@@ -182,7 +182,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         nuclear_talon_binding_constraint=binding_constraints.get("nuclear_talon"),
         flowbased=raw_study_data.get("flowbased"),
         settings=study_settings,
-        p2g=raw_study_data.get("p2g", {})
+        p2g=raw_study_data.get("p2g", {}),
     )
 
     for area, area_info in study_data.areas.items():

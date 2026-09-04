@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Mapping, Optional, Set
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -33,6 +33,7 @@ def get_mean_load_factor(res_cluster: Any) -> float:
         return 0.0
 
     return float(time_series.to_numpy().mean())
+
 
 def generate_h2_profile_time_series(
     cluster_solar_pv: RenewableCluster,
@@ -128,11 +129,12 @@ def generate_modulation_df_from_csv(
 
     return pd.DataFrame(data_4cols)
 
+
 def generate_profile_H2(res_clusters: dict[str, Any], area_link: Any, parameters: Any) -> pd.DataFrame:
     fc_elec = parameters.get("FC_electrolyseur")
     fc_enr = parameters.get("Facteur_surdimension_ENR")
     part_pv_mix = parameters.get("Part_PV_mix")
-    #Calcul des besoins en EnR
+    # Calcul des besoins en EnR
     capacity_p2g = area_link.get("capacity")
     yearly_h2_production = capacity_p2g * fc_elec * EXPECTED_HOURS
     enr_supply = yearly_h2_production * fc_enr
@@ -260,7 +262,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
       }
     }}
     """
-    
+
     for p2g_type in P2G_TYPES or []:
         virtual_area = f"{AREA_PREFIX}{p2g_type}"
         area = study.create_area(area_name=virtual_area)
@@ -269,10 +271,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
         if p2g_type == "asservi":
             # Création des liens et récupération de la somme des profils H2
             load_series = create_p2g_asservi_links(
-                study=study,
-                virtual_area=virtual_area,
-                type_data=type_data,
-                nb_years=nb_years
+                study=study, virtual_area=virtual_area, type_data=type_data, nb_years=nb_years
             )
             nominal_capacity = float(type_data.get("properties", {}).get("nominal_capacity", 0.0))
         else:
@@ -307,7 +306,9 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
         modulation_type = type_data.get("modulation")
         if modulation_type is not None:
             trajectory_path = data_p2g.get("market_modulation", {})
-            modulation_df = generate_modulation_df_from_csv(trajectory_path=trajectory_path, modulation_name=modulation_type)
+            modulation_df = generate_modulation_df_from_csv(
+                trajectory_path=trajectory_path, modulation_name=modulation_type
+            )
             cluster_thermal.set_prepro_modulation(modulation_df)
         logger.info(f"Created P2G virtual area {virtual_area}")
 
@@ -330,6 +331,7 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         link.set_capacity_direct(link_time_series)
         logger.info(f"Created P2G link {link_name}")
 
+
 def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[str, Any], nb_years: int) -> pd.DataFrame:
     links_data = type_data.get("links", {})
     if not links_data:
@@ -348,11 +350,9 @@ def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[st
         res_clusters = area_data.get_renewables()
         if res_clusters is None:
             continue
-        else: 
+        else:
             link_time_series = generate_profile_H2(
-                res_clusters=res_clusters,
-                area_link=area_link,
-                parameters=type_data.get("parameters", {})
+                res_clusters=res_clusters, area_link=area_link, parameters=type_data.get("parameters", {})
             )
             if not isinstance(link_time_series, pd.DataFrame):
                 link_time_series = pd.DataFrame(link_time_series)
