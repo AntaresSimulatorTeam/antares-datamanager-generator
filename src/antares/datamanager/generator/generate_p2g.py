@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,7 @@ from antares.craft import (
     LinkData,
     ThermalClusterProperties,
 )
+from antares.craft.model.renewable import RenewableCluster
 from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import P2GGenerationError
@@ -22,29 +23,20 @@ logger = get_logger(__name__)
 AREA_PREFIX = "z_p2g_"
 P2G_TYPES = {"base", "marg", "methanation", "asservi"}
 P2G_FATAL_BAND_PREFIX = "P2G_fatalband_"
-MARKET_MODULATION_PREFIX = "MB_MC_modulation_"
 BINDING_CONSTRAINT_HOURLY_ROWS = 8784
 EXPECTED_HOURS = 8760
 
 
-def get_mean_load_factor(res_clusters: Any) -> float:
-    time_series = res_clusters.get_time_series()
+def get_mean_load_factor(res_cluster: Any) -> float:
+    time_series = res_cluster.get_timeseries()
     if time_series is None or time_series.empty:
         return 0.0
 
     return float(time_series.to_numpy().mean())
 
-
-def _pad_to_binding_constraint_hourly_rows(matrix: pd.DataFrame) -> pd.DataFrame:
-    if len(matrix) != EXPECTED_HOURS:
-        raise P2GGenerationError(f"Expected {EXPECTED_HOURS} rows before padding, got {len(matrix)}")
-    padding = pd.DataFrame(0.0, index=range(BINDING_CONSTRAINT_HOURLY_ROWS), columns=matrix.columns)
-    return pd.concat([matrix, padding], ignore_index=True)
-
-
 def generate_h2_profile_time_series(
-    cluster_solar_pv: Any,
-    cluster_wind_onshore: Any,
+    cluster_solar_pv: RenewableCluster,
+    cluster_wind_onshore: RenewableCluster,
     capacite_pv_virtuelle: float,
     capacite_eol_virtuelle: float,
     capacite_p2g: float,
@@ -58,8 +50,8 @@ def generate_h2_profile_time_series(
     Retourne un DataFrame ayant les mêmes dimensions (8760 lignes) et colonnes
     que cluster_wind_onshore.
     """
-    ts_pv = cluster_solar_pv.get_time_series()
-    ts_wind = cluster_wind_onshore.get_time_series()
+    ts_pv = cluster_solar_pv.get_timeseries()
+    ts_wind = cluster_wind_onshore.get_timeseries()
 
     if ts_pv is None or ts_wind is None:
         raise P2GGenerationError("Les séries temporelles de l'un des clusters EnR sont manquantes.")
@@ -79,7 +71,9 @@ def generate_h2_profile_time_series(
         )
 
     # 1. Calcul de Production_ENR(t)
-    # Production_ENR(t) = FC_PV(t) * Capacité_PV_virtuelle + FC_Eol(t) * Capacité_Eol_virtuelle
+    # capacite_pv_virtuelle = 141 912 / (0,1132 * 8760) = 143,109
+    # capacite_eol_virtuelle = 141 912 / (0,2931 * 8760) = 55,27
+    # Production_ENR(t) = FC_PV(t) * capacite_pv_virtuelle + FC_Eol(t) * capacite_eol_virtuelle
     production_enr = (pv_values * float(capacite_pv_virtuelle)) + (wind_values * float(capacite_eol_virtuelle))
 
     # 2. Application du plafonnement Profil_H2(t) = min(Production_ENR(t), Capacité_P2G)
@@ -98,7 +92,7 @@ def generate_modulation_df_from_csv(
     modulation_name: str,
     expected_hours: int = EXPECTED_HOURS,
 ) -> pd.DataFrame:
-    csv_path = (settings.market_bid_modulation_directory / trajectory_path).resolve()
+    csv_path = (settings.nas_path / trajectory_path).resolve()
 
     path = Path(csv_path)
     if not path.exists():
@@ -130,28 +124,24 @@ def generate_modulation_df_from_csv(
         )
 
     # Construction vectorisée des 4 colonnes : [valeur, valeur, 1, 0]
-    ones = np.ones(expected_hours, dtype=np.int)
-    zeros = np.zeros(expected_hours, dtype=np.int)
+    ones = np.ones(expected_hours, dtype=int)
+    zeros = np.zeros(expected_hours, dtype=int)
 
     data_4cols = np.column_stack([values, values, ones, zeros])
 
     return pd.DataFrame(data_4cols)
 
-
-def generate_profil_H2(res_clusters: Any, area_link: Any, parameters: Any) -> pd.DataFrame:
+def generate_profil_H2(res_clusters: dict[str, Any], area_link: Any, parameters: Any) -> pd.DataFrame:
     fc_electrolyseur = parameters.get("FC_electrolyseur")
-    facteur_surdemension_Enr = parameters.get("Facteur_surdemension_ENR")
-    part_PV_mix = parameters.get("Part_PV_mix")
+    facteur_surdimension_enr = parameters.get("Facteur_surdimension_ENR")
+    part_pv_mix = parameters.get("Part_PV_mix")
     # Calcul des besoins en EnR
     capacity_p2g = area_link.get("capacity")
-    production_H2_annuelle = capacity_p2g * fc_electrolyseur * EXPECTED_HOURS
-    approvisionnement_ENR = production_H2_annuelle * facteur_surdemension_Enr
+    production_h2_annuelle = capacity_p2g * fc_electrolyseur * EXPECTED_HOURS
+    approvisionnement_enr = production_h2_annuelle * facteur_surdimension_enr
 
-    # Construction d'un dictionnaire {nom: cluster}
-    clusters_by_name = {c.name: c for c in res_clusters}
-
-    cluster_solar_pv = clusters_by_name.get("solar_pv")
-    cluster_wind_onshore = clusters_by_name.get("wind_onshore")
+    cluster_solar_pv = res_clusters.get("solar_pv")
+    cluster_wind_onshore = res_clusters.get("wind_onshore")
 
     if cluster_solar_pv is not None:
         # Cluster trouvé
@@ -164,21 +154,30 @@ def generate_profil_H2(res_clusters: Any, area_link: Any, parameters: Any) -> pd
         print("Cluster introuvable")
 
     # solar pv
-    approvisionnement_PV = part_PV_mix * approvisionnement_ENR
+    approvisionnement_pv = part_pv_mix * approvisionnement_enr
     # moyenne du facteur de charge 1GW sur l'ensemble des années Monte Carlo.
     FC_PV_moyen = get_mean_load_factor(cluster_solar_pv)
 
     # wind onshore
-    approvisionnement_Eol = (1 - part_PV_mix) * approvisionnement_ENR
+    approvisionnement_eol = (1 - part_pv_mix) * approvisionnement_enr
     # moyenne du facteur de charge 1GW sur l'ensemble des années Monte Carlo.
     FC_Eol_moyen = get_mean_load_factor(cluster_wind_onshore)
 
     # calcul des capacités ENR virtuelles
-    capacité_PV_virtuelle = approvisionnement_PV / (FC_PV_moyen * EXPECTED_HOURS)
-    capacité_Eol_virtuelle = approvisionnement_Eol / (FC_Eol_moyen * EXPECTED_HOURS)
-    # time serie avec production horaire
+    # approvisionnement_ENR = 1,2 * 54 * 0,5 * 8760 = 283 824
+    #FC_PV_moyen = 0,1132
+    #FC_Eol_moyen = 0,2931
+    # approvisionnement_PV = 0,5 * 283 824 = 141 912
+    # approvisionnement_Eol = 0,5 * 283 824 = 141 912
+    if FC_PV_moyen > 0 and FC_Eol_moyen > 0:
+        capacité_pv_virtuelle = approvisionnement_pv / (FC_PV_moyen * EXPECTED_HOURS)
+        capacité_eol_virtuelle = approvisionnement_eol / (FC_Eol_moyen * EXPECTED_HOURS)
+        # time serie avec production horaire
+    else:
+        capacité_pv_virtuelle = 0.0
+        capacité_eol_virtuelle = 0.0
     profil_H2 = generate_h2_profile_time_series(
-        cluster_solar_pv, cluster_wind_onshore, capacité_PV_virtuelle, capacité_Eol_virtuelle, capacity_p2g
+        cluster_solar_pv, cluster_wind_onshore, capacité_pv_virtuelle, capacité_eol_virtuelle, capacity_p2g
     )
     return profil_H2
 
@@ -206,16 +205,16 @@ def build_binding_constraint(study: Study, area_name: str, capacity: float) -> N
 
     constraint_name = P2G_FATAL_BAND_PREFIX + area_name
     terms = [ConstraintTerm(data=LinkData(area1=area_name, area2="z_p2g_base"), weight=1)]
-    rhs = pd.DataFrame(np.full((EXPECTED_HOURS, 1), capacity, dtype=np.float64))
+    rhs = pd.DataFrame(np.full((BINDING_CONSTRAINT_HOURLY_ROWS, 1), capacity, dtype=np.float64))
     study.create_binding_constraint(
         name=str(constraint_name), properties=properties, terms=terms, greater_term_matrix=rhs
     )
     logger.info(f"Created P2G base binding constraint {constraint_name}")
 
 
-def generate_p2g(study: Study, data: dict[str, Any]) -> None:
-    #"""
-    #Expected P2G JSON
+def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
+    """
+    Expected P2G JSON
     data = {"p2g": {
       "market_modulation": "FE60_liv1_saME/MB_MC_modulation_FE60_liv1_saME_2027.csv",
       "base": {
@@ -225,7 +224,7 @@ def generate_p2g(study: Study, data: dict[str, Any]) -> None:
         },
         "modulation": "H2",
         "links": {
-          "AT": { "capacity": 1500, "fatal_band": 300 },
+          "FR": { "capacity": 1500, "fatal_band": 300 },
           "BE": { "capacity": 3456, "fatal_band": 200 }
         }
       },
@@ -234,9 +233,9 @@ def generate_p2g(study: Study, data: dict[str, Any]) -> None:
           "nominal_capacity": 5000,
           "cost": 78.00
         },
-        "modulation": "Gaz",
+        "modulation": "Gas",
         "links": {
-          "AT": { "capacity": 250 },
+          "FR": { "capacity": 250 },
           "BE": { "capacity": 356 }
         }
       },
@@ -245,9 +244,9 @@ def generate_p2g(study: Study, data: dict[str, Any]) -> None:
           "nominal_capacity": 3890,
           "cost": 78.00
         },
-        "modulation": "Gaz",
+        "modulation": "Gas",
         "links": {
-          "AT": { "capacity": 300 },
+          "FR": { "capacity": 300 },
           "BE": { "capacity": 400 }
         }
       },
@@ -258,7 +257,7 @@ def generate_p2g(study: Study, data: dict[str, Any]) -> None:
         },
         "modulation": "H2",
         "links": {
-          "AT": { "capacity": 140 },
+          "FR": { "capacity": 140 },
           "BE": { "capacity": 300 }
         },
         "parameters": {
@@ -268,22 +267,22 @@ def generate_p2g(study: Study, data: dict[str, Any]) -> None:
         }
       }
     }}
-    #"""
-    data_p2g = data.get("p2g")
-    global nominal_capacity, load_series, load_capacity
+    """
+    
     for p2g_type in P2G_TYPES or []:
         virtual_area = f"{AREA_PREFIX}{p2g_type}"
         area = study.create_area(area_name=virtual_area)
 
         type_data = data_p2g.get(p2g_type)
-        
         if p2g_type == "asservi":
             # Création des liens et récupération de la somme des profils H2
             load_series = create_p2g_asservi_links(
                 study=study,
                 virtual_area=virtual_area,
                 type_data=type_data,
+                nb_years=nb_years
             )
+            nominal_capacity = float(type_data.get("properties", {}).get("nominal_capacity", 0.0))
         else:
             # Profil de charge constant basé sur nominal_capacity (8760 x 1)
             create_p2g_links(
@@ -299,7 +298,7 @@ def generate_p2g(study: Study, data: dict[str, Any]) -> None:
             else:
                 load_capacity = float(type_data.get("properties", {}).get("nominal_capacity", 0.0))
                 nominal_capacity = load_capacity
-                load_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), load_capacity, dtype=np.float64))
+            load_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), load_capacity, dtype=np.float64))
         area.set_load(load_series)
         cost = float(type_data.get("properties", {}).get("cost", 0.0))
         cluster_thermal = area.create_thermal_cluster(
@@ -313,11 +312,10 @@ def generate_p2g(study: Study, data: dict[str, Any]) -> None:
                 group="other",
             ),
         )
-        modulation_type = type_data.get("modulation", {})
+        modulation_type = type_data.get("modulation")
         if modulation_type is not None:
-            modulation_name = type_data.get("modulation")
             trajectory_path = data_p2g.get("market_modulation", {})
-            modulation_df = generate_modulation_df_from_csv(trajectory_path=trajectory_path, modulation_name=modulation_name)
+            modulation_df = generate_modulation_df_from_csv(trajectory_path=trajectory_path, modulation_name=modulation_type)
             cluster_thermal.set_prepro_modulation(modulation_df)
         logger.info(f"Created P2G virtual area {virtual_area}")
 
@@ -329,45 +327,56 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         return None
     for area_name, area_link in links_data.items():
         link_name = f"{area_name}-{virtual_area}"
-        study.create_link(area_from=area_name, area_to=virtual_area)
+        link = study.create_link(area_from=area_name, area_to=virtual_area)
 
         # Multiplier le tableau de 1 par la valeur souhaitée
-        link_time_series = np.ones((EXPECTED_HOURS, 1), dtype=np.float64) * area_link.get("capacity")
+        capacity = float(area_link.get("capacity", 0.0))
+        link_time_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), capacity, dtype=np.float64))
 
         if p2g_type == "base":
             build_binding_constraint(study, area_name, area_link.get("fatal_band"))
+        link.set_capacity_direct(link_time_series)
         logger.info(f"Created P2G link {link_name}")
 
-def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[str, Any]) -> pd.DataFrame:
-    global link_time_series, total_profil_h2
+def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[str, Any], nb_years: int) -> pd.DataFrame:
     links_data = type_data.get("links", {})
     if not links_data:
         return None
+    area_list = study.get_areas()
+    total_profil_h2: pd.DataFrame | None = None
     for area_name, area_link in links_data.items():
         link_name = f"{area_name}-{virtual_area}"
-        study.create_link(area_from=area_name, area_to=virtual_area)
+        link = study.create_link(area_from=area_name, area_to=virtual_area)
 
         # Profil H2 par lien
         # solar_pv et wind_onshore
         # Génération du profil H2 (8760 x N colonnes) pour ce pays
-        area_list = study.get_areas()
         area_data = area_list[area_name.lower()]
         if area_data is None:
             continue
         res_clusters = area_data.get_renewables()
         if res_clusters is None:
             continue
-        link_time_series = generate_profil_H2(
-            res_clusters=res_clusters,
-            area_link=area_link,
-            parameters=type_data.get("parameters", {}),
-        )
-
-        # Somme matricielle des profils H2 de chaque pays
-        if total_profil_h2 is None:
-            total_profil_h2 = link_time_series.copy()
-        else:
-            total_profil_h2 = total_profil_h2 + link_time_series
-        logger.info(f"Created P2G link {link_name}")
-        return total_profil_h2
-    return None
+        else: 
+            link_time_series = generate_profil_H2(
+                res_clusters=res_clusters,
+                area_link=area_link,
+                parameters=type_data.get("parameters", {})
+            )
+            if not isinstance(link_time_series, pd.DataFrame):
+                link_time_series = pd.DataFrame(link_time_series)
+            link.set_capacity_direct(link_time_series)
+            # Somme matricielle des profils H2 de chaque pays
+            if total_profil_h2 is None:
+                total_profil_h2 = link_time_series.copy()
+            else:
+                if total_profil_h2.columns.equals(link_time_series.columns):
+                    total_profil_h2 = total_profil_h2 + link_time_series
+                else:
+                    total_profil_h2 = pd.DataFrame(
+                        total_profil_h2.to_numpy() + link_time_series.to_numpy(),
+                        index=total_profil_h2.index,
+                        columns=total_profil_h2.columns,
+                    )
+            logger.info(f"Created P2G link {link_name}")
+    return total_profil_h2

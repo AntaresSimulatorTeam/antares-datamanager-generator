@@ -110,12 +110,6 @@ class Settings:
         return self._resolve_env_path("PEGASE_TRAJECTORY_FILE_PATH") / self._get_required("PEGASE_FLOWBASED_DIRECTORY")
 
     @property
-    def market_bid_modulation_directory(self) -> Path:
-        return self._resolve_env_path("PEGASE_TRAJECTORY_FILE_PATH") / self._get_required(
-            "PEGASE_P2G_MARKET_BID_DIRECTORY"
-        )
-
-    @property
     def api_host(self) -> str:
         return os.getenv("AW_API_HOST", "")
 
