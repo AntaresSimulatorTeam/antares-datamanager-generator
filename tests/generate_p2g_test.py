@@ -37,7 +37,7 @@ from antares.datamanager.generator.generate_p2g import (
     generate_h2_profile_time_series,
     generate_modulation_df_from_csv,
     generate_p2g,
-    generate_profile_h2,
+    generate_profile_hydro,
     get_mean_load_factor,
 )
 
@@ -202,7 +202,7 @@ def test_generate_modulation_df_from_csv_success(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Tests: generate_profile_h2
+# Tests: generate_profile_hydro
 # ---------------------------------------------------------------------------
 
 
@@ -219,7 +219,7 @@ def test_generate_profile_H2_with_zero_load_factors():
         "Part_PV_mix": 0.4,
     }
 
-    result = generate_profile_h2(res_clusters, area_link, parameters)
+    result = generate_profile_hydro(res_clusters, area_link, parameters)
     assert result.shape == (EXPECTED_HOURS, 1)
     assert np.all(result.to_numpy() == 0.0)
 
@@ -239,10 +239,62 @@ def test_generate_profile_H2_nominal():
         "Part_PV_mix": 0.5,
     }
 
-    result = generate_profile_h2(res_clusters, area_link, parameters)
+    result = generate_profile_hydro(res_clusters, area_link, parameters)
     assert result.shape == (EXPECTED_HOURS, 1)
     assert not result.empty
     assert (result.to_numpy() <= 1000.0).all()
+
+
+def test_generate_profile_h2_spelling_variation_and_aliases():
+    df_pv = pd.DataFrame({"s1": [0.2] * EXPECTED_HOURS})
+    df_wind = pd.DataFrame({"s1": [0.4] * EXPECTED_HOURS})
+    cluster_pv = _make_mock_res_cluster(df_pv, name="solar_pv")
+    cluster_wind = _make_mock_res_cluster(df_wind, name="wind_onshore")
+
+    res_clusters = {"solar_pv": cluster_pv, "wind_onshore": cluster_wind}
+    area_link = {"capacity": 500.0}
+    parameters = {
+        "FC_electrolyseur": 0.5,
+        "Facteur_surdemension_ENR": 1.2,
+        "Part_PV_mix": 0.5,
+    }
+
+    result1 = generate_profile_hydro(res_clusters, area_link, parameters)
+    result2 = generate_profile_hydro(res_clusters, area_link, parameters)
+
+    assert result1.shape == (EXPECTED_HOURS, 1)
+    assert np.allclose(result1.to_numpy(), result2.to_numpy())
+
+
+def test_generate_profile_h2_cluster_discovery_by_group():
+    df_pv = pd.DataFrame({"s1": [0.2] * EXPECTED_HOURS})
+    df_wind = pd.DataFrame({"s1": [0.4] * EXPECTED_HOURS})
+
+    cluster_pv = MagicMock()
+    cluster_pv.name = "fr_pv_cluster_1"
+    mock_prop_pv = MagicMock()
+    mock_prop_pv.group = "Solar PV"
+    cluster_pv.properties = mock_prop_pv
+    cluster_pv.get_timeseries.return_value = df_pv
+
+    cluster_wind = MagicMock()
+    cluster_wind.name = "fr_wind_cluster_1"
+    mock_prop_wind = MagicMock()
+    mock_prop_wind.group = "Wind Onshore"
+    cluster_wind.properties = mock_prop_wind
+    cluster_wind.get_timeseries.return_value = df_wind
+
+    res_clusters = {"solar_pv": cluster_pv, "wind_onshore": cluster_wind}
+    area_link = {"capacity": 1000.0}
+    parameters = {
+        "FC_electrolyseur": 0.5,
+        "Facteur_surdimension_ENR": 1.0,
+        "Part_PV_mix": 0.5,
+    }
+
+    result = generate_profile_hydro(res_clusters, area_link, parameters)
+    assert result.shape == (EXPECTED_HOURS, 1)
+    assert not result.empty
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +441,59 @@ def test_create_p2g_asservi_links_success():
     assert mock_link.set_capacity_direct.call_count == 2
     assert total_profile is not None
     assert total_profile.shape == (EXPECTED_HOURS, 1)
+
+
+def test_create_p2g_asservi_links_case_insensitive_areas():
+    study = MagicMock(spec=Study)
+    mock_link = MagicMock()
+    study.create_link.return_value = mock_link
+
+    area_fr = MagicMock()
+    df_pv = pd.DataFrame({"s1": [0.2] * EXPECTED_HOURS})
+    df_wind = pd.DataFrame({"s1": [0.4] * EXPECTED_HOURS})
+    cluster_pv = _make_mock_res_cluster(df_pv, "solar_pv")
+    cluster_wind = _make_mock_res_cluster(df_wind, "wind_onshore")
+    area_fr.get_renewables.return_value = {"solar_pv": cluster_pv, "wind_onshore": cluster_wind}
+
+    # Study get_areas() returns dict keyed by lowercase area names
+    study.get_areas.return_value = {"fr": area_fr}
+
+    type_data = {
+        "links": {
+            "FR": {"capacity": 140},
+        },
+        "parameters": {
+            "FC_electrolyseur": 0.5,
+            "Facteur_surdemension_ENR": 1.2,
+            "Part_PV_mix": 0.5,
+        },
+    }
+
+    total_profile = create_p2g_asservi_links(study, "z_p2g_asservi", type_data, 1)
+    assert study.create_link.call_count == 1
+    assert mock_link.set_capacity_direct.call_count == 1
+    assert total_profile is not None
+
+
+def test_create_p2g_asservi_links_missing_area_or_renewables():
+    study = MagicMock(spec=Study)
+    area_be = MagicMock()
+    area_be.get_renewables.return_value = {}  # Empty renewables
+    study.get_areas.return_value = {"fr": None, "be": area_be}
+
+    type_data = {
+        "links": {
+            "FR": {"capacity": 140},  # FR is None in study areas
+            "BE": {"capacity": 300},  # BE has empty renewables
+        },
+        "parameters": {
+            "FC_electrolyseur": 0.5,
+        },
+    }
+
+    total_profile = create_p2g_asservi_links(study, "z_p2g_asservi", type_data, 1)
+    assert total_profile is None
+    study.create_link.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

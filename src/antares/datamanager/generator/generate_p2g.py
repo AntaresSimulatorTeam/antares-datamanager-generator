@@ -148,27 +148,49 @@ def generate_modulation_df_from_csv(
     return pd.DataFrame(data_4cols)
 
 
-def generate_profile_h2(res_clusters: dict[str, Any], area_link: Any, parameters: Any) -> pd.DataFrame:
-    fc_elec = parameters.get("FC_electrolyseur")
-    fc_enr = parameters.get("Facteur_surdimension_ENR")
-    part_pv_mix = parameters.get("Part_PV_mix")
+def generate_profile_hydro(res_clusters: Any, area_link: Any, parameters: Any) -> pd.DataFrame:
+    if not isinstance(parameters, dict):
+        parameters = {}
+    if not isinstance(area_link, dict):
+        area_link = {}
+
+    fc_elec_raw = parameters.get("FC_electrolyseur", parameters.get("fc_electrolyseur", 0.0))
+    fc_enr_raw = parameters.get(
+        "Facteur_surdimension_ENR",
+        parameters.get(
+            "Facteur_surdemension_ENR",
+            parameters.get("facteur_surdimension_enr", parameters.get("facteur_surdemension_enr", 1.0)),
+        ),
+    )
+    part_pv_mix_raw = parameters.get("Part_PV_mix", parameters.get("part_pv_mix", 0.0))
+    capacity_p2g_raw = area_link.get("capacity", 0.0)
+
+    try:
+        fc_elec = float(fc_elec_raw) if fc_elec_raw is not None else 0.0
+    except (ValueError, TypeError):
+        fc_elec = 0.0
+
+    try:
+        fc_enr = float(fc_enr_raw) if fc_enr_raw is not None else 1.0
+    except (ValueError, TypeError):
+        fc_enr = 1.0
+
+    try:
+        part_pv_mix = float(part_pv_mix_raw) if part_pv_mix_raw is not None else 0.0
+    except (ValueError, TypeError):
+        part_pv_mix = 0.0
+
+    try:
+        capacity_p2g = float(capacity_p2g_raw) if capacity_p2g_raw is not None else 0.0
+    except (ValueError, TypeError):
+        capacity_p2g = 0.0
+
     # Calcul des besoins en EnR
-    capacity_p2g = area_link.get("capacity")
     yearly_h2_production = capacity_p2g * fc_elec * EXPECTED_HOURS
     enr_supply = yearly_h2_production * fc_enr
 
     cluster_solar_pv = res_clusters.get("solar_pv")
     cluster_wind_onshore = res_clusters.get("wind_onshore")
-
-    if cluster_solar_pv is not None:
-        # Cluster trouvé
-        print(cluster_solar_pv.name, cluster_solar_pv.properties)
-    if cluster_wind_onshore is not None:
-        # Cluster trouvé
-        print(cluster_wind_onshore.name, cluster_wind_onshore.properties)
-    else:
-        # Cluster non trouvé
-        print("Cluster introuvable")
 
     # solar pv
     solar_pv_supply = part_pv_mix * enr_supply
@@ -176,20 +198,27 @@ def generate_profile_h2(res_clusters: dict[str, Any], area_link: Any, parameters
     fc_solar_pv_mean = get_mean_load_factor(cluster_solar_pv)
 
     # wind onshore
-    wind_onshore_supply = (1 - part_pv_mix) * enr_supply
+    wind_onshore_supply = (1.0 - part_pv_mix) * enr_supply
     # moyenne du facteur de charge 1GW sur l'ensemble des années Monte Carlo.
     fc_wind_onshore_mean = get_mean_load_factor(cluster_wind_onshore)
 
     # calcul des capacités ENR virtuelles
-    if fc_solar_pv_mean > 0 and fc_wind_onshore_mean > 0:
+    if fc_solar_pv_mean > 0:
         capacity_pv_virtual = solar_pv_supply / (fc_solar_pv_mean * EXPECTED_HOURS)
-        capacity_onshore_virtual = wind_onshore_supply / (fc_wind_onshore_mean * EXPECTED_HOURS)
-        # time serie avec production horaire
     else:
         capacity_pv_virtual = 0.0
+
+    if fc_wind_onshore_mean > 0:
+        capacity_onshore_virtual = wind_onshore_supply / (fc_wind_onshore_mean * EXPECTED_HOURS)
+    else:
         capacity_onshore_virtual = 0.0
+
     profile_h2 = generate_h2_profile_time_series(
-        cluster_solar_pv, cluster_wind_onshore, capacity_pv_virtual, capacity_onshore_virtual, capacity_p2g
+        cluster_solar_pv=cluster_solar_pv,
+        cluster_wind_onshore=cluster_wind_onshore,
+        capacity_pv_virtual=capacity_pv_virtual,
+        capacity_onshore_virtual=capacity_onshore_virtual,
+        capacity_p2g=capacity_p2g,
     )
     return profile_h2
 
@@ -357,15 +386,15 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         logger.info(f"Created P2G link {link_name}")
 
 
-def _accumulate_profile(total: pd.DataFrame | None, current: pd.DataFrame) -> pd.DataFrame:
-    if total is None:
-        return current.copy()
-    if total.columns.equals(current.columns):
-        return total + current
+def _combine_h2_profiles(total_profile: pd.DataFrame | None, new_profile: pd.DataFrame) -> pd.DataFrame:
+    if total_profile is None:
+        return new_profile.copy()
+    if total_profile.columns.equals(new_profile.columns):
+        return total_profile + new_profile
     return pd.DataFrame(
-        total.to_numpy() + current.to_numpy(),
-        index=total.index,
-        columns=total.columns,
+        total_profile.to_numpy() + new_profile.to_numpy(),
+        index=total_profile.index,
+        columns=total_profile.columns,
     )
 
 
@@ -373,51 +402,66 @@ def _process_single_asservi_link(
     study: Study,
     area_name: str,
     virtual_area: str,
-    area_link: Any,
+    area_link: dict[str, Any],
     area_list: Any,
     parameters: dict[str, Any],
 ) -> pd.DataFrame | None:
-    link = study.create_link(area_from=area_name, area_to=virtual_area)
-    area_data = area_list.get(area_name.lower()) if isinstance(area_list, dict) else None
+    area_data = area_list[area_name.lower()]
     if area_data is None:
+        logger.warning(f"Area {area_name} not found in study")
         return None
 
     res_clusters = area_data.get_renewables()
-    if res_clusters is None:
+    if not res_clusters:
+        logger.warning(f"No renewables found for area {area_name}")
         return None
 
-    link_time_series = generate_profile_h2(
-        res_clusters=res_clusters,
-        area_link=area_link,
-        parameters=parameters,
-    )
+    try:
+        link_time_series = generate_profile_hydro(
+            res_clusters=res_clusters,
+            area_link=area_link,
+            parameters=parameters,
+        )
+    except P2GGenerationError as e:
+        logger.warning(f"Could not generate H2 profile for area {area_name}: {e}")
+        return None
+
     if not isinstance(link_time_series, pd.DataFrame):
         link_time_series = pd.DataFrame(link_time_series)
 
+    link = study.create_link(area_from=area_name, area_to=virtual_area)
     link.set_capacity_direct(link_time_series)
-    logger.info(f"Created P2G link {area_name}-{virtual_area}")
+    link_name = f"{area_name}-{virtual_area}"
+    logger.info(f"Created P2G link {link_name}")
     return link_time_series
 
 
-def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: Any, nb_years: int) -> pd.DataFrame | None:
+def create_p2g_asservi_links(
+    study: Study, virtual_area: str, type_data: dict[str, Any], nb_years: int
+) -> pd.DataFrame | None:
     links_data = type_data.get("links", {})
-    if not links_data:
+    if not isinstance(links_data, dict) or not links_data:
         return None
 
     area_list = study.get_areas()
     parameters = type_data.get("parameters", {})
-    total_profile_h2: pd.DataFrame | None = None
+    if not isinstance(parameters, dict):
+        parameters = {}
 
+    total_profile_h2: pd.DataFrame | None = None
     for area_name, area_link in links_data.items():
-        profile = _process_single_asservi_link(
+        if not isinstance(area_link, dict):
+            continue
+
+        link_profile = _process_single_asservi_link(
             study=study,
-            area_name=area_name,
+            area_name=str(area_name),
             virtual_area=virtual_area,
             area_link=area_link,
             area_list=area_list,
             parameters=parameters,
         )
-        if profile is not None:
-            total_profile_h2 = _accumulate_profile(total_profile_h2, profile)
+        if link_profile is not None:
+            total_profile_h2 = _combine_h2_profiles(total_profile_h2, link_profile)
 
     return total_profile_h2
