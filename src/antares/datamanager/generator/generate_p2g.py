@@ -281,11 +281,14 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
     }}
     """
 
-    for p2g_type in P2G_TYPES or []:
+    for p2g_type in P2G_TYPES:
+        type_data = data_p2g.get(p2g_type)
+        if not isinstance(type_data, dict):
+            continue
+
         virtual_area = f"{AREA_PREFIX}{p2g_type}"
         area = study.create_area(area_name=virtual_area)
 
-        type_data = data_p2g.get(p2g_type)
         if p2g_type == "asservi":
             # Création des liens et récupération de la somme des profils H2
             load_series = create_p2g_asservi_links(
@@ -308,7 +311,10 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
                 load_capacity = float(type_data.get("properties", {}).get("nominal_capacity", 0.0))
                 nominal_capacity = load_capacity
             load_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), load_capacity, dtype=np.float64))
-        area.set_load(load_series)
+
+        if load_series is not None:
+            area.set_load(load_series)
+
         cost = float(type_data.get("properties", {}).get("cost", 0.0))
         cluster_thermal = area.create_thermal_cluster(
             thermal_name=virtual_area + "_" + p2g_type,
@@ -323,7 +329,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
         )
         modulation_type = type_data.get("modulation")
         if modulation_type is not None:
-            trajectory_path = data_p2g.get("market_modulation", {})
+            trajectory_path = str(data_p2g.get("market_modulation", ""))
             modulation_df = generate_modulation_df_from_csv(
                 trajectory_path=trajectory_path, modulation_name=modulation_type
             )
@@ -332,11 +338,12 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
 
 
 def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: dict[str, Any]) -> None:
-    global link_time_series
     links_data = type_data.get("links", {})
-    if not links_data:
+    if not isinstance(links_data, dict) or not links_data:
         return None
     for area_name, area_link in links_data.items():
+        if not isinstance(area_link, dict):
+            continue
         link_name = f"{area_name}-{virtual_area}"
         link = study.create_link(area_from=area_name, area_to=virtual_area)
 
@@ -345,7 +352,7 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         link_time_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), capacity, dtype=np.float64))
 
         if p2g_type == "base":
-            build_binding_constraint(study, area_name, area_link.get("fatal_band"))
+            build_binding_constraint(study, area_name, float(area_link.get("fatal_band", 0.0)))
         link.set_capacity_direct(link_time_series)
         logger.info(f"Created P2G link {link_name}")
 
