@@ -37,9 +37,9 @@ def get_mean_load_factor(res_cluster: Any) -> float:
 def generate_h2_profile_time_series(
     cluster_solar_pv: RenewableCluster,
     cluster_wind_onshore: RenewableCluster,
-    capacite_pv_virtuelle: float,
-    capacite_eol_virtuelle: float,
-    capacite_p2g: float,
+    capacity_pv_virtual: float,
+    capacity_onshore_virtual: float,
+    capacity_p2g: float,
     expected_hours: int = EXPECTED_HOURS,
 ) -> pd.DataFrame:
     """
@@ -71,17 +71,14 @@ def generate_h2_profile_time_series(
         )
 
     # 1. Calcul de Production_ENR(t)
-    # capacite_pv_virtuelle = 141 912 / (0,1132 * 8760) = 143,109
-    # capacite_eol_virtuelle = 141 912 / (0,2931 * 8760) = 55,27
-    # Production_ENR(t) = FC_PV(t) * capacite_pv_virtuelle + FC_Eol(t) * capacite_eol_virtuelle
-    production_enr = (pv_values * float(capacite_pv_virtuelle)) + (wind_values * float(capacite_eol_virtuelle))
+    production_enr = (pv_values * float(capacity_pv_virtual)) + (wind_values * float(capacity_onshore_virtual))
 
     # 2. Application du plafonnement Profil_H2(t) = min(Production_ENR(t), Capacité_P2G)
-    profil_h2_values = np.minimum(production_enr, float(capacite_p2g))
+    profile_h2_values = np.minimum(production_enr, float(capacity_p2g))
 
     # 3. Reconstruction du DataFrame avec les colonnes et l'index de cluster_wind_onshore
     return pd.DataFrame(
-        profil_h2_values,
+        profile_h2_values,
         columns=ts_wind.columns,
         index=ts_wind.index,
     )
@@ -131,14 +128,14 @@ def generate_modulation_df_from_csv(
 
     return pd.DataFrame(data_4cols)
 
-def generate_profil_H2(res_clusters: dict[str, Any], area_link: Any, parameters: Any) -> pd.DataFrame:
-    fc_electrolyseur = parameters.get("FC_electrolyseur")
-    facteur_surdimension_enr = parameters.get("Facteur_surdimension_ENR")
+def generate_profile_H2(res_clusters: dict[str, Any], area_link: Any, parameters: Any) -> pd.DataFrame:
+    fc_elec = parameters.get("FC_electrolyseur")
+    fc_enr = parameters.get("Facteur_surdimension_ENR")
     part_pv_mix = parameters.get("Part_PV_mix")
-    # Calcul des besoins en EnR
+    #Calcul des besoins en EnR
     capacity_p2g = area_link.get("capacity")
-    production_h2_annuelle = capacity_p2g * fc_electrolyseur * EXPECTED_HOURS
-    approvisionnement_enr = production_h2_annuelle * facteur_surdimension_enr
+    yearly_h2_production = capacity_p2g * fc_elec * EXPECTED_HOURS
+    enr_supply = yearly_h2_production * fc_enr
 
     cluster_solar_pv = res_clusters.get("solar_pv")
     cluster_wind_onshore = res_clusters.get("wind_onshore")
@@ -154,32 +151,27 @@ def generate_profil_H2(res_clusters: dict[str, Any], area_link: Any, parameters:
         print("Cluster introuvable")
 
     # solar pv
-    approvisionnement_pv = part_pv_mix * approvisionnement_enr
+    solar_pv_supply = part_pv_mix * enr_supply
     # moyenne du facteur de charge 1GW sur l'ensemble des années Monte Carlo.
-    FC_PV_moyen = get_mean_load_factor(cluster_solar_pv)
+    fc_solar_pv_mean = get_mean_load_factor(cluster_solar_pv)
 
     # wind onshore
-    approvisionnement_eol = (1 - part_pv_mix) * approvisionnement_enr
+    wind_onshore_supply = (1 - part_pv_mix) * enr_supply
     # moyenne du facteur de charge 1GW sur l'ensemble des années Monte Carlo.
-    FC_Eol_moyen = get_mean_load_factor(cluster_wind_onshore)
+    fc_wind_onshore_mean = get_mean_load_factor(cluster_wind_onshore)
 
     # calcul des capacités ENR virtuelles
-    # approvisionnement_ENR = 1,2 * 54 * 0,5 * 8760 = 283 824
-    #FC_PV_moyen = 0,1132
-    #FC_Eol_moyen = 0,2931
-    # approvisionnement_PV = 0,5 * 283 824 = 141 912
-    # approvisionnement_Eol = 0,5 * 283 824 = 141 912
-    if FC_PV_moyen > 0 and FC_Eol_moyen > 0:
-        capacité_pv_virtuelle = approvisionnement_pv / (FC_PV_moyen * EXPECTED_HOURS)
-        capacité_eol_virtuelle = approvisionnement_eol / (FC_Eol_moyen * EXPECTED_HOURS)
+    if fc_solar_pv_mean > 0 and fc_wind_onshore_mean > 0:
+        capacity_pv_virtual = solar_pv_supply / (fc_solar_pv_mean * EXPECTED_HOURS)
+        capacity_onshore_virtual = wind_onshore_supply / (fc_wind_onshore_mean * EXPECTED_HOURS)
         # time serie avec production horaire
     else:
-        capacité_pv_virtuelle = 0.0
-        capacité_eol_virtuelle = 0.0
-    profil_H2 = generate_h2_profile_time_series(
-        cluster_solar_pv, cluster_wind_onshore, capacité_pv_virtuelle, capacité_eol_virtuelle, capacity_p2g
+        capacity_pv_virtual = 0.0
+        capacity_onshore_virtual = 0.0
+    profile_h2 = generate_h2_profile_time_series(
+        cluster_solar_pv, cluster_wind_onshore, capacity_pv_virtual, capacity_onshore_virtual, capacity_p2g
     )
-    return profil_H2
+    return profile_h2
 
 
 def compute_total_links_capacity(links_data: dict[str, Any] | None) -> float:
@@ -343,13 +335,12 @@ def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[st
     if not links_data:
         return None
     area_list = study.get_areas()
-    total_profil_h2: pd.DataFrame | None = None
+    total_profile_h2: pd.DataFrame | None = None
     for area_name, area_link in links_data.items():
         link_name = f"{area_name}-{virtual_area}"
         link = study.create_link(area_from=area_name, area_to=virtual_area)
 
         # Profil H2 par lien
-        # solar_pv et wind_onshore
         # Génération du profil H2 (8760 x N colonnes) pour ce pays
         area_data = area_list[area_name.lower()]
         if area_data is None:
@@ -358,7 +349,7 @@ def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[st
         if res_clusters is None:
             continue
         else: 
-            link_time_series = generate_profil_H2(
+            link_time_series = generate_profile_H2(
                 res_clusters=res_clusters,
                 area_link=area_link,
                 parameters=type_data.get("parameters", {})
@@ -367,16 +358,16 @@ def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[st
                 link_time_series = pd.DataFrame(link_time_series)
             link.set_capacity_direct(link_time_series)
             # Somme matricielle des profils H2 de chaque pays
-            if total_profil_h2 is None:
-                total_profil_h2 = link_time_series.copy()
+            if total_profile_h2 is None:
+                total_profile_h2 = link_time_series.copy()
             else:
-                if total_profil_h2.columns.equals(link_time_series.columns):
-                    total_profil_h2 = total_profil_h2 + link_time_series
+                if total_profile_h2.columns.equals(link_time_series.columns):
+                    total_profile_h2 = total_profile_h2 + link_time_series
                 else:
-                    total_profil_h2 = pd.DataFrame(
-                        total_profil_h2.to_numpy() + link_time_series.to_numpy(),
-                        index=total_profil_h2.index,
-                        columns=total_profil_h2.columns,
+                    total_profile_h2 = pd.DataFrame(
+                        total_profile_h2.to_numpy() + link_time_series.to_numpy(),
+                        index=total_profile_h2.index,
+                        columns=total_profile_h2.columns,
                     )
             logger.info(f"Created P2G link {link_name}")
-    return total_profil_h2
+    return total_profile_h2
