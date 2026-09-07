@@ -355,8 +355,7 @@ def _generate_scenarised_thermal_series(
 
     # 1. Verification of thermal items
     if "z_p2g_asservi" in normalized_thermal or "*@z_p2g_asservi" in normalized_thermal:
-        # TODO: Handle z_p2g_asservi scenario generation
-        logger.info("Handling for 'z_p2g_asservi' in Thermal scenario builder is not yet implemented.")
+        _generate_z_p2g_asservi_thermal_clusters_scenario(sb, study, study_data)
 
     if any(
         item
@@ -456,16 +455,23 @@ def _generate_nuclear_modulation_binding_constraints_scenario(
         logger.warning("No group defined in nuclear_modulation_binding_constraints.")
 
 
-def _generate_nuclear_thermal_clusters_scenario(
-    sb: "ScenarioBuilder", study: Study, study_data: StudyData, area_name: str = "fr"
+def _generate_area_thermal_clusters_scenario(
+    sb: "ScenarioBuilder",
+    study: Study,
+    study_data: StudyData,
+    area_name: str,
+    target_group: str | None = None,
 ) -> None:
     """
-    Generate scenario for all thermal clusters of group 'nuclear' for the specified area.
+    Generate scenario for thermal clusters for the specified area.
+    If target_group is specified, only clusters belonging to that group are processed.
+    Otherwise, all thermal clusters in the area are processed.
     The nb_ts for each cluster is the number of columns of its availability timeseries.
     """
+    group_label = f"{target_group} " if target_group else ""
     areas = study.get_areas()
     if not areas:
-        logger.warning(f"No areas found in study to apply nuclear {area_name} scenario.")
+        logger.warning(f"No areas found in study to apply {group_label}{area_name} scenario.")
         return
 
     clean_target_name = transform_name_to_id(area_name)
@@ -485,7 +491,7 @@ def _generate_nuclear_thermal_clusters_scenario(
             break
 
     if not target_area or not target_area_id:
-        logger.warning(f"{area_name} area not found in study to apply nuclear {area_name} scenario.")
+        logger.warning(f"{area_name} area not found in study to apply {group_label}{area_name} scenario.")
         return
 
     if not hasattr(target_area, "get_thermals"):
@@ -513,13 +519,14 @@ def _generate_nuclear_thermal_clusters_scenario(
     thermals_clusters_data = area_thermals_data if isinstance(area_thermals_data, dict) else {}
 
     for cluster_id, cluster_obj in thermals.items():
-        group = ""
-        props = getattr(cluster_obj, "properties", None)
-        if props is not None and hasattr(props, "group") and props.group:
-            group = str(props.group).replace("_", "").replace(" ", "").lower()
+        if target_group is not None:
+            group = ""
+            props = getattr(cluster_obj, "properties", None)
+            if props is not None and hasattr(props, "group") and props.group:
+                group = str(props.group).replace("_", "").replace(" ", "").lower()
 
-        if group != "nuclear":
-            continue
+            if group != target_group.lower():
+                continue
 
         nb_ts = 0
 
@@ -538,7 +545,7 @@ def _generate_nuclear_thermal_clusters_scenario(
                         df = pd.read_feather(file_path)
                         nb_ts = df.shape[1]
                     except Exception as e:
-                        logger.error(f"Failed to read file {file_path} for nuclear cluster {cluster_id}: {e}")
+                        logger.error(f"Failed to read file {file_path} for thermal cluster {cluster_id}: {e}")
 
         # 2. Fallback to get_series_matrix from cluster_obj if available
         if nb_ts == 0 and hasattr(cluster_obj, "get_series_matrix"):
@@ -551,17 +558,37 @@ def _generate_nuclear_thermal_clusters_scenario(
 
         if nb_ts == 0:
             logger.warning(
-                f"Could not determine number of TS for nuclear cluster '{cluster_id}'. Using default value 1."
+                f"Could not determine number of TS for thermal cluster '{cluster_id}'. Using default value 1."
             )
             nb_ts = 1
 
         scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
         logger.info(
-            f"Applying nuclear thermal scenario series of length {len(scenario_series)} "
+            f"Applying {group_label}thermal scenario series of length {len(scenario_series)} "
             f"(nb_ts={nb_ts}) to {area_name} cluster '{cluster_id}'."
         )
         sb.thermal.get_cluster(target_area_id, cluster_id).set_new_scenario(scenario_series)
+
+
+def _generate_nuclear_thermal_clusters_scenario(
+    sb: "ScenarioBuilder", study: Study, study_data: StudyData, area_name: str = "fr"
+) -> None:
+    """
+    Generate scenario for all thermal clusters of group 'nuclear' for the specified area.
+    The nb_ts for each cluster is the number of columns of its availability timeseries.
+    """
+    _generate_area_thermal_clusters_scenario(sb, study, study_data, area_name=area_name, target_group="nuclear")
+
+
+def _generate_z_p2g_asservi_thermal_clusters_scenario(
+    sb: "ScenarioBuilder", study: Study, study_data: StudyData, area_name: str = "z_p2g_asservi"
+) -> None:
+    """
+    Generate scenario for all thermal clusters for the area z_p2g_asservi.
+    The nb_ts for each cluster is the number of columns of its availability timeseries.
+    """
+    _generate_area_thermal_clusters_scenario(sb, study, study_data, area_name=area_name, target_group=None)
 
 
 def _generate_nuclear_fr_thermal_clusters_scenario(sb: "ScenarioBuilder", study: Study, study_data: StudyData) -> None:

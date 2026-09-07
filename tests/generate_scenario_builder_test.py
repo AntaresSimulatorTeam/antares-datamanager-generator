@@ -914,6 +914,172 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_fallback_de
     mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 1, 1])
 
 
+@patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
+@patch("antares.datamanager.generator.generate_scenario_builder.settings")
+def test_generate_scenario_builder_thermal_z_p2g_asservi_clusters_from_feather(mock_settings, mock_read_feather):
+    mock_settings.nuclear_availability_ts_directory = Path("/tmp/nuclear_ts")
+
+    df_cluster1 = MagicMock()
+    df_cluster1.shape = (8760, 4)
+    df_cluster2 = MagicMock()
+    df_cluster2.shape = (8760, 2)
+
+    def read_feather_side_effect(path):
+        if "p2g_cluster1.arrow" in str(path):
+            return df_cluster1
+        elif "p2g_cluster2.arrow" in str(path):
+            return df_cluster2
+        return MagicMock()
+
+    mock_read_feather.side_effect = read_feather_side_effect
+
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+    sb = MagicMock()
+    mock_thermal_cluster_1 = MagicMock()
+    mock_thermal_cluster_2 = MagicMock()
+    mock_thermal_cluster_fr = MagicMock()
+
+    def get_cluster_side_effect(area_id, cluster_id):
+        if cluster_id == "p2g_1":
+            return mock_thermal_cluster_1
+        elif cluster_id == "p2g_2":
+            return mock_thermal_cluster_2
+        return mock_thermal_cluster_fr
+
+    sb.thermal.get_cluster.side_effect = get_cluster_side_effect
+    study.get_scenario_builder.return_value = sb
+
+    # Area z_p2g_asservi with multiple thermal groups (all groups should be scenarized)
+    mock_p2g_area = MagicMock()
+    mock_p2g_area.id = "z_p2g_asservi"
+    mock_p2g_area.name = "z_p2g_asservi"
+
+    cluster_1 = MagicMock()
+    cluster_1.properties.group = "gas"
+    cluster_2 = MagicMock()
+    cluster_2.properties.group = "other"
+
+    mock_p2g_area.get_thermals.return_value = {
+        "p2g_1": cluster_1,
+        "p2g_2": cluster_2,
+    }
+
+    # Area FR (should not be touched)
+    mock_fr_area = MagicMock()
+    mock_fr_area.id = "fr"
+    mock_fr_area.name = "FR"
+    cluster_fr = MagicMock()
+    cluster_fr.properties.group = "nuclear"
+    mock_fr_area.get_thermals.return_value = {"fr_cluster": cluster_fr}
+
+    study.get_areas.return_value = {"z_p2g_asservi": mock_p2g_area, "fr": mock_fr_area}
+
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Thermal": ["*@z_p2g_asservi"]},
+        area_thermals={
+            "z_p2g_asservi": {
+                "p2g_1": {"series": "p2g_cluster1.arrow"},
+                "p2g_2": {"series": "p2g_cluster2.arrow"},
+            }
+        },
+    )
+
+    with patch("antares.datamanager.generator.generate_scenario_builder.Path.exists", return_value=True):
+        generate_scenario_builder(study, study_data, set())
+
+    # Cluster 1: nb_ts = 4 -> scenario for 5 years: [1, 2, 3, 4, 1]
+    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 2, 3, 4, 1])
+    # Cluster 2: nb_ts = 2 -> scenario for 5 years: [1, 2, 1, 2, 1]
+    mock_thermal_cluster_2.set_new_scenario.assert_called_with([1, 2, 1, 2, 1])
+    # Cluster in FR should not be called
+    mock_thermal_cluster_fr.set_new_scenario.assert_not_called()
+
+
+def test_generate_scenario_builder_thermal_z_p2g_asservi_clusters_from_matrix():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
+    sb = MagicMock()
+    mock_thermal_cluster_1 = MagicMock()
+    sb.thermal.get_cluster.return_value = mock_thermal_cluster_1
+    study.get_scenario_builder.return_value = sb
+
+    mock_p2g_area = MagicMock()
+    mock_p2g_area.id = "z_p2g_asservi"
+    mock_p2g_area.name = "z_p2g_asservi"
+
+    cluster_1 = MagicMock()
+    cluster_1.properties.group = "custom_group"
+    matrix_mock = MagicMock()
+    matrix_mock.shape = (8760, 3)
+    cluster_1.get_series_matrix.return_value = matrix_mock
+
+    mock_p2g_area.get_thermals.return_value = {"p2g_1": cluster_1}
+    study.get_areas.return_value = {"z_p2g_asservi": mock_p2g_area}
+
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"thermal": ["z_p2g_asservi"]},
+        area_thermals={},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    # nb_ts = 3 -> scenario for 5 years: [1, 2, 3, 1, 2]
+    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 2, 3, 1, 2])
+    sb.thermal.get_cluster.assert_called_with("z_p2g_asservi", "p2g_1")
+
+
+def test_generate_scenario_builder_thermal_z_p2g_asservi_clusters_fallback_default_1():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 3
+
+    sb = MagicMock()
+    mock_thermal_cluster_1 = MagicMock()
+    sb.thermal.get_cluster.return_value = mock_thermal_cluster_1
+    study.get_scenario_builder.return_value = sb
+
+    mock_p2g_area = MagicMock()
+    mock_p2g_area.id = "z_p2g_asservi"
+    mock_p2g_area.name = "z_p2g_asservi"
+
+    cluster_1 = MagicMock()
+    cluster_1.properties.group = "gas"
+    cluster_1.get_series_matrix.return_value = None
+
+    mock_p2g_area.get_thermals.return_value = {"p2g_1": cluster_1}
+    study.get_areas.return_value = {"z_p2g_asservi": mock_p2g_area}
+
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Thermal": ["z_p2g_asservi"]},
+        area_thermals={},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    # nb_ts fallback = 1 -> scenario for 3 years: [1, 1, 1]
+    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 1, 1])
+
+
+def test_generate_scenario_builder_thermal_z_p2g_asservi_area_not_found():
+    study = MagicMock()
+    sb = MagicMock()
+    study.get_scenario_builder.return_value = sb
+    study.get_areas.return_value = {}
+
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Thermal": ["*@z_p2g_asservi"]},
+        area_thermals={},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+    sb.thermal.get_cluster.assert_not_called()
+
+
 def test_generate_scenario_builder_links_from_study_link():
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 6
