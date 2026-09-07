@@ -68,6 +68,7 @@ requests-mock==1.12.1
 ruff==0.11.12
 setuptools-scm==8.1.0
 six==1.17.0
+sklearn-pmml-model==1.0.8
 tox==4.25.0
 tox-uv==1.25.0
 types-psutil==7.0.0.20250601
