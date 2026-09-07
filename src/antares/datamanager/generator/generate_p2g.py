@@ -40,7 +40,7 @@ BINDING_CONSTRAINT_HOURLY_ROWS = 8784
 EXPECTED_HOURS = 8760
 
 
-def _build_area_properties(properties_json: dict[str, Any]) -> AreaProperties | None:
+def _build_area_properties(properties_json: dict[str, Any] | None) -> AreaProperties | None:
     if not isinstance(properties_json, dict):
         return None
 
@@ -329,6 +329,8 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any]) -> None:
 
         virtual_area = f"{AREA_PREFIX}{p2g_type}"
         area_props = type_data.get("properties")
+        if not isinstance(area_props, dict):
+            area_props = {}
         nominal_capacity = area_props.get("nominal_capacity", 0.0)
         cost = area_props.get("cost", 0.0)
         area_properties = _build_area_properties(area_props)
