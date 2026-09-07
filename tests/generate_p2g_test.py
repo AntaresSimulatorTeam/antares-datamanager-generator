@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 
 from antares.craft import (
+    AdequacyPatchMode,
+    AreaProperties,
     BindingConstraintFrequency,
     BindingConstraintOperator,
     LinkData,
@@ -26,10 +28,12 @@ from antares.craft import (
 from antares.craft.model.renewable import RenewableCluster
 from antares.datamanager.exceptions.exceptions import P2GGenerationError
 from antares.datamanager.generator.generate_p2g import (
+    AREA_PREFIX,
     BINDING_CONSTRAINT_HOURLY_ROWS,
     EXPECTED_HOURS,
     P2G_FATAL_BAND_PREFIX,
     P2G_TYPES,
+    _build_area_properties,
     build_binding_constraint,
     compute_total_links_capacity,
     create_p2g_asservi_links,
@@ -48,6 +52,32 @@ def _make_mock_res_cluster(time_series: pd.DataFrame | None, name: str = "cluste
     cluster.properties = {}
     cluster.get_timeseries.return_value = time_series
     return cluster
+
+
+# ---------------------------------------------------------------------------
+# Tests: _build_area_properties
+# ---------------------------------------------------------------------------
+
+
+def test_build_area_properties():
+    assert _build_area_properties(None) is None
+    assert _build_area_properties("not_a_dict") is None
+
+    empty_props = _build_area_properties({})
+    assert isinstance(empty_props, AreaProperties)
+
+    props_dict = {
+        "energy_cost_unsupplied": 3000.0,
+        "energy_cost_spilled": 0.0,
+        "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
+        "nominal_capacity": 4000,
+        "cost": 78.0,
+    }
+    props = _build_area_properties(props_dict)
+    assert isinstance(props, AreaProperties)
+    assert props.energy_cost_unsupplied == 3000.0
+    assert props.energy_cost_spilled == 0.0
+    assert props.adequacy_patch_mode == AdequacyPatchMode.VIRTUAL
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +275,7 @@ def test_generate_profile_H2_nominal():
     assert (result.to_numpy() <= 1000.0).all()
 
 
-def test_generate_profile_h2_spelling_variation_and_aliases():
+def test_generate_profile_h2_default_parameters():
     df_pv = pd.DataFrame({"s1": [0.2] * EXPECTED_HOURS})
     df_wind = pd.DataFrame({"s1": [0.4] * EXPECTED_HOURS})
     cluster_pv = _make_mock_res_cluster(df_pv, name="solar_pv")
@@ -253,17 +283,24 @@ def test_generate_profile_h2_spelling_variation_and_aliases():
 
     res_clusters = {"solar_pv": cluster_pv, "wind_onshore": cluster_wind}
     area_link = {"capacity": 500.0}
-    parameters = {
-        "FC_electrolyseur": 0.5,
-        "Facteur_surdemension_ENR": 1.2,
+
+    # Parameters with missing or non-float values use default values (fc_elec=0.0 -> profile is 0)
+    parameters_missing = {
+        "Facteur_surdimension_ENR": 1.2,
         "Part_PV_mix": 0.5,
     }
+    result = generate_profile_hydro(res_clusters, area_link, parameters_missing)
+    assert result.shape == (EXPECTED_HOURS, 1)
+    assert np.all(result.to_numpy() == 0.0)
 
-    result1 = generate_profile_hydro(res_clusters, area_link, parameters)
-    result2 = generate_profile_hydro(res_clusters, area_link, parameters)
-
-    assert result1.shape == (EXPECTED_HOURS, 1)
-    assert np.allclose(result1.to_numpy(), result2.to_numpy())
+    parameters_invalid = {
+        "FC_electrolyseur": "not_a_number",
+        "Facteur_surdimension_ENR": "invalid",
+        "Part_PV_mix": "invalid",
+    }
+    result_invalid = generate_profile_hydro(res_clusters, area_link, parameters_invalid)
+    assert result_invalid.shape == (EXPECTED_HOURS, 1)
+    assert np.all(result_invalid.to_numpy() == 0.0)
 
 
 def test_generate_profile_h2_cluster_discovery_by_group():
@@ -353,7 +390,7 @@ def test_build_binding_constraint():
 
 def test_create_p2g_links_empty():
     study = MagicMock(spec=Study)
-    assert create_p2g_links(study, "z_p2g_base", "base", {}) is None
+    assert create_p2g_links(study, f"{AREA_PREFIX}base", "base", {}) is None
     study.create_link.assert_not_called()
 
 
@@ -369,7 +406,7 @@ def test_create_p2g_links_base():
         }
     }
 
-    create_p2g_links(study, "z_p2g_base", "base", type_data)
+    create_p2g_links(study, f"{AREA_PREFIX}base", "base", type_data)
 
     assert study.create_link.call_count == 2
     assert study.create_binding_constraint.call_count == 2
@@ -387,9 +424,9 @@ def test_create_p2g_links_non_base():
         }
     }
 
-    create_p2g_links(study, "z_p2g_marg", "marg", type_data)
+    create_p2g_links(study, f"{AREA_PREFIX}marg", "marg", type_data)
 
-    study.create_link.assert_called_once_with(area_from="FR", area_to="z_p2g_marg")
+    study.create_link.assert_called_once_with(area_from="FR", area_to=f"{AREA_PREFIX}marg")
     mock_link.set_capacity_direct.assert_called_once()
     study.create_binding_constraint.assert_not_called()
 
@@ -401,7 +438,7 @@ def test_create_p2g_links_non_base():
 
 def test_create_p2g_asservi_links_empty():
     study = MagicMock(spec=Study)
-    assert create_p2g_asservi_links(study, "z_p2g_asservi", {}, 1) is None
+    assert create_p2g_asservi_links(study, f"{AREA_PREFIX}asservi", {}) is None
 
 
 def test_create_p2g_asservi_links_success():
@@ -435,7 +472,7 @@ def test_create_p2g_asservi_links_success():
         },
     }
 
-    total_profile = create_p2g_asservi_links(study, "z_p2g_asservi", type_data, 1)
+    total_profile = create_p2g_asservi_links(study, f"{AREA_PREFIX}asservi", type_data)
 
     assert study.create_link.call_count == 2
     assert mock_link.set_capacity_direct.call_count == 2
@@ -464,12 +501,12 @@ def test_create_p2g_asservi_links_case_insensitive_areas():
         },
         "parameters": {
             "FC_electrolyseur": 0.5,
-            "Facteur_surdemension_ENR": 1.2,
+            "Facteur_surdimension_ENR": 1.2,
             "Part_PV_mix": 0.5,
         },
     }
 
-    total_profile = create_p2g_asservi_links(study, "z_p2g_asservi", type_data, 1)
+    total_profile = create_p2g_asservi_links(study, f"{AREA_PREFIX}asservi", type_data)
     assert study.create_link.call_count == 1
     assert mock_link.set_capacity_direct.call_count == 1
     assert total_profile is not None
@@ -488,10 +525,12 @@ def test_create_p2g_asservi_links_missing_area_or_renewables():
         },
         "parameters": {
             "FC_electrolyseur": 0.5,
+            "Facteur_surdimension_ENR": 1.2,
+            "Part_PV_mix": 0.5,
         },
     }
 
-    total_profile = create_p2g_asservi_links(study, "z_p2g_asservi", type_data, 1)
+    total_profile = create_p2g_asservi_links(study, f"{AREA_PREFIX}asservi", type_data)
     assert total_profile is None
     study.create_link.assert_not_called()
 
@@ -523,21 +562,37 @@ def test_generate_p2g_complete(mock_gen_modulation):
     data_p2g = {
         "market_modulation": "modulation.csv",
         "base": {
-            "properties": {"nominal_capacity": 4000, "cost": 78.0},
+            "properties": {
+                "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
+                "nominal_capacity": 4000,
+                "cost": 78.0,
+            },
             "modulation": "H2",
             "links": {"FR": {"capacity": 1500, "fatal_band": 300}},
         },
         "marg": {
-            "properties": {"nominal_capacity": 5000, "cost": 78.0},
+            "properties": {
+                "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
+                "nominal_capacity": 5000,
+                "cost": 78.0,
+            },
             "modulation": "Gas",
             "links": {"FR": {"capacity": 250}},
         },
         "methanation": {
-            "properties": {"nominal_capacity": 3890, "cost": 78.0},
+            "properties": {
+                "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
+                "nominal_capacity": 3890,
+                "cost": 78.0,
+            },
             "links": {"FR": {"capacity": 300}},
         },
         "asservi": {
-            "properties": {"nominal_capacity": 2500, "cost": 78.0},
+            "properties": {
+                "adequacy_patch_mode": AdequacyPatchMode.OUTSIDE,
+                "nominal_capacity": 2500,
+                "cost": 78.0,
+            },
             "modulation": "H2",
             "links": {"FR": {"capacity": 140}},
             "parameters": {
@@ -548,10 +603,15 @@ def test_generate_p2g_complete(mock_gen_modulation):
         },
     }
 
-    generate_p2g(study=study, data_p2g=data_p2g, nb_years=1)
+    generate_p2g(study=study, data_p2g=data_p2g)
 
     # 4 virtual areas should be created
     assert study.create_area.call_count == len(P2G_TYPES)
+    # Verify properties passed to create_area
+    created_area_names = [call.kwargs.get("area_name") for call in study.create_area.call_args_list]
+    for p2g_type in P2G_TYPES:
+        assert f"{AREA_PREFIX}{p2g_type}" in created_area_names
+
     # Check thermal clusters
     assert mock_area.create_thermal_cluster.call_count == len(P2G_TYPES)
     # Check set_load called for each virtual area

@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from antares.craft import (
+    AreaProperties,
     BindingConstraintFrequency,
     BindingConstraintOperator,
     BindingConstraintProperties,
@@ -32,11 +33,24 @@ from antares.datamanager.logs.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
-AREA_PREFIX = "z_p2g_"
+AREA_PREFIX = "z_P2G_"
 P2G_TYPES = {"base", "marg", "methanation", "asservi"}
 P2G_FATAL_BAND_PREFIX = "P2G_fatalband_"
 BINDING_CONSTRAINT_HOURLY_ROWS = 8784
 EXPECTED_HOURS = 8760
+
+
+def _build_area_properties(properties_json: dict[str, Any]) -> AreaProperties | None:
+    if not isinstance(properties_json, dict):
+        return None
+
+    props = {}
+    for key in ["energy_cost_unsupplied", "energy_cost_spilled", "adequacy_patch_mode"]:
+        val = properties_json.get(key)
+        if val is not None:
+            props[key] = val
+
+    return AreaProperties(**props)
 
 
 def get_mean_load_factor(res_cluster: Any) -> float:
@@ -93,11 +107,11 @@ def generate_h2_profile_time_series(
     production_enr = (pv_values * float(capacity_pv_virtual)) + (wind_values * float(capacity_onshore_virtual))
 
     # 2. Application du plafonnement Profil_H2(t) = min(Production_ENR(t), Capacité_P2G)
-    profile_h2_values = np.minimum(production_enr, float(capacity_p2g))
+    profile_h2_values = np.minimum(production_enr, capacity_p2g)
 
     # 3. Reconstruction du DataFrame avec les colonnes et l'index de cluster_wind_onshore
     return pd.DataFrame(
-        profile_h2_values,
+        profile_h2_values.round(),
         columns=ts_wind.columns,
         index=ts_wind.index,
     )
@@ -154,15 +168,9 @@ def generate_profile_hydro(res_clusters: Any, area_link: Any, parameters: Any) -
     if not isinstance(area_link, dict):
         area_link = {}
 
-    fc_elec_raw = parameters.get("FC_electrolyseur", parameters.get("fc_electrolyseur", 0.0))
-    fc_enr_raw = parameters.get(
-        "Facteur_surdimension_ENR",
-        parameters.get(
-            "Facteur_surdemension_ENR",
-            parameters.get("facteur_surdimension_enr", parameters.get("facteur_surdemension_enr", 1.0)),
-        ),
-    )
-    part_pv_mix_raw = parameters.get("Part_PV_mix", parameters.get("part_pv_mix", 0.0))
+    fc_elec_raw = parameters.get("FC_electrolyseur")
+    fc_enr_raw = parameters.get("Facteur_surdimension_ENR")
+    part_pv_mix_raw = parameters.get("Part_PV_mix")
     capacity_p2g_raw = area_link.get("capacity", 0.0)
 
     try:
@@ -253,13 +261,14 @@ def build_binding_constraint(study: Study, area_name: str, capacity: float) -> N
     logger.info(f"Created P2G base binding constraint {constraint_name}")
 
 
-def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
+def generate_p2g(study: Study, data_p2g: dict[str, Any]) -> None:
     """
     Expected P2G JSON
     data = {"p2g": {
-      "market_modulation": "FE60_liv1_saME/MB_MC_modulation_FE60_liv1_saME_2027.csv",
+      "market_modulation": "thermal/economic parameters/market_bid_marg_cost_modulation/FE60_liv1_saME/MB_MC_modulation_FE60_liv1_saME_2027.csv",
       "base": {
         "properties": {
+          "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
           "nominal_capacity": 4000,
           "cost": 78.00
         },
@@ -271,6 +280,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
       },
       "marg": {
         "properties": {
+          "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
           "nominal_capacity": 5000,
           "cost": 78.00
         },
@@ -282,6 +292,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
       },
       "methanation": {
         "properties": {
+          "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
           "nominal_capacity": 3890,
           "cost": 78.00
         },
@@ -293,6 +304,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
       },
       "asservi": {
         "properties": {
+          "adequacy_patch_mode": AdequacyPatchMode.OUTSIDE,
           "nominal_capacity": 2500,
           "cost": 78.00
         },
@@ -316,14 +328,15 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
             continue
 
         virtual_area = f"{AREA_PREFIX}{p2g_type}"
-        area = study.create_area(area_name=virtual_area)
+        area_props = type_data.get("properties")
+        nominal_capacity = area_props.get("nominal_capacity", 0.0)
+        cost = area_props.get("cost", 0.0)
+        area_properties = _build_area_properties(area_props)
+        area = study.create_area(area_name=virtual_area, properties=area_properties)
 
         if p2g_type == "asservi":
             # Création des liens et récupération de la somme des profils H2
-            load_series = create_p2g_asservi_links(
-                study=study, virtual_area=virtual_area, type_data=type_data, nb_years=nb_years
-            )
-            nominal_capacity = float(type_data.get("properties", {}).get("nominal_capacity", 0.0))
+            load_series = create_p2g_asservi_links(study=study, virtual_area=virtual_area, type_data=type_data)
         else:
             # Profil de charge constant basé sur nominal_capacity (8760 x 1)
             create_p2g_links(
@@ -335,16 +348,14 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], nb_years: int) -> None:
             if p2g_type == "base":
                 link_data = type_data.get("links")
                 load_capacity = compute_total_links_capacity(link_data)
-                nominal_capacity = float(type_data.get("properties", {}).get("nominal_capacity", 0.0))
             else:
-                load_capacity = float(type_data.get("properties", {}).get("nominal_capacity", 0.0))
-                nominal_capacity = load_capacity
-            load_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), load_capacity, dtype=np.float64))
+                load_capacity = nominal_capacity
+            load_capacity_round = round(load_capacity, 0)
+            load_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), load_capacity_round, dtype=np.float64))
 
         if load_series is not None:
             area.set_load(load_series)
 
-        cost = float(type_data.get("properties", {}).get("cost", 0.0))
         cluster_thermal = area.create_thermal_cluster(
             thermal_name=virtual_area + "_" + p2g_type,
             properties=ThermalClusterProperties(
@@ -377,13 +388,14 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         link = study.create_link(area_from=area_name, area_to=virtual_area)
 
         # Multiplier le tableau de 1 par la valeur souhaitée
-        capacity = float(area_link.get("capacity", 0.0))
+        capacity = round(area_link.get("capacity", 0.0), 0)
         link_time_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), capacity, dtype=np.float64))
 
         if p2g_type == "base":
-            build_binding_constraint(study, area_name, float(area_link.get("fatal_band", 0.0)))
+            build_binding_constraint(study, area_name, round(area_link.get("fatal_band", 0.0), 0))
         link.set_capacity_direct(link_time_series)
         logger.info(f"Created P2G link {link_name}")
+    return None
 
 
 def _combine_h2_profiles(total_profile: pd.DataFrame | None, new_profile: pd.DataFrame) -> pd.DataFrame:
@@ -436,9 +448,7 @@ def _process_single_asservi_link(
     return link_time_series
 
 
-def create_p2g_asservi_links(
-    study: Study, virtual_area: str, type_data: dict[str, Any], nb_years: int
-) -> pd.DataFrame | None:
+def create_p2g_asservi_links(study: Study, virtual_area: str, type_data: dict[str, Any]) -> pd.DataFrame | None:
     links_data = type_data.get("links", {})
     if not isinstance(links_data, dict) or not links_data:
         return None

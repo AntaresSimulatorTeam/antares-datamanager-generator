@@ -529,7 +529,7 @@ def test_generate_study_calls_p2g_when_present(
 
     generate_study("dummy_id", mock_factory)
 
-    mock_generate_p2g.assert_called_once_with(mock_study, p2g_data, 5)
+    mock_generate_p2g.assert_called_once_with(mock_study, p2g_data)
     mock_study.generate_thermal_timeseries.assert_called_once_with(5)
 
 

@@ -81,7 +81,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
 
         add_areas_to_study(study, study_data, used_files)
         if study_data.p2g:
-            generate_p2g(study, study_data.p2g, study.get_settings().general_parameters.nb_years)
+            generate_p2g(study, study_data.p2g)
         if study_data.nuclear_modulation_binding_constraints:
             generate_nuclear_modulation_binding_constraints(
                 study, study_data.nuclear_modulation_binding_constraints, used_files
