@@ -34,6 +34,7 @@ from antares.datamanager.logs.logging_setup import get_logger
 logger = get_logger(__name__)
 
 AREA_PREFIX = "z_P2G_"
+LINK_PREFIX = "z_p2g_"
 P2G_TYPES = {"base", "marg", "methanation", "asservi"}
 P2G_FATAL_BAND_PREFIX = "P2G_fatalband_"
 BINDING_CONSTRAINT_HOURLY_ROWS = 8784
@@ -359,7 +360,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any]) -> None:
             area.set_load(load_series)
 
         cluster_thermal = area.create_thermal_cluster(
-            thermal_name=virtual_area + "_" + p2g_type,
+            thermal_name=virtual_area.lower() + "_" + p2g_type,
             properties=ThermalClusterProperties(
                 nominal_capacity=nominal_capacity,
                 unit_count=1,
