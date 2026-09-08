@@ -212,7 +212,7 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
     fb001_kwargs = calls_by_name["FB001"]
     assert fb001_kwargs["properties"].time_step == BindingConstraintFrequency.HOURLY
     assert fb001_kwargs["properties"].operator == BindingConstraintOperator.LESS
-    assert fb001_kwargs["properties"].group == "flowbased_fb2"
+    assert fb001_kwargs["properties"].group == "flowbased-fb2"
 
     terms_by_link = {(t.data.area1, t.data.area2): t.weight for t in fb001_kwargs["terms"]}
     assert terms_by_link == {("fr", "zz_flowbased"): -1.0, ("ch", "fr"): 1.0}
@@ -265,7 +265,7 @@ def test_generate_flowbased_read_binding_constraints_builds_expected_rhs(mock_se
     fb001_kwargs = calls_by_name["FB001"]
     assert fb001_kwargs["properties"].time_step == BindingConstraintFrequency.HOURLY
     assert fb001_kwargs["properties"].operator == BindingConstraintOperator.LESS
-    assert fb001_kwargs["properties"].group == "flowbased_fb2"
+    assert fb001_kwargs["properties"].group == "flowbased-fb2"
 
     terms_by_link = {(t.data.area1, t.data.area2): t.weight for t in fb001_kwargs["terms"]}
     assert terms_by_link == {("fr", "zz_flowbased"): -1.0, ("ch", "fr"): 1.0}
@@ -297,7 +297,7 @@ def test_generate_flowbased_binding_constraints_wires_scenario_builder(mock_sett
     )
 
     group_matrix = study.get_scenario_builder.return_value.binding_constraint.get_group.return_value
-    study.get_scenario_builder.return_value.binding_constraint.get_group.assert_called_once_with("flowbased_fb2")
+    study.get_scenario_builder.return_value.binding_constraint.get_group.assert_called_once_with("flowbased-fb2")
     # nb_years=5, n_columns=2 -> [0 % 2, 1 % 2, 2 % 2, 3 % 2, 4 % 2]
     group_matrix.set_new_scenario.assert_called_once_with([0, 1, 0, 1, 0])
     study.set_scenario_builder.assert_called_once_with(study.get_scenario_builder.return_value)
