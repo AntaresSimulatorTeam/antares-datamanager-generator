@@ -421,7 +421,7 @@ def _process_single_asservi_link(
     area_list: Any,
     parameters: dict[str, Any],
 ) -> pd.DataFrame | None:
-    area_data = area_list[area_name.lower()]
+    area_data = area_list.get(area_name.lower())
     if area_data is None:
         logger.warning(f"Area {area_name} not found in study")
         return None
