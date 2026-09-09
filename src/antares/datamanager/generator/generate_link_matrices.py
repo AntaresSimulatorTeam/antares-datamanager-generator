@@ -226,3 +226,34 @@ def generate_link_parameters_df(hurdle_cost: float) -> pd.DataFrame:
     data = np.concatenate([first_two, last_four], axis=1)
     df = pd.DataFrame(data)
     return df
+
+
+def generate_constant_link_capacity_df(capacity: float | int | dict[str, Any] = 0.0) -> pd.DataFrame:
+    """
+    Generate a DataFrame representing constant link capacity over 8760 hours.
+
+    Parameters:
+        capacity (float | int | dict[str, Any]): The constant capacity value, or a dictionary
+            containing a "capacity" key. Defaults to 0.0.
+
+    Returns:
+        pd.DataFrame: A DataFrame with 8760 rows and 1 column filled with the constant capacity value.
+    """
+    total_hours = 8760
+
+    if isinstance(capacity, dict):
+        capacity_dict_lower = {k.lower(): v for k, v in capacity.items()}
+        capacity_val = capacity_dict_lower.get("capacity", 0.0)
+    else:
+        capacity_val = capacity
+
+    if capacity_val is None or pd.isna(capacity_val):
+        capacity_val = 0.0
+
+    data = np.full((total_hours, 1), capacity_val)
+    return pd.DataFrame(data)
+
+
+# Aliases for convenience
+generate_constant_capacity_df = generate_constant_link_capacity_df
+create_constant_link_capacity_matrix = generate_constant_link_capacity_df
