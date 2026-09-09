@@ -46,8 +46,10 @@ def test_generate_scenario_builder_load(mock_settings, mock_read_feather):
     study.get_settings.return_value.general_parameters.nb_years = 10
     area1 = MagicMock()
     area1.get_load_matrix.return_value = mock_df
+    area1.hydro.get_ror_series.return_value = mock_df
     area2 = MagicMock()
     area2.get_load_matrix.return_value = mock_df
+    area2.hydro.get_ror_series.return_value = mock_df
     study.get_areas.return_value = {"area1": area1, "area2": area2}
 
     # Mock scenario builder
@@ -2169,3 +2171,138 @@ def test_get_nb_ts_renewable_service_fails():
 
     nb_ts = _get_nb_ts(study, study_data, "wind_onshore")
     assert nb_ts == 0
+
+
+def test_generate_scenario_builder_climatic_data_category_nb_ts_le_1_excluded():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
+    df_5 = MagicMock()
+    df_5.shape = (8760, 5)
+
+    df_1 = MagicMock()
+    df_1.shape = (8760, 1)
+
+    area1 = MagicMock()
+    area1.id = "area1"
+    area1.name = "area1"
+    area1.get_load_matrix.return_value = df_5  # load: 5 TS (> 1)
+    area1.hydro.get_ror_series.return_value = df_1  # hydro: 1 TS (<= 1)
+
+    wind_cluster = MagicMock()
+    wind_cluster.id = "cluster_wind"
+    wind_cluster.properties.group = "wind_onshore"
+    wind_cluster._renewable_service = None
+    wind_cluster.get_timeseries.return_value = df_5  # wind_onshore: 5 TS (> 1)
+
+    solar_cluster = MagicMock()
+    solar_cluster.id = "cluster_solar"
+    solar_cluster.properties.group = "solar_pv"
+    solar_cluster._renewable_service = None
+    solar_cluster.get_timeseries.return_value = df_1  # solar_pv: 1 TS (<= 1)
+
+    area1.get_renewables.return_value = {
+        "cluster_wind": wind_cluster,
+        "cluster_solar": solar_cluster,
+    }
+
+    study.get_areas.return_value = {"area1": area1}
+
+    sb = MagicMock()
+    mock_load_area = MagicMock()
+    mock_hydro_area = MagicMock()
+    sb.load.get_area.return_value = mock_load_area
+    sb.hydro.get_area.return_value = mock_hydro_area
+
+    mock_wind_res = MagicMock()
+    mock_solar_res = MagicMock()
+
+    def get_cluster_side_effect(area_id, cluster_id):
+        if cluster_id == "cluster_wind":
+            return mock_wind_res
+        elif cluster_id == "cluster_solar":
+            return mock_solar_res
+        return MagicMock()
+
+    sb.renewable.get_cluster.side_effect = get_cluster_side_effect
+    study.get_scenario_builder.return_value = sb
+
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Climatic data": ["load", "hydro", "wind_onshore", "solar_pv"]},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    expected_scenario = [1, 2, 3, 4, 5]
+
+    # Categories with nb_ts > 1 must be scenarised
+    mock_load_area.set_new_scenario.assert_called_with(expected_scenario)
+    mock_wind_res.set_new_scenario.assert_called_with(expected_scenario)
+
+    # Categories with nb_ts <= 1 must NOT be scenarised
+    mock_hydro_area.set_new_scenario.assert_not_called()
+    mock_solar_res.set_new_scenario.assert_not_called()
+
+
+def test_generate_scenario_builder_climatic_data_all_categories_nb_ts_1_no_scenarisation():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
+    df_1 = MagicMock()
+    df_1.shape = (8760, 1)
+
+    area1 = MagicMock()
+    area1.id = "area1"
+    area1.name = "area1"
+    area1.get_load_matrix.return_value = df_1
+    area1.hydro.get_ror_series.return_value = df_1
+
+    study.get_areas.return_value = {"area1": area1}
+
+    sb = MagicMock()
+    mock_load_area = MagicMock()
+    mock_hydro_area = MagicMock()
+    sb.load.get_area.return_value = mock_load_area
+    sb.hydro.get_area.return_value = mock_hydro_area
+    study.get_scenario_builder.return_value = sb
+
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Climatic data": ["load", "hydro"]},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    mock_load_area.set_new_scenario.assert_not_called()
+    mock_hydro_area.set_new_scenario.assert_not_called()
+
+
+def test_generate_scenario_builder_climatic_data_all_categories_nb_ts_0_no_scenarisation():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
+    area1 = MagicMock()
+    area1.id = "area1"
+    area1.name = "area1"
+    area1.get_load_matrix.return_value = None
+    area1.hydro = None
+
+    study.get_areas.return_value = {"area1": area1}
+
+    sb = MagicMock()
+    mock_load_area = MagicMock()
+    mock_hydro_area = MagicMock()
+    sb.load.get_area.return_value = mock_load_area
+    sb.hydro.get_area.return_value = mock_hydro_area
+    study.get_scenario_builder.return_value = sb
+
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Climatic data": ["load", "hydro"]},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    mock_load_area.set_new_scenario.assert_not_called()
+    mock_hydro_area.set_new_scenario.assert_not_called()

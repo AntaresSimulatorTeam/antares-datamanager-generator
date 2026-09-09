@@ -311,16 +311,19 @@ def _generate_scenarised_climatic_data_series(
 
     scenarised_modulos = ["load", "hydro", "wind_onshore", "wind_offshore", "solar_pv", "solar_thermo"]
 
+    # Pre-calculate / retrieve nb_ts for each scenarised modulo
+    nb_ts_by_category: dict[str, int] = {m: _get_nb_ts(study, study_data, m) for m in scenarised_modulos}
+
     # 1. Determine expected_nb_ts from the first available modulo in the study
     # Prioritize 'load' if it exists.
-    expected_nb_ts = _get_nb_ts(study, study_data, "load")
+    expected_nb_ts = nb_ts_by_category.get("load", 0)
     if expected_nb_ts > 1:
         logger.info(f"Reference nb_ts determined from load: {expected_nb_ts}")
     else:
         for m in scenarised_modulos:
             if m == "load":
                 continue
-            nb_ts = _get_nb_ts(study, study_data, m)
+            nb_ts = nb_ts_by_category.get(m, 0)
             if nb_ts > 1:
                 expected_nb_ts = nb_ts
                 logger.info(f"Reference nb_ts determined from {m}: {expected_nb_ts}")
@@ -333,7 +336,7 @@ def _generate_scenarised_climatic_data_series(
     # 2. Validate all other requested modulos
     for m in climatic_data:
         if m in scenarised_modulos:
-            nb_ts = _get_nb_ts(study, study_data, m)
+            nb_ts = nb_ts_by_category.get(m, 0)
             if nb_ts > 1 and nb_ts != expected_nb_ts:
                 msg = (
                     f"Timeseries must have the same number of columns for load, hydro, wind_onshore, "
@@ -366,15 +369,15 @@ def _generate_scenarised_climatic_data_series(
         )
 
         if not is_excluded_load_hydro:
-            if "load" in climatic_data:
+            if "load" in climatic_data and nb_ts_by_category.get("load", 0) > 1:
                 sb.load.get_area(area_id).set_new_scenario(scenario_series)
-            if "hydro" in climatic_data:
+            if "hydro" in climatic_data and nb_ts_by_category.get("hydro", 0) > 1:
                 sb.hydro.get_area(area_id).set_new_scenario(scenario_series)
 
         # Renewable clusters (wind_onshore, wind_offshore, solar_pv, solar_thermo)
         # mapped to sb.renewable which is a ScenarioCluster
         res_modulos = ["wind_onshore", "wind_offshore", "solar_pv", "solar_thermo"]
-        requested_res = [m for m in climatic_data if m in res_modulos]
+        requested_res = [m for m in climatic_data if m in res_modulos and nb_ts_by_category.get(m, 0) > 1]
 
         if requested_res:
             renewables = area_obj.get_renewables()
