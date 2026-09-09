@@ -16,7 +16,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from antares.craft.model.study import Study
-from antares.datamanager.generator.generate_scenario_builder import generate_scenario_builder
+from antares.datamanager.generator.generate_scenario_builder import _get_nb_ts, generate_scenario_builder
 from antares.datamanager.models.study_data_json_model import StudyData
 
 
@@ -45,7 +45,9 @@ def test_generate_scenario_builder_load(mock_settings, mock_read_feather):
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 10
     area1 = MagicMock()
+    area1.get_load_matrix.return_value = mock_df
     area2 = MagicMock()
+    area2.get_load_matrix.return_value = mock_df
     study.get_areas.return_value = {"area1": area1, "area2": area2}
 
     # Mock scenario builder
@@ -88,6 +90,7 @@ def test_generate_scenario_builder_load_no_fr(mock_settings, mock_read_feather):
 
     study = MagicMock()
     area1 = MagicMock()
+    area1.get_load_matrix.return_value = mock_df
     study.get_areas.return_value = {"area1": area1}
     study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
@@ -127,10 +130,11 @@ def test_generate_scenario_builder_validation_error(mock_settings, mock_read_fea
     df_hydro = MagicMock()
     df_hydro.shape = (8760, 3)
 
-    mock_read_feather.side_effect = [df_load, df_load, df_hydro]
-
     study = MagicMock()
-    study.get_areas.return_value = {"FR": MagicMock()}
+    area_fr = MagicMock()
+    area_fr.get_load_matrix.return_value = df_load
+    area_fr.hydro.get_ror_series.return_value = df_hydro
+    study.get_areas.return_value = {"FR": area_fr}
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -158,11 +162,13 @@ def test_generate_scenario_builder_reference_from_hydro(mock_settings, mock_read
     # Mock hydro with 3 TS
     df_hydro = MagicMock()
     df_hydro.shape = (8760, 3)
-    mock_read_feather.return_value = df_hydro
 
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
-    study.get_areas.return_value = {"FR": MagicMock()}
+    area_fr = MagicMock()
+    area_fr.get_load_matrix.return_value = None
+    area_fr.hydro.get_ror_series.return_value = df_hydro
+    study.get_areas.return_value = {"FR": area_fr}
     sb = MagicMock()
     # Initialize area mocks
     sb.hydro.get_area.return_value = MagicMock()
@@ -195,11 +201,12 @@ def test_generate_scenario_builder_reference_from_load_even_if_not_in_modulo(moc
     df_hydro = MagicMock()
     df_hydro.shape = (8760, 10)
 
-    mock_read_feather.side_effect = [df_load, df_hydro]
-
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
-    study.get_areas.return_value = {"FR": MagicMock()}
+    area_fr = MagicMock()
+    area_fr.get_load_matrix.return_value = df_load
+    area_fr.hydro.get_ror_series.return_value = df_hydro
+    study.get_areas.return_value = {"FR": area_fr}
     sb = MagicMock()
     sb.hydro.get_area.return_value = MagicMock()
     study.get_scenario_builder.return_value = sb
@@ -232,20 +239,12 @@ def test_generate_scenario_builder_priority_to_load(mock_settings, mock_read_fea
     df_hydro = MagicMock()
     df_hydro.shape = (8760, 20)
 
-    # _get_nb_ts will be called for each category in order until found
-    # In my current implementation, it checks load first, then others.
-    # In this test, we want to make sure it picks load's 10, not hydro's 20.
-
-    # Sequence of calls in _generate_scenerased_climatic_data_series:
-    # 1. _get_nb_ts(study_data, "load") -> returns 10
-    # 2. _get_nb_ts(study_data, "load") (during validation) -> returns 10
-    # 3. _get_nb_ts(study_data, "hydro") (during validation) -> returns 20 -> should RAISE error if both exist and differ
-
-    mock_read_feather.side_effect = [df_load, df_load, df_hydro]
-
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
-    study.get_areas.return_value = {"FR": MagicMock()}
+    area_fr = MagicMock()
+    area_fr.get_load_matrix.return_value = df_load
+    area_fr.hydro.get_ror_series.return_value = df_hydro
+    study.get_areas.return_value = {"FR": area_fr}
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -276,16 +275,18 @@ def test_generate_scenario_builder_climatic_data_excludes_y_nuc_modulation_from_
     df_hydro = MagicMock()
     df_hydro.shape = (8760, 5)
 
-    mock_read_feather.side_effect = [df_load, df_load, df_hydro]
-
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 3
     area_fr = MagicMock()
     area_fr.name = "FR"
+    area_fr.get_load_matrix.return_value = df_load
+    area_fr.hydro.get_ror_series.return_value = df_hydro
     area_y = MagicMock()
     area_y.name = "y_nuc_modulation"
     area_be = MagicMock()
     area_be.name = "BE"
+    area_be.get_load_matrix.return_value = df_load
+    area_be.hydro.get_ror_series.return_value = df_hydro
 
     study.get_areas.return_value = {
         "fr": area_fr,
@@ -371,6 +372,7 @@ def test_generate_scenario_builder_res_group_normalization(mock_settings, mock_r
     cluster_c1 = MagicMock()
     cluster_c1.properties.group = "wind_onshore"
     cluster_c1.id = "c1"
+    cluster_c1.get_timeseries.return_value = df_res
     area_at.get_renewables.return_value = {"c1": cluster_c1}
 
     # Case: group name is "wind_onshore" (underscores)
@@ -411,14 +413,22 @@ def test_generate_scenario_builder_multi_area_res_search(mock_settings, mock_rea
     df_wind = MagicMock()
     df_wind.shape = (8760, 187)
 
-    # First call: _get_nb_ts("load") -> returns 200
-    # Second call: _get_nb_ts("load") during validation -> returns 200
-    # Third call: _get_nb_ts("wind_onshore") during validation -> should find AT data and return 187
-    mock_read_feather.side_effect = [df_load, df_load, df_wind]
+    # _get_nb_ts("load") uses area_fr.get_load_matrix() -> 200
+    # _get_nb_ts("wind_onshore") during validation -> should find AT data and return 187
+    mock_read_feather.side_effect = [df_wind]
 
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
-    study.get_areas.return_value = {"FR": MagicMock(), "AT": MagicMock()}
+    area_fr = MagicMock()
+    area_fr.get_load_matrix.return_value = df_load
+    area_fr.get_renewables.return_value = {}
+    area_at = MagicMock()
+    cluster_c1 = MagicMock()
+    cluster_c1.properties.group = "wind_onshore"
+    cluster_c1.id = "c1"
+    cluster_c1.get_timeseries.return_value = df_wind
+    area_at.get_renewables.return_value = {"c1": cluster_c1}
+    study.get_areas.return_value = {"FR": area_fr, "AT": area_at}
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -454,11 +464,20 @@ def test_generate_scenario_builder_res_direct_tech_structure(mock_settings, mock
     df_wind = MagicMock()
     df_wind.shape = (8760, 186)
 
-    mock_read_feather.side_effect = [df_load, df_load, df_wind]
+    mock_read_feather.side_effect = [df_wind]
 
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
-    study.get_areas.return_value = {"FR": MagicMock(), "AT": MagicMock()}
+    area_fr = MagicMock()
+    area_fr.get_load_matrix.return_value = df_load
+    area_fr.get_renewables.return_value = {}
+    area_at = MagicMock()
+    cluster_c1 = MagicMock()
+    cluster_c1.properties.group = "wind_onshore"
+    cluster_c1.id = "c1"
+    cluster_c1.get_timeseries.return_value = df_wind
+    area_at.get_renewables.return_value = {"c1": cluster_c1}
+    study.get_areas.return_value = {"FR": area_fr, "AT": area_at}
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
 
@@ -1407,16 +1426,22 @@ def test_generate_scenario_builder_with_wildcards_and_at_syntax(mock_settings, m
     area_fr = MagicMock()
     area_fr.id = "fr"
     area_fr.name = "FR"
+    area_fr.get_load_matrix.return_value = df_climatic
+    area_fr.hydro.get_ror_series.return_value = df_climatic
 
     # Renewables in FR
     cluster_wind_on = MagicMock()
     cluster_wind_on.properties.group = "wind_onshore"
+    cluster_wind_on.get_timeseries.return_value = df_climatic
     cluster_wind_off = MagicMock()
     cluster_wind_off.properties.group = "wind_offshore"
+    cluster_wind_off.get_timeseries.return_value = df_climatic
     cluster_solar_pv = MagicMock()
     cluster_solar_pv.properties.group = "solar_pv"
+    cluster_solar_pv.get_timeseries.return_value = df_climatic
     cluster_solar_th = MagicMock()
     cluster_solar_th.properties.group = "solar_thermo"
+    cluster_solar_th.get_timeseries.return_value = df_climatic
 
     area_fr.get_renewables.return_value = {
         "wind_on_1": cluster_wind_on,
@@ -1942,3 +1967,205 @@ def test_generate_scenario_builder_sts_inflows_zone_specific():
     # Only fr_psp_closed should be configured, not be_psp_closed
     mock_sb_fr.set_new_scenario.assert_called_once_with([1, 1, 1])
     mock_sb_be.set_new_scenario.assert_not_called()
+
+
+def test_get_nb_ts_load_from_fr_area():
+    study = MagicMock()
+    area_fr = MagicMock()
+    df_load = MagicMock()
+    df_load.shape = (8760, 200)
+    area_fr.get_load_matrix.return_value = df_load
+
+    study.get_areas.return_value = {"fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "load")
+    assert nb_ts == 200
+    area_fr.get_load_matrix.assert_called_once()
+
+
+def test_get_nb_ts_load_fallback_other_area():
+    study = MagicMock()
+    area_de = MagicMock()
+    df_load = MagicMock()
+    df_load.shape = (8760, 150)
+    area_de.get_load_matrix.return_value = df_load
+
+    study.get_areas.return_value = {"de": area_de}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "load")
+    assert nb_ts == 150
+
+
+def test_get_nb_ts_load_no_areas():
+    study = MagicMock()
+    study.get_areas.return_value = {}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "load")
+    assert nb_ts == 0
+
+
+def test_get_nb_ts_load_get_load_matrix_fails():
+    study = MagicMock()
+    area_fr = MagicMock()
+    area_fr.get_load_matrix.side_effect = RuntimeError("Read error")
+    study.get_areas.return_value = {"fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "load")
+    assert nb_ts == 0
+
+
+def test_get_nb_ts_hydro_from_fr_area():
+    study = MagicMock()
+    area_fr = MagicMock()
+    df_hydro = MagicMock()
+    df_hydro.shape = (8760, 50)
+    area_fr.hydro.get_ror_series.return_value = df_hydro
+
+    study.get_areas.return_value = {"fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "hydro")
+    assert nb_ts == 50
+    area_fr.hydro.get_ror_series.assert_called_once()
+
+
+def test_get_nb_ts_hydro_fallback_other_area():
+    study = MagicMock()
+    area_de = MagicMock()
+    df_hydro = MagicMock()
+    df_hydro.shape = (8760, 45)
+    area_de.hydro.get_ror_series.return_value = df_hydro
+
+    study.get_areas.return_value = {"de": area_de}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "hydro")
+    assert nb_ts == 45
+
+
+def test_get_nb_ts_hydro_get_ror_series_fails():
+    study = MagicMock()
+    area_fr = MagicMock()
+    area_fr.hydro.get_ror_series.side_effect = RuntimeError("Read error")
+    study.get_areas.return_value = {"fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "hydro")
+    assert nb_ts == 0
+
+
+def test_get_nb_ts_unknown_category():
+    study = MagicMock()
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "unknown_category")
+    assert nb_ts == 0
+
+
+@pytest.mark.parametrize(
+    "category,group_name",
+    [
+        ("wind_onshore", "wind_onshore"),
+        ("wind_onshore", "Wind Onshore"),
+        ("wind_offshore", "wind_offshore"),
+        ("wind_offshore", "Wind Offshore"),
+        ("solar_pv", "solar_pv"),
+        ("solar_pv", "Solar PV"),
+        ("solar_thermo", "solar_thermo"),
+        ("solar_thermo", "Solar Thermal"),
+    ],
+)
+def test_get_nb_ts_renewable_from_fr_area_via_renewable_service(category, group_name):
+    study = MagicMock()
+    area_fr = MagicMock()
+    area_fr.name = "FR"
+    area_fr.id = "fr"
+
+    cluster = MagicMock()
+    cluster.id = "cluster_1"
+    cluster.properties.group = group_name
+
+    df_ren = MagicMock()
+    df_ren.shape = (8760, 35)
+
+    cluster._renewable_service.get_renewable_matrix.return_value = df_ren
+    area_fr.get_renewables.return_value = {"cluster_1": cluster}
+
+    study.get_areas.return_value = {"fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, category)
+    assert nb_ts == 35
+    cluster._renewable_service.get_renewable_matrix.assert_called_with("cluster_1", "fr")
+
+
+def test_get_nb_ts_renewable_via_get_timeseries():
+    study = MagicMock()
+    area_fr = MagicMock()
+    area_fr.name = "FR"
+    area_fr.id = "fr"
+
+    cluster = MagicMock()
+    cluster.id = "cluster_1"
+    cluster.properties.group = "wind_onshore"
+    cluster._renewable_service = None
+
+    df_ren = MagicMock()
+    df_ren.shape = (8760, 42)
+    cluster.get_timeseries.return_value = df_ren
+
+    area_fr.get_renewables.return_value = {"cluster_1": cluster}
+    study.get_areas.return_value = {"fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "wind_onshore")
+    assert nb_ts == 42
+
+
+def test_get_nb_ts_renewable_fallback_other_area():
+    study = MagicMock()
+    area_fr = MagicMock()
+    area_fr.name = "FR"
+    area_fr.get_renewables.return_value = {}
+
+    area_es = MagicMock()
+    area_es.name = "ES"
+    area_es.id = "es"
+
+    cluster = MagicMock()
+    cluster.id = "solar_1"
+    cluster.properties.group = "Solar PV"
+    df_ren = MagicMock()
+    df_ren.shape = (8760, 60)
+    cluster.get_timeseries.return_value = df_ren
+    area_es.get_renewables.return_value = {"solar_1": cluster}
+
+    study.get_areas.return_value = {"fr": area_fr, "es": area_es}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "solar_pv")
+    assert nb_ts == 60
+
+
+def test_get_nb_ts_renewable_service_fails():
+    study = MagicMock()
+    area_fr = MagicMock()
+    area_fr.name = "FR"
+    area_fr.id = "fr"
+
+    cluster = MagicMock()
+    cluster.id = "cluster_1"
+    cluster.properties.group = "wind_onshore"
+    cluster._renewable_service.get_renewable_matrix.side_effect = RuntimeError("Service error")
+    cluster.get_timeseries.side_effect = RuntimeError("Get error")
+    area_fr.get_renewables.return_value = {"cluster_1": cluster}
+
+    study.get_areas.return_value = {"fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "wind_onshore")
+    assert nb_ts == 0

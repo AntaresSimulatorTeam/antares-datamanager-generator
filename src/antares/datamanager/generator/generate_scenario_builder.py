@@ -15,7 +15,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Set
 
 if TYPE_CHECKING:
-    from antares.craft import ScenarioBuilder
+    from antares.craft import Area, ScenarioBuilder
 
 import pandas as pd
 
@@ -171,77 +171,126 @@ def generate_scenario_builder(study: Study, study_data: StudyData, used_files: S
     logger.info("Scenario builder configuration applied to the study.")
 
 
-def _get_nb_ts(study_data: StudyData, category: str) -> int:
+def _normalize_res_group(group: str) -> str:
+    """Normalize renewable group name for comparison."""
+    normalized = str(group).replace("_", "").replace(" ", "").replace("-", "").lower()
+    if normalized in ("solarthermal", "solarthermo"):
+        return "solarthermo"
+    return normalized
+
+
+def _get_nb_ts(study: Study, study_data: StudyData, category: str) -> int:
     """
     Helper to get nb_ts for a given category.
     """
-    nb_ts = 0
-
-    # Map category to StudyData field and directory
-    mapping = {
-        "load": (study_data.area_loads, settings.load_output_directory),
-        "hydro": (study_data.area_hydro, settings.hydro_ts_directory),
-        "wind_onshore": (study_data.area_res, settings.res_ts_directory),
-        "wind_offshore": (study_data.area_res, settings.res_ts_directory),
-        "solar_pv": (study_data.area_res, settings.res_ts_directory),
-        "solar_thermo": (study_data.area_res, settings.res_ts_directory),
-    }
-
-    if category not in mapping:
+    supported_categories = [
+        "load",
+        "hydro",
+        "wind_onshore",
+        "wind_offshore",
+        "solar_pv",
+        "solar_thermo",
+    ]
+    if category not in supported_categories:
         return 0
 
-    data_dict, base_dir = mapping[category]
-    if not data_dict:
+    areas = study.get_areas()
+    if not areas:
         return 0
 
     # Determine areas to check: FR first, then others
-    areas_to_check = list(data_dict.keys())
-    if "FR" in areas_to_check:
-        areas_to_check.remove("FR")
-        areas_to_check.insert(0, "FR")
+    areas_to_check: list[Area] = []
+    for area_name, area_obj in areas.items():
+        if str(area_name).lower() == "fr" or getattr(area_obj, "name", "").lower() == "fr":
+            areas_to_check.insert(0, area_obj)
+        else:
+            areas_to_check.append(area_obj)
 
     for target_area in areas_to_check:
-        area_data = data_dict.get(target_area)
-        if area_data is None:
+        if not target_area:
             continue
+        try:
+            if category == "load" and hasattr(target_area, "get_load_matrix"):
+                matrix = target_area.get_load_matrix()
+                if matrix is not None and hasattr(matrix, "shape") and len(matrix.shape) > 1 and matrix.shape[1] > 0:
+                    return matrix.shape[1]
 
-        files = []
-        if category == "load":
-            files = area_data if isinstance(area_data, list) else []
-        elif category == "hydro":
-            files = area_data.get("series", []) if isinstance(area_data, dict) else []
-        elif category in ["wind_onshore", "wind_offshore", "solar_pv", "solar_thermo"]:
-            # For RES, the structure can be either:
-            # 1. Directly by technology: {"wind_onshore": {"series": [...]}, ...}
-            # 2. Or grouped by cluster: {"clusters": {"c1": {"properties": {"group": "..."}, "series": [...]}}}
+            elif category == "hydro" and getattr(target_area, "hydro", None) is not None:
+                hydro_obj = target_area.hydro
+                if hasattr(hydro_obj, "get_ror_series"):
+                    matrix = hydro_obj.get_ror_series()
+                    if (
+                        matrix is not None
+                        and hasattr(matrix, "shape")
+                        and len(matrix.shape) > 1
+                        and matrix.shape[1] > 0
+                    ):
+                        return matrix.shape[1]
 
-            # Case 1: Directly by technology
-            if isinstance(area_data, dict) and category in area_data and isinstance(area_data[category], dict):
-                files = area_data[category].get("series", [])
+            elif category in ["wind_onshore", "wind_offshore", "solar_pv", "solar_thermo"]:
+                if hasattr(target_area, "get_renewables"):
+                    renewables = target_area.get_renewables()
+                    if renewables:
+                        raw_area_id = (
+                            getattr(target_area, "id", None) or getattr(target_area, "name", "") or str(area_name)
+                        )
+                        area_id = str(raw_area_id).lower()
+                        for cluster_id, cluster_obj in renewables.items():
+                            group = ""
+                            if hasattr(cluster_obj, "properties") and cluster_obj.properties is not None:
+                                raw_grp = getattr(cluster_obj.properties, "group", "")
+                                group = str(raw_grp) if isinstance(raw_grp, str) else ""
+                            elif hasattr(cluster_obj, "group"):
+                                raw_grp = getattr(cluster_obj, "group", "")
+                                group = str(raw_grp) if isinstance(raw_grp, str) else ""
 
-            # Case 2: Grouped by cluster (if Case 1 didn't find files)
-            if not files:
-                clusters = area_data.get("clusters", {}) if isinstance(area_data, dict) else {}
-                target_group = category.replace("_", "").lower()
-                for cluster_info in clusters.values():
-                    group = (
-                        cluster_info.get("properties", {}).get("group", "").replace("_", "").replace(" ", "").lower()
-                    )
-                    if group == target_group:
-                        files = cluster_info.get("series", [])
-                        if files:
-                            break
+                            if _normalize_res_group(group) == _normalize_res_group(category):
+                                raw_cluster_id = getattr(cluster_obj, "id", None)
+                                cluster_id_str = raw_cluster_id if isinstance(raw_cluster_id, str) else str(cluster_id)
+                                raw_cluster_area = getattr(cluster_obj, "area_id", None)
+                                cluster_area_id = raw_cluster_area if isinstance(raw_cluster_area, str) else area_id
+                                matrix = None
+                                renewable_service = getattr(cluster_obj, "_renewable_service", None) or getattr(
+                                    target_area, "_renewable_service", None
+                                )
+                                if renewable_service is not None and hasattr(renewable_service, "get_renewable_matrix"):
+                                    try:
+                                        matrix = renewable_service.get_renewable_matrix(cluster_id_str, cluster_area_id)
+                                    except Exception:
+                                        pass
 
-        if files:
-            file_path = base_dir / files[0]
-            if file_path.exists():
-                try:
-                    df = pd.read_feather(file_path)
-                    nb_ts = df.shape[1]
-                    if nb_ts > 0:
-                        return nb_ts
-                except Exception as e:
-                    logger.error(f"Failed to read file {file_path} for category {category}: {e}")
+                                if matrix is None or not (
+                                    hasattr(matrix, "shape") and len(matrix.shape) > 1 and matrix.shape[1] > 0
+                                ):
+                                    if hasattr(cluster_obj, "get_timeseries"):
+                                        try:
+                                            matrix = cluster_obj.get_timeseries()
+                                        except Exception:
+                                            pass
+
+                                if matrix is None or not (
+                                    hasattr(matrix, "shape") and len(matrix.shape) > 1 and matrix.shape[1] > 0
+                                ):
+                                    if hasattr(target_area, "get_renewable_matrix"):
+                                        try:
+                                            matrix = target_area.get_renewable_matrix(cluster_id_str, cluster_area_id)
+                                        except Exception:
+                                            pass
+                                    elif hasattr(cluster_obj, "get_renewable_matrix"):
+                                        try:
+                                            matrix = cluster_obj.get_renewable_matrix(cluster_id_str, cluster_area_id)
+                                        except Exception:
+                                            pass
+
+                                if (
+                                    matrix is not None
+                                    and hasattr(matrix, "shape")
+                                    and len(matrix.shape) > 1
+                                    and matrix.shape[1] > 0
+                                ):
+                                    return matrix.shape[1]
+        except Exception as e:
+            logger.error(f"Failed to get {category} matrix for area: {e}")
 
     return 0
 
@@ -260,20 +309,19 @@ def _generate_scenarised_climatic_data_series(
     # area_id mapping to area objects
     area_mapping = dict(areas)
 
-    expected_nb_ts = 0
     scenarised_modulos = ["load", "hydro", "wind_onshore", "wind_offshore", "solar_pv", "solar_thermo"]
 
     # 1. Determine expected_nb_ts from the first available modulo in the study
     # Prioritize 'load' if it exists.
-    expected_nb_ts = _get_nb_ts(study_data, "load")
-    if expected_nb_ts > 0:
+    expected_nb_ts = _get_nb_ts(study, study_data, "load")
+    if expected_nb_ts > 1:
         logger.info(f"Reference nb_ts determined from load: {expected_nb_ts}")
     else:
         for m in scenarised_modulos:
             if m == "load":
                 continue
-            nb_ts = _get_nb_ts(study_data, m)
-            if nb_ts > 0:
+            nb_ts = _get_nb_ts(study, study_data, m)
+            if nb_ts > 1:
                 expected_nb_ts = nb_ts
                 logger.info(f"Reference nb_ts determined from {m}: {expected_nb_ts}")
                 break
@@ -285,8 +333,8 @@ def _generate_scenarised_climatic_data_series(
     # 2. Validate all other requested modulos
     for m in climatic_data:
         if m in scenarised_modulos:
-            nb_ts = _get_nb_ts(study_data, m)
-            if nb_ts > 0 and nb_ts != expected_nb_ts:
+            nb_ts = _get_nb_ts(study, study_data, m)
+            if nb_ts > 1 and nb_ts != expected_nb_ts:
                 msg = (
                     f"Timeseries must have the same number of columns for load, hydro, wind_onshore, "
                     f"wind_offshore, solar_pv, solar_thermo. Found {nb_ts} for {m} but expected {expected_nb_ts}. "
@@ -331,10 +379,9 @@ def _generate_scenarised_climatic_data_series(
         if requested_res:
             renewables = area_obj.get_renewables()
             for cluster_id, cluster_obj in renewables.items():
-                group = cluster_obj.properties.group.replace("_", "").replace(" ", "").lower()
+                raw_group = getattr(cluster_obj.properties, "group", "") if hasattr(cluster_obj, "properties") else ""
                 for res_m in requested_res:
-                    target_group = res_m.replace("_", "").lower()
-                    if group == target_group:
+                    if _normalize_res_group(raw_group) == _normalize_res_group(res_m):
                         sb.renewable.get_cluster(area_id, cluster_id).set_new_scenario(scenario_series)
                         break
 
