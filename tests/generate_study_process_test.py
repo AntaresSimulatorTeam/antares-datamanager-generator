@@ -173,6 +173,18 @@ def test_read_study_data_from_json_nuclear_talon_only(mock_settings, mock_open_f
     }
 
 
+@patch("builtins.open", new_callable=mock_open)
+@patch("antares.datamanager.generator.generate_study_process.settings")
+def test_read_study_data_from_json_p2g(mock_settings, mock_open_file, mock_json_data):
+    mock_settings.study_json_directory = Path("/mock/path")
+    mock_json_data["test_study"]["p2g"] = {"base": {"properties": {"nominal_capacity": 4000}}}
+    mock_open_file.return_value.__enter__.return_value.read.return_value = json.dumps(mock_json_data)
+
+    study_data = read_study_data_from_json("test_study")
+
+    assert study_data.p2g == {"base": {"properties": {"nominal_capacity": 4000}}}
+
+
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
 def test_add_areas_to_study_with_fixed_seed(mock_load_dir):
     mock_load_dir.return_value = Path("/mock/load/dir")
@@ -488,6 +500,64 @@ def test_generate_study_skips_nuclear_binding_constraints_when_absent(
 
     mock_generate_modulation.assert_not_called()
     mock_generate_talon.assert_not_called()
+
+
+@patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
+@patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
+@patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
+@patch("antares.datamanager.generator.generate_study_process.generate_p2g")
+def test_generate_study_calls_p2g_when_present(
+    mock_generate_p2g, mock_add_links, mock_add_areas, mock_read_study_data_from_json
+):
+    mock_study = MagicMock()
+    mock_study.service.study_id = "dummy_id"
+    mock_study.path = ""
+    mock_study.get_settings.return_value.general_parameters.nb_years = 5
+    mock_factory = MagicMock()
+    mock_factory.create_study.return_value = mock_study
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    p2g_data = {"base": {"properties": {"nominal_capacity": 4000}}}
+    study_data = StudyData(
+        name="study_name",
+        areas={"fr": {}},
+        p2g=p2g_data,
+        enable_random_ts=True,
+    )
+    mock_read_study_data_from_json.return_value = study_data
+
+    generate_study("dummy_id", mock_factory)
+
+    mock_generate_p2g.assert_called_once_with(mock_study, p2g_data)
+    mock_study.generate_thermal_timeseries.assert_called_once_with(5)
+
+
+@patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
+@patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
+@patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
+@patch("antares.datamanager.generator.generate_study_process.generate_p2g")
+def test_generate_study_skips_p2g_when_absent(
+    mock_generate_p2g, mock_add_links, mock_add_areas, mock_read_study_data_from_json
+):
+    mock_study = MagicMock()
+    mock_study.service.study_id = "dummy_id"
+    mock_study.path = ""
+    mock_factory = MagicMock()
+    mock_factory.create_study.return_value = mock_study
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    study_data = StudyData(
+        name="study_name",
+        areas={"fr": {}},
+        p2g={},
+    )
+    mock_read_study_data_from_json.return_value = study_data
+
+    generate_study("dummy_id", mock_factory)
+
+    mock_generate_p2g.assert_not_called()
 
 
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")

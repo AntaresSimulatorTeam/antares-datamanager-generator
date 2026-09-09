@@ -238,7 +238,7 @@ def generate_flowbased_binding_constraints(
 
     n_columns = id_day_types.shape[1]
 
-    group_name = f"{SCENARIO_BUILDER_GROUP_PREFIX}{n_columns}"
+    group_name = f"{SCENARIO_BUILDER_GROUP_PREFIX}{n_columns}".replace("_", "-")
     properties = BindingConstraintProperties(
         enabled=True,
         time_step=BindingConstraintFrequency.HOURLY,

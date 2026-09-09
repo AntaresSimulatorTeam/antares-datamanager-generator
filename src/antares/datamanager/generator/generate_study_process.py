@@ -53,6 +53,7 @@ from antares.datamanager.generator.generate_nuclear import (
     generate_nuclear_talon_binding_constraint,
     generate_y_nuc_modulation_misc,
 )
+from antares.datamanager.generator.generate_p2g import generate_p2g
 from antares.datamanager.generator.generate_res_clusters import generate_res_clusters
 from antares.datamanager.generator.generate_scenario_builder import generate_scenario_builder
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
@@ -80,6 +81,8 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         study.update_settings(study_settings)
 
         add_areas_to_study(study, study_data, used_files)
+        if study_data.p2g:
+            generate_p2g(study, study_data.p2g)
         if study_data.nuclear_modulation_binding_constraints:
             generate_nuclear_modulation_binding_constraints(
                 study, study_data.nuclear_modulation_binding_constraints, used_files
@@ -100,7 +103,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
                 used_files,
             )
 
-        if (study_data.area_thermals or study_data.area_dsr) and study_data.enable_random_ts:
+        if (study_data.area_thermals or study_data.area_dsr or study_data.p2g) and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study.get_settings().general_parameters.nb_years} years")
             study.generate_thermal_timeseries(study.get_settings().general_parameters.nb_years)
 
@@ -184,6 +187,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         flowbased=raw_study_data.get("flowbased"),
         settings=study_settings,
         scenario_builder_config=scenario_builder_config,
+        p2g=raw_study_data.get("p2g", {}),
     )
 
     for area, area_info in study_data.areas.items():
