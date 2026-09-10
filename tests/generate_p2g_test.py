@@ -178,7 +178,7 @@ def test_generate_h2_profile_time_series_success():
 
 def test_generate_modulation_df_from_csv_file_not_found(tmp_path):
     with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.nas_path = tmp_path
+        mock_settings.trajectory_input_path = tmp_path
         with pytest.raises(FileNotFoundError, match="Fichier de modulation introuvable"):
             generate_modulation_df_from_csv("missing_file.csv", "H2")
 
@@ -188,7 +188,7 @@ def test_generate_modulation_df_from_csv_missing_column(tmp_path):
     csv_file.write_text("Gas\tOther\n" + "1.0\t2.0\n" * EXPECTED_HOURS)
 
     with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.nas_path = tmp_path
+        mock_settings.trajectory_input_path = tmp_path
         with pytest.raises(KeyError, match="introuvable dans le fichier"):
             generate_modulation_df_from_csv("mod.csv", "H2")
 
@@ -198,7 +198,7 @@ def test_generate_modulation_df_from_csv_non_numeric(tmp_path):
     csv_file.write_text("H2\n" + "invalid\n" * EXPECTED_HOURS)
 
     with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.nas_path = tmp_path
+        mock_settings.trajectory_input_path = tmp_path
         with pytest.raises(ValueError, match="contient des valeurs non numériques"):
             generate_modulation_df_from_csv("mod.csv", "H2")
 
@@ -208,7 +208,7 @@ def test_generate_modulation_df_from_csv_invalid_length(tmp_path):
     csv_file.write_text("H2\n" + "1.0\n" * 100)
 
     with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.nas_path = tmp_path
+        mock_settings.trajectory_input_path = tmp_path
         with pytest.raises(ValueError, match="Nombre de lignes incorrect"):
             generate_modulation_df_from_csv("mod.csv", "H2")
 
@@ -219,7 +219,7 @@ def test_generate_modulation_df_from_csv_success(tmp_path):
     csv_file.write_text("\n".join(lines))
 
     with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.nas_path = tmp_path
+        mock_settings.trajectory_input_path = tmp_path
         df = generate_modulation_df_from_csv("mod.csv", "H2")
 
         assert df.shape == (EXPECTED_HOURS, 4)
