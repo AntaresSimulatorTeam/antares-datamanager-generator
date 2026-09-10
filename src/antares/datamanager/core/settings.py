@@ -63,7 +63,7 @@ class Settings:
 
     @property
     def trajectory_input_path(self) -> Path:
-        return Path(self._get_required("PEGASE_TRAJECTORY_FILE_PATH"))
+        return self._resolve_env_path("PEGASE_TRAJECTORY_FILE_PATH")
 
     @property
     def load_output_directory(self) -> Path:
