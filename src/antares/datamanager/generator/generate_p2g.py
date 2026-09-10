@@ -123,7 +123,7 @@ def generate_modulation_df_from_csv(
     modulation_name: str,
     expected_hours: int = EXPECTED_HOURS,
 ) -> pd.DataFrame:
-    csv_path = (settings.nas_path / trajectory_path).resolve()
+    csv_path = (settings.trajectory_input_path / trajectory_path).resolve()
 
     path = Path(csv_path)
     if not path.exists():
