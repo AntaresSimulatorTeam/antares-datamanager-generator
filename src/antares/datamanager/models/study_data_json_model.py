@@ -37,3 +37,4 @@ class StudyData:
     adequacy_patch: dict[str, Any] = field(default_factory=dict)
     scenario_builder_config: dict[str, Any] = field(default_factory=dict)
     p2g: dict[str, Any] = field(default_factory=dict)
+    me: dict[str, Any] | None = None
