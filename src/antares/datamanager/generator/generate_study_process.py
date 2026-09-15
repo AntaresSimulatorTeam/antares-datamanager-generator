@@ -13,7 +13,6 @@
 import json
 import os
 import shutil
-import re
 
 from pathlib import Path
 from typing import Any, Set
@@ -22,11 +21,6 @@ import pandas as pd
 
 from antares.craft import (
     APIconf,
-    BindingConstraintFrequency,
-    BindingConstraintOperator,
-    BindingConstraintProperties,
-    ClusterData,
-    ConstraintTerm,
     LinkPropertiesUpdate,
 )
 from antares.craft.model.area import Area, AreaProperties, AreaUi
@@ -274,6 +268,7 @@ def _set_area_loads(
         load_path = load_directory / load_file
         df = pd.read_feather(load_path)
         area_obj.set_load(df)
+
 
 def _psp_virtual_area_name(real_area_name: str) -> str:
     return f"{PSP_VIRTUAL_AREA_PREFIX}{real_area_name.lower()}"
