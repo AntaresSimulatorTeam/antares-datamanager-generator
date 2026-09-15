@@ -10,12 +10,13 @@
 #
 # This file is part of the Antares project.
 
+import pytest
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from antares.craft import (
     BindingConstraintFrequency,
@@ -25,8 +26,8 @@ from antares.craft import (
 from antares.craft.model.area import Area
 from antares.craft.model.study import Study
 from antares.datamanager.generator.generate_dsr_clusters import (
-    _create_dsr_binding_constraints,
     _build_dsr_constraint_names,
+    _create_dsr_binding_constraints,
     create_dsr_cluster,
     create_dsr_modulation_matrix_from_series,
     create_dsr_prepro_data_matrix,
