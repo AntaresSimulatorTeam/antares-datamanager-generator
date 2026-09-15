@@ -42,7 +42,7 @@ def generate_dsr_clusters(
     dsr: Dict[str, Any],
     first_month: Optional[Month] = None,
     used_files: Optional[Set[Path]] = None,
-) -> pd.DataFrame:
+) -> None:
     """
     Generates thermal clusters for DSR (Demand Side Response) based on provided area and DSR data.
     """
