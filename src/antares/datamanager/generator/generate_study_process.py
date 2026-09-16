@@ -40,6 +40,7 @@ from antares.datamanager.generator.generate_flowbased import (
 )
 from antares.datamanager.generator.generate_hydro import generate_hydro
 from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
+from antares.datamanager.generator.generate_me import generate_me
 from antares.datamanager.generator.generate_misc_timeseries import generate_misc_timeseries
 from antares.datamanager.generator.generate_nuclear import (
     Y_NUC_MODULATION_AREA_NAME,
@@ -85,6 +86,9 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         if study_data.nuclear_talon_binding_constraint:
             generate_nuclear_talon_binding_constraint(study, study_data.nuclear_talon_binding_constraint, used_files)
         add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
+
+        if study_data.me:
+            generate_me(study, study_data.me, used_files)
 
         if study_data.flowbased:
             create_flowbased_areas_and_links(
@@ -183,6 +187,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         settings=study_settings,
         scenario_builder_config=scenario_builder_config,
         p2g=raw_study_data.get("p2g", {}),
+        me=raw_study_data.get("ME"),
     )
 
     for area, area_info in study_data.areas.items():
@@ -268,6 +273,7 @@ def _set_area_loads(
         load_path = load_directory / load_file
         df = pd.read_feather(load_path)
         area_obj.set_load(df)
+        used_files.add(load_path)
 
 
 def _psp_virtual_area_name(real_area_name: str) -> str:
