@@ -21,11 +21,6 @@ import pandas as pd
 
 from antares.craft import (
     APIconf,
-    BindingConstraintFrequency,
-    BindingConstraintOperator,
-    BindingConstraintProperties,
-    ClusterData,
-    ConstraintTerm,
     LinkPropertiesUpdate,
 )
 from antares.craft.model.area import Area, AreaProperties, AreaUi
@@ -275,58 +270,6 @@ def _set_area_loads(
         area_obj.set_load(df)
 
 
-def _build_dsr_constraint_names(column: str) -> tuple[str, str, str]:
-    if column.startswith("FR_"):
-        # FR Case
-        bc_name = f"{column}_stock"
-        cluster_name = column
-        area_id = "fr"
-        return bc_name, cluster_name, area_id
-
-    # Non-FR Case
-    # Column name is expected to be {area_name}_DSR
-    actual_area_name = column.split("_")[0]
-    bc_name = f"DSR_{actual_area_name}_stock"
-    cluster_name = f"{actual_area_name.lower()}_dsr 0"
-    area_id = actual_area_name.lower()
-    return bc_name, cluster_name, area_id
-
-
-def _create_dsr_binding_constraints(study: Study, area_name: str, df_dsr_constraints: pd.DataFrame) -> None:
-    if df_dsr_constraints.empty:
-        return
-
-    logger.info(f"DSR constraints generated for {area_name}: {df_dsr_constraints.columns.tolist()}")
-    for column in df_dsr_constraints.columns:
-        bc_name, cluster_name, area_id = _build_dsr_constraint_names(column)
-
-        properties = BindingConstraintProperties(
-            enabled=True,
-            time_step=BindingConstraintFrequency.DAILY,
-            operator=BindingConstraintOperator.LESS,
-        )
-        terms = [
-            ConstraintTerm(
-                data=ClusterData(area=area_id, cluster=cluster_name),
-                weight=1,
-                offset=0,
-            )
-        ]
-
-        # The matrix should be a single column DataFrame for the binding constraint
-        less_term_matrix = df_dsr_constraints[[column]]
-        logger.debug(f"Generated less term matrix for {bc_name}: {less_term_matrix.shape}")
-
-        study.create_binding_constraint(
-            name=bc_name,
-            properties=properties,
-            terms=terms,
-            less_term_matrix=less_term_matrix,
-        )
-
-        logger.info(f"Created binding constraint {bc_name} for area {area_name}")
-
-
 def _psp_virtual_area_name(real_area_name: str) -> str:
     return f"{PSP_VIRTUAL_AREA_PREFIX}{real_area_name.lower()}"
 
@@ -388,13 +331,13 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
                 )
                 generate_nuclear_availability(area_obj, nuclear_clusters, used_files=used_files)
             generate_sts_clusters(area_obj, sts, used_files)
-            df_dsr_constraints = generate_dsr_clusters(
+            generate_dsr_clusters(
+                study,
                 area_obj,
                 dsr,
                 first_month=study.get_settings().general_parameters.first_month_in_year,
                 used_files=used_files,
             )
-            _create_dsr_binding_constraints(study, area_name, df_dsr_constraints)
             generate_res_clusters(area_obj, area_name, res, used_files)
 
             _generate_area_hydro(study, area_obj, area_name, hydro, used_files)

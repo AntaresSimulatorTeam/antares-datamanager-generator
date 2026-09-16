@@ -17,8 +17,17 @@ from typing import Any, Dict, Optional, Set
 import numpy as np
 import pandas as pd
 
-from antares.craft import Month, ThermalClusterProperties
+from antares.craft import (
+    BindingConstraintFrequency,
+    BindingConstraintOperator,
+    BindingConstraintProperties,
+    ClusterData,
+    ConstraintTerm,
+    Month,
+    ThermalClusterProperties,
+)
 from antares.craft.model.area import Area
+from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
 from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
 from antares.datamanager.utils.season_utils import SeasonManager
@@ -28,8 +37,12 @@ logger = get_logger(__name__)
 
 
 def generate_dsr_clusters(
-    area_obj: Area, dsr: Dict[str, Any], first_month: Optional[Month] = None, used_files: Optional[Set[Path]] = None
-) -> pd.DataFrame:
+    study: Study,
+    area_obj: Area,
+    dsr: Dict[str, Any],
+    first_month: Optional[Month] = None,
+    used_files: Optional[Set[Path]] = None,
+) -> None:
     """
     Generates thermal clusters for DSR (Demand Side Response) based on provided area and DSR data.
     """
@@ -65,9 +78,8 @@ def generate_dsr_clusters(
         modulation_matrix = create_dsr_modulation_matrix_from_series(cluster_series_data)
 
         create_dsr_cluster(area_obj, cluster_name, values, modulation_matrix, first_month)
-
-    # 3. Generate coupling constraints
-    return generate_dsr_binding_constraints(dsr, cluster_series)
+        # 3. Generate coupling constraints
+        generate_dsr_binding_constraints(study, area_obj.name, cluster_name, dsr, cluster_series_data)
 
 
 def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") -> pd.DataFrame:
@@ -88,11 +100,60 @@ def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") ->
     return df
 
 
+def _build_dsr_constraint_names(area_name: str, cluster_name: str) -> tuple[str, str]:
+    # bc_term_name is expected to be {area_name}_{cluster_name} : BE_DSR_1
+    # bc_name is expected to be {cluster_name}_{area_name}_stock : DSR1_BE_stock
+    cluster_name_raw = cluster_name.split("_", 1)[1]
+    bc_term_name = f"{area_name}_{cluster_name_raw}"
+    cluster_name_bc = cluster_name_raw.replace("_", "")
+    bc_name = f"{cluster_name_bc}_{area_name}_stock"
+    return bc_name, bc_term_name
+
+
+def _create_dsr_binding_constraints(
+    study: Study, area_name: str, cluster_name: str, less_term_matrix: pd.DataFrame
+) -> None:
+    if less_term_matrix.empty:
+        return
+
+    logger.info(f"DSR constraints generated for {area_name}: {cluster_name}")
+    bc_name, bc_term_name = _build_dsr_constraint_names(area_name, cluster_name)
+
+    properties = BindingConstraintProperties(
+        enabled=True,
+        time_step=BindingConstraintFrequency.DAILY,
+        operator=BindingConstraintOperator.LESS,
+    )
+    terms = [
+        ConstraintTerm(
+            data=ClusterData(area=area_name, cluster=bc_term_name),
+            weight=1,
+            offset=0,
+        )
+    ]
+
+    # The matrix should be a single column DataFrame for the binding constraint
+    logger.debug(f"Generated less term matrix for {bc_name}: {less_term_matrix.shape}")
+
+    study.create_binding_constraint(
+        name=bc_name,
+        properties=properties,
+        terms=terms,
+        less_term_matrix=less_term_matrix,
+    )
+
+    logger.info(f"Created binding constraint {bc_name} for area {area_name}")
+
+
 def generate_dsr_binding_constraints(
-    dsr_data: Dict[str, Any], cluster_series: Dict[str, pd.Series[Any]]
-) -> pd.DataFrame:
+    study: Study,
+    area_name: str,
+    cluster_name: str,
+    dsr_data: Dict[str, Any],
+    cluster_series_data: Optional[pd.Series[Any]],
+) -> None:
     """
-    Calculates coupling constraints for DSR.
+    Calculates coupling constraints for each DSR cluster.
 
     Rules:
     1. For each day, calculate the mean of hourly values per column (capacity modulation).
@@ -100,44 +161,31 @@ def generate_dsr_binding_constraints(
     3. Multiply daily mean by the coefficient.
     4. The result is a 366-day matrix.
 
-    FR Case: Do not sum sub-clusters. Keep FR_* columns separate.
     """
-    results = {}
-    for cluster_name, series in cluster_series.items():
-        data = dsr_data.get(cluster_name, {}).get("data", {})
-        max_hour_per_day = data.get("max_hour_per_day", 1)
-        nb_hour_per_day = data.get("nb_hour_per_day", 1)
-        capacity = data.get("capacity", 1)
-        binding_constraint = data.get("binding_constraint")
 
-        coefficient = 24 * max_hour_per_day / nb_hour_per_day
-        volume_no_modulation = capacity * coefficient
+    data = dsr_data.get(cluster_name, {}).get("data", {})
+    max_hour_per_day = data.get("max_hour_per_day", 1)
+    nb_hour_per_day = data.get("nb_hour_per_day", 1)
+    capacity = data.get("capacity", 1)
+    binding_constraint = data.get("binding_constraint")
 
-        if binding_constraint is True and series is not None:
-            daily_mean = series.groupby(series.index // 24).mean()
-            results[cluster_name] = volume_no_modulation * daily_mean
-        else:
-            results[cluster_name] = pd.Series(volume_no_modulation, index=range(365))
+    coefficient = 24 * max_hour_per_day / nb_hour_per_day
+    volume_no_modulation = capacity * coefficient
 
-    df_results = pd.DataFrame(results)
+    if binding_constraint is True and cluster_series_data is not None:
+        daily_mean = cluster_series_data.groupby(cluster_series_data.index // 24).mean()
+        less_term_matrix = (volume_no_modulation * daily_mean).to_frame(name=cluster_name)
+    else:
+        less_term_matrix = pd.DataFrame({cluster_name: [volume_no_modulation] * 365})
 
-    fr_columns = [col for col in df_results.columns if col.startswith("FR_")]
-    non_fr_columns = [col for col in df_results.columns if not col.startswith("FR_")]
-
-    final_df = df_results[fr_columns].copy()
-
-    if non_fr_columns:
-        # If it's not a FR area, we sum all columns.
-        # The column name will be used to identify the area in the constraint generation
-        final_df[cluster_name] = df_results[non_fr_columns].sum(axis=1)
-
-    logger.info(f"Generated coupling constraints matrix with shape {final_df.shape}")
     # Antares always expects 366 rows for bc_daily
-    if len(final_df) == 365:
-        final_df = pd.concat(
-            [final_df, pd.DataFrame([[0] * final_df.shape[1]], columns=final_df.columns)], ignore_index=True
+    if len(less_term_matrix) == 365:
+        less_term_matrix = pd.concat(
+            [less_term_matrix, pd.DataFrame([[0] * less_term_matrix.shape[1]], columns=less_term_matrix.columns)],
+            ignore_index=True,
         )
-    return final_df
+    _create_dsr_binding_constraints(study, area_name, cluster_name, less_term_matrix)
+    logger.info(f"Generated coupling constraints matrix with shape {less_term_matrix.shape}")
 
 
 def create_dsr_cluster(
