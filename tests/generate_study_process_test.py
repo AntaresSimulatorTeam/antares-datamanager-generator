@@ -254,6 +254,11 @@ def test_add_areas_to_study_calls_create_area_and_set_load(
     mock_read_feather.assert_any_call(Path("/fake/path/loadB.feather"))
     mock_read_feather.assert_any_call(Path("/fake/path/loadB2.feather"))
     assert mock_generate_misc_timeseries.call_count == 2
+    assert used_files == {
+        Path("/fake/path/loadA.feather"),
+        Path("/fake/path/loadB.feather"),
+        Path("/fake/path/loadB2.feather"),
+    }
 
 
 def test_add_links_to_study_calls_create_link():
@@ -611,7 +616,7 @@ def test_generate_study_calls_me_when_present(
 
     generate_study("dummy_id", mock_factory)
 
-    mock_generate_me.assert_called_once_with(mock_study, me_data)
+    mock_generate_me.assert_called_once_with(mock_study, me_data, set())
 
 
 @patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")

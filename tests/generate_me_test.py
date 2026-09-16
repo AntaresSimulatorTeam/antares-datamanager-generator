@@ -12,7 +12,8 @@
 
 import pytest
 
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -37,7 +38,9 @@ def test_add_me_areas_to_study_creates_areas_with_properties():
         "V_ME_H2_SHORT_FR": {},
     }
 
-    add_me_areas_to_study(study, area_me)
+    with patch("antares.datamanager.generator.generate_me.settings") as mock_settings:
+        mock_settings.load_output_directory = Path("/fake/load/dir")
+        add_me_areas_to_study(study, area_me, used_files=set())
 
     assert study.create_area.call_count == 2
     calls_by_name = {call.kwargs["area_name"]: call.kwargs for call in study.create_area.call_args_list}
@@ -54,8 +57,34 @@ def test_add_me_areas_to_study_wraps_error():
     study = MagicMock(spec=Study)
     study.create_area.side_effect = Exception("backend failed")
 
-    with pytest.raises(MEGenerationError, match="V_ME_H2_LONG_FR"):
-        add_me_areas_to_study(study, {"V_ME_H2_LONG_FR": {}})
+    with patch("antares.datamanager.generator.generate_me.settings") as mock_settings:
+        mock_settings.load_output_directory = Path("/fake/load/dir")
+        with pytest.raises(MEGenerationError, match="V_ME_H2_LONG_FR"):
+            add_me_areas_to_study(study, {"V_ME_H2_LONG_FR": {}}, used_files=set())
+
+
+def test_add_me_areas_to_study_applies_loads():
+    study = MagicMock(spec=Study)
+    mock_area_obj = MagicMock()
+    study.create_area.return_value = mock_area_obj
+    used_files: set[Path] = set()
+
+    area_me = {
+        "V_ME_H2_LONG_FR": {"loads": ["load_v_me_h2_long_fr_2026-2027.csv.uuid.arrow"]},
+        "V_ME_H2_SHORT_FR": {"loads": "No LOAD files for this area"},
+    }
+
+    with (
+        patch("antares.datamanager.generator.generate_me.settings") as mock_settings,
+        patch("antares.datamanager.generator.generate_me.pd.read_feather") as mock_read_feather,
+    ):
+        mock_settings.load_output_directory = Path("/fake/load/dir")
+        mock_read_feather.return_value = "fake_df"
+        add_me_areas_to_study(study, area_me, used_files)
+
+    mock_read_feather.assert_called_once_with(Path("/fake/load/dir/load_v_me_h2_long_fr_2026-2027.csv.uuid.arrow"))
+    mock_area_obj.set_load.assert_called_once_with("fake_df")
+    assert used_files == {Path("/fake/load/dir/load_v_me_h2_long_fr_2026-2027.csv.uuid.arrow")}
 
 
 @pytest.mark.parametrize(
@@ -147,6 +176,6 @@ def test_add_me_links_to_study_wraps_error():
 def test_generate_me_handles_missing_sections():
     # backend removes "area_me"/"links_me" completely when empty, (or me itself)
     study = MagicMock(spec=Study)
-    generate_me(study, {})
+    generate_me(study, {}, used_files=set())
     study.create_area.assert_not_called()
     study.create_link.assert_not_called()

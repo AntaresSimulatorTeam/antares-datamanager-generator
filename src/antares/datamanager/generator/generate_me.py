@@ -11,14 +11,16 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Any, Set
 
 import numpy as np
 import pandas as pd
 
 from antares.craft import LinkProperties, LinkPropertiesUpdate, TransmissionCapacities
-from antares.craft.model.area import AreaProperties, AreaUi
+from antares.craft.model.area import Area, AreaProperties, AreaUi
 from antares.craft.model.study import Study
+from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import MEGenerationError
 from antares.datamanager.generator.generate_link_matrices import generate_constant_link_capacity_df
 from antares.datamanager.logs.logging_setup import get_logger
@@ -34,7 +36,9 @@ EXPECTED_HOURS = 8760
 #   "area_me": {
 #     "V_ME_H2_LONG_FR": {
 #       "properties": {"energy_cost_unsupplied": 5376, "energy_cost_spilled": 0, "adequacy_patch_mode": "inside"},
-#       "ui": "AreaUI class as JSON"   # placeholder (ignre)
+#       "ui": "AreaUI class as JSON",   # placeholder (ignored)
+#       "loads": ["load_v_me_h2_long_fr_2026-2027.csv.<UID>.arrow"]
+#       # "No LOAD files for this area" if no load files
 #     }
 #   },
 #   "links_me": {
@@ -74,12 +78,24 @@ def _build_me_area_ui(area_def: dict[str, Any]) -> AreaUi:
     return AreaUi(x=x, y=y, color_rgb=color_rgb)
 
 
-def add_me_areas_to_study(study: Study, area_me: dict[str, Any]) -> None:
+def _set_me_area_loads(area_obj: Area, loads: list[str], load_directory: Path, used_files: Set[Path]) -> None:
+    for load_file in loads:
+        load_path = load_directory / load_file
+        df = pd.read_feather(load_path)
+        area_obj.set_load(df)
+        used_files.add(load_path)
+
+
+def add_me_areas_to_study(study: Study, area_me: dict[str, Any], used_files: Set[Path]) -> None:
+    load_directory = settings.load_output_directory
     for area_name, area_def in area_me.items():
         properties = _build_me_area_properties(area_def)
         ui = _build_me_area_ui(area_def)
+        loads = area_def.get("loads", [])
+        loads = loads if isinstance(loads, list) else []
         try:
-            study.create_area(area_name=area_name, properties=properties, ui=ui)
+            area_obj = study.create_area(area_name=area_name, properties=properties, ui=ui)
+            _set_me_area_loads(area_obj, loads, load_directory, used_files)
             logger.info(f"Created ME area {area_name}")
         except Exception as e:
             raise MEGenerationError(f"Could not create ME area {area_name}: {e}") from e
@@ -136,6 +152,6 @@ def add_me_links_to_study(study: Study, links_me: dict[str, Any]) -> None:
             raise MEGenerationError(f"Could not create ME link {area_from}/{area_to}: {e}") from e
 
 
-def generate_me(study: Study, me_data: dict[str, Any]) -> None:
-    add_me_areas_to_study(study, me_data.get("area_me") or {})
+def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) -> None:
+    add_me_areas_to_study(study, me_data.get("area_me") or {}, used_files)
     add_me_links_to_study(study, me_data.get("links_me") or {})
