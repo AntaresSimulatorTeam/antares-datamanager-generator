@@ -33,6 +33,8 @@ def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_lin
     hvdc_mw = link_data_lower.get(f"hvdcmw{mode}")
     if hvdc_mw_direct is not None and hvdc_mw_indirect is not None:
         hvdc_mw = np.minimum(hvdc_mw_direct, hvdc_mw_indirect)
+    if hvdc_mw is None:
+        hvdc_mw = 0.0
     hvdc_nb = np.minimum(link_data_lower.get("hvdcnbdirect", 1), link_data_lower.get("hvdcnbindirect", 1))
     hvdc_fo_rate = np.maximum(link_data_lower.get("hvdcforatedirect", 0), link_data_lower.get("hvdcforateindirect", 0))
 
