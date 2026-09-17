@@ -91,11 +91,11 @@ def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_lin
 
 
 def generate_link_capacity_df(
-        link_data: dict[str, int],
-        mode: str,
-        seed_tsgen_link: int,
-        link_name: str,
-        first_month: Month | None = None,
+    link_data: dict[str, int],
+    mode: str,
+    seed_tsgen_link: int,
+    link_name: str,
+    first_month: Month | None = None,
 ) -> pd.DataFrame:
     """
     Generate a DataFrame representing link capacity based on input parameters.
@@ -164,10 +164,10 @@ def generate_link_capacity_df(
 
     if hvdc_mw is not None:
         is_full_hvdc = (
-                winter_hc_value == hvdc_mw
-                and winter_hp_value == hvdc_mw
-                and summer_hc_value == hvdc_mw
-                and summer_hp_value == hvdc_mw
+            winter_hc_value == hvdc_mw
+            and winter_hp_value == hvdc_mw
+            and summer_hc_value == hvdc_mw
+            and summer_hp_value == hvdc_mw
         )
         if is_full_hvdc:
             return _generate_hvdc_ts(link_data_lower, mode, seed_tsgen_link, link_name)
