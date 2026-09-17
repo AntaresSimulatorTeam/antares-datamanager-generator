@@ -28,9 +28,10 @@ def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_lin
     """
     Generate random time series for 100% HVDC links.
     """
+    prefix = mode.lower()
     hvdc_mw_direct = link_data_lower.get("hvdcmwdirect")
     hvdc_mw_indirect = link_data_lower.get("hvdcmwindirect")
-    hvdc_mw = link_data_lower.get(f"hvdcmw{mode}")
+    hvdc_mw = link_data_lower.get(f"hvdcmw{prefix}")
     if hvdc_mw_direct is not None and hvdc_mw_indirect is not None:
         hvdc_mw = np.minimum(hvdc_mw_direct, hvdc_mw_indirect)
     if hvdc_mw is None:
@@ -82,7 +83,7 @@ def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_lin
         link_capacity, number_of_timeseries=settings.number_of_timeseries
     )
 
-    if mode == "direct":
+    if prefix == "direct":
         data = link_output.direct_available_power
     else:
         data = link_output.indirect_available_power
