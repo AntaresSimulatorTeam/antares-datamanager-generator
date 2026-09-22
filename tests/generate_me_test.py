@@ -24,6 +24,7 @@ from antares.datamanager.generator.generate_me import (
     _constant_hurdle_cost_df,
     add_me_areas_to_study,
     add_me_links_to_study,
+    add_me_sts_to_study,
     generate_me,
 )
 
@@ -40,11 +41,12 @@ def test_add_me_areas_to_study_creates_areas_with_properties():
 
     with patch("antares.datamanager.generator.generate_me.settings") as mock_settings:
         mock_settings.load_output_directory = Path("/fake/load/dir")
-        add_me_areas_to_study(study, area_me, used_files=set())
+        area_objs = add_me_areas_to_study(study, area_me, used_files=set())
 
     assert study.create_area.call_count == 2
     calls_by_name = {call.kwargs["area_name"]: call.kwargs for call in study.create_area.call_args_list}
     assert set(calls_by_name) == {"V_ME_H2_LONG_FR", "V_ME_H2_SHORT_FR"}
+    assert set(area_objs) == {"V_ME_H2_LONG_FR", "V_ME_H2_SHORT_FR"}
 
     props = calls_by_name["V_ME_H2_LONG_FR"]["properties"]
     assert props.energy_cost_unsupplied == 5376
@@ -179,3 +181,71 @@ def test_generate_me_handles_missing_sections():
     generate_me(study, {}, used_files=set())
     study.create_area.assert_not_called()
     study.create_link.assert_not_called()
+
+
+def test_add_me_sts_to_study_creates_clusters():
+    mock_area_obj = MagicMock()
+    area_objs = {"V_ME_H2_SHORT_FR": mock_area_obj}
+    sts_me = {
+        "V_ME_H2_SHORT_FR_st_storage": {
+            "properties": {"enabled": True, "group": "other1"},
+            "series": ["lower_curve.xlsx.uuid.arrow"],
+        }
+    }
+    area_me = {"V_ME_H2_SHORT_FR": {"sts_me": sts_me}}
+    used_files: set[Path] = set()
+
+    with patch("antares.datamanager.generator.generate_me.generate_sts_clusters") as mock_generate_sts:
+        add_me_sts_to_study(area_objs, area_me, used_files)
+
+    mock_generate_sts.assert_called_once_with(mock_area_obj, sts_me, used_files)
+
+
+def test_add_me_sts_to_study_skips_areas_without_sts():
+    area_objs = {"V_ME_H2_LONG_FR": MagicMock()}
+    area_me = {
+        "V_ME_H2_LONG_FR": {},
+        "V_ME_H2_SHORT_FR": {"sts_me": {}},
+        "V_ME_H2_OTHER_FR": {"sts_me": "not a dict"},
+    }
+
+    with patch("antares.datamanager.generator.generate_me.generate_sts_clusters") as mock_generate_sts:
+        add_me_sts_to_study(area_objs, area_me, used_files=set())
+
+    mock_generate_sts.assert_not_called()
+
+
+def test_add_me_sts_to_study_wraps_error():
+    mock_area_obj = MagicMock()
+    area_objs = {"V_ME_H2_SHORT_FR": mock_area_obj}
+    area_me = {"V_ME_H2_SHORT_FR": {"sts_me": {"cluster": {"properties": {}}}}}
+
+    with patch("antares.datamanager.generator.generate_me.generate_sts_clusters") as mock_generate_sts:
+        mock_generate_sts.side_effect = Exception("sts failed")
+        with pytest.raises(MEGenerationError, match="V_ME_H2_SHORT_FR"):
+            add_me_sts_to_study(area_objs, area_me, used_files=set())
+
+
+def test_generate_me_creates_sts_after_areas_and_links():
+    study = MagicMock(spec=Study)
+    mock_area_obj = MagicMock()
+    study.create_area.return_value = mock_area_obj
+    sts_me = {"V_ME_H2_SHORT_FR_st_storage": {"properties": {}, "series": []}}
+    me_data = {
+        "area_me": {"V_ME_H2_SHORT_FR": {"sts_me": sts_me}},
+        "links_me": {"v_me_h2_long_euest/v_me_h2_long_iber": {"directMw": None, "indirectMw": None}},
+    }
+    call_order: list[str] = []
+    study.create_area.side_effect = lambda **_: call_order.append("area") or mock_area_obj
+    study.create_link.side_effect = lambda **_: call_order.append("link") or MagicMock()
+
+    with (
+        patch("antares.datamanager.generator.generate_me.settings") as mock_settings,
+        patch("antares.datamanager.generator.generate_me.generate_sts_clusters") as mock_generate_sts,
+    ):
+        mock_settings.load_output_directory = Path("/fake/load/dir")
+        mock_generate_sts.side_effect = lambda *_args, **_kwargs: call_order.append("sts")
+        generate_me(study, me_data, used_files=set())
+
+    assert call_order == ["area", "link", "sts"]
+    mock_generate_sts.assert_called_once_with(mock_area_obj, sts_me, set())

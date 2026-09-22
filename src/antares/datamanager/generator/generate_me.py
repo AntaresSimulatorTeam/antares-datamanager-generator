@@ -23,6 +23,7 @@ from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import MEGenerationError
 from antares.datamanager.generator.generate_link_matrices import generate_constant_link_capacity_df
+from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
 from antares.datamanager.logs.logging_setup import get_logger
 from antares.datamanager.utils.area_ui_utils import generate_random_color, generate_random_coordinate
 
@@ -39,6 +40,13 @@ EXPECTED_HOURS = 8760
 #       "ui": "AreaUI class as JSON",   # placeholder (ignored)
 #       "loads": ["load_v_me_h2_long_fr_2026-2027.csv.<UID>.arrow"]
 #       # "No LOAD files for this area" if no load files
+#       "sts_me": {
+#         "V_ME_H2_SHORT_FR_st_storage": {
+#           "properties": {"enabled": true, "group": "other1", "injection_nominal_capacity": 245, ...},
+#           "series": ["lower_curve.xlsx.<UID>.arrow", "Pmax_injection.xlsx.<UID>.arrow"]
+#           # not all 4 series (lower_curve, Pmax_injection, Pmax_soutirage, upper_curve) are required
+#         }
+#       }
 #     }
 #   },
 #   "links_me": {
@@ -86,8 +94,9 @@ def _set_me_area_loads(area_obj: Area, loads: list[str], load_directory: Path, u
         used_files.add(load_path)
 
 
-def add_me_areas_to_study(study: Study, area_me: dict[str, Any], used_files: Set[Path]) -> None:
+def add_me_areas_to_study(study: Study, area_me: dict[str, Any], used_files: Set[Path]) -> dict[str, Area]:
     load_directory = settings.load_output_directory
+    area_objs: dict[str, Area] = {}
     for area_name, area_def in area_me.items():
         properties = _build_me_area_properties(area_def)
         ui = _build_me_area_ui(area_def)
@@ -96,9 +105,11 @@ def add_me_areas_to_study(study: Study, area_me: dict[str, Any], used_files: Set
         try:
             area_obj = study.create_area(area_name=area_name, properties=properties, ui=ui)
             _set_me_area_loads(area_obj, loads, load_directory, used_files)
+            area_objs[area_name] = area_obj
             logger.info(f"Created ME area {area_name}")
         except Exception as e:
             raise MEGenerationError(f"Could not create ME area {area_name}: {e}") from e
+    return area_objs
 
 
 def _constant_hurdle_cost_df(hurdle_cost_direct: float | None, hurdle_cost_indirect: float | None) -> pd.DataFrame:
@@ -152,6 +163,25 @@ def add_me_links_to_study(study: Study, links_me: dict[str, Any]) -> None:
             raise MEGenerationError(f"Could not create ME link {area_from}/{area_to}: {e}") from e
 
 
+def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], used_files: Set[Path]) -> None:
+    for area_name, area_def in area_me.items():
+        sts_me = area_def.get("sts_me")
+        if not isinstance(sts_me, dict) or not sts_me:
+            continue
+
+        area_obj = area_objs.get(area_name)
+        if area_obj is None:
+            continue
+
+        try:
+            generate_sts_clusters(area_obj, sts_me, used_files)
+            logger.info(f"Created ME short-term storage clusters for area {area_name}")
+        except Exception as e:
+            raise MEGenerationError(f"Could not create ME short-term storage for area {area_name}: {e}") from e
+
+
 def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) -> None:
-    add_me_areas_to_study(study, me_data.get("area_me") or {}, used_files)
+    area_me = me_data.get("area_me") or {}
+    area_objs = add_me_areas_to_study(study, area_me, used_files)
     add_me_links_to_study(study, me_data.get("links_me") or {})
+    add_me_sts_to_study(area_objs, area_me, used_files)
