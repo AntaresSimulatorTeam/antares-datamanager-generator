@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Optional, Set, cast
 
@@ -30,6 +31,7 @@ from antares.craft import (
     ThermalClusterProperties,
     TransmissionCapacities,
 )
+from antares.craft.exceptions.exceptions import ReferencedObjectDeletionNotAllowed
 from antares.craft.model.area import Area
 from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
@@ -289,6 +291,28 @@ def create_flowbased_areas_and_links(
     # Création du cluster et de la contrainte restriction_ahc si model_description_fb est présent
     if "model_description_fb" in (flowbased_data.get("virtual_nodes") or []):
         create_restriction_ahc(study)
+
+    _delete_direct_links(study, HUB_AREAS)
+
+
+def _delete_direct_links(study: Study, hub_areas: tuple[str, ...]) -> None:
+    """
+    Remove the normal link between the 5 flowbased countries to prevent short circuit
+
+    Raises:
+        FlowbasedGenerationError: If a direct link is still referenced by a BC
+    """
+    links = study.get_links()
+    for area1, area2 in combinations(hub_areas, 2):
+        area_from, area_to = sorted([area1, area2])
+        link = links.get(f"{area_from} / {area_to}")
+        if link is None:
+            continue
+        try:
+            study.delete_link(link)
+        except ReferencedObjectDeletionNotAllowed as exc:
+            raise FlowbasedGenerationError(f"Could not delete direct link {link.id}: {exc}") from exc
+        logger.info(f"Deleted direct link {link.id} (replaced by zz_flowbased link)")
 
 
 def _parse_link_name(name: Any) -> tuple[str, str]:
