@@ -182,7 +182,8 @@ def _normalize_res_group(group: str) -> str:
 def _matrix_nb_ts(matrix: Any) -> int:
     if matrix is None or not hasattr(matrix, "shape") or len(matrix.shape) <= 1:
         return 0
-    return matrix.shape[1]
+    nb_ts = matrix.shape[1]
+    return nb_ts if isinstance(nb_ts, int) else 0
 
 
 def _get_area_load_nb_ts(area: "Area") -> int:
@@ -512,11 +513,9 @@ def _generate_nuclear_modulation_binding_constraints_scenario(
 
     if expected_nb_ts == 0:
         expected_nb_ts = nuclear_modulation.get("nbTsColumns", 0)
-        if expected_nb_ts == 0:
-            logger.warning(
-                "Could not determine number of TS for nuclear modulation constraints. Using default value 1."
-            )
-            expected_nb_ts = 1
+    if expected_nb_ts <= 1:
+        logger.info("Nuclear modulation constraints have no multi-column timeseries. Skipping scenarisation.")
+        return
 
     scenario_series = _build_scenario_series(nb_years, expected_nb_ts)
 
@@ -633,11 +632,9 @@ def _generate_area_thermal_clusters_scenario(
             except Exception as e:
                 logger.debug(f"Could not get series matrix from cluster {cluster_id}: {e}")
 
-        if nb_ts == 0:
-            logger.warning(
-                f"Could not determine number of TS for thermal cluster '{cluster_id}'. Using default value 1."
-            )
-            nb_ts = 1
+        if nb_ts <= 1:
+            logger.info(f"Thermal cluster '{cluster_id}' has no multi-column timeseries. Skipping scenarisation.")
+            continue
 
         scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
@@ -750,10 +747,9 @@ def _generate_scenarised_links_series(
                 except Exception as e:
                     logger.error(f"Failed to generate link capacity for link {link_id}: {e}")
 
-        # 3. Fallback to default
-        if nb_ts == 0:
-            logger.warning(f"Could not determine number of TS for link '{link_id}'. Using default value 1.")
-            nb_ts = 1
+        if nb_ts <= 1:
+            logger.info(f"Link '{link_id}' has no multi-column timeseries. Skipping scenarisation.")
+            continue
 
         scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
@@ -1023,13 +1019,13 @@ def _generate_scenarised_sts_inflows_series(
                         except Exception as e:
                             logger.error(f"Failed to read file {file_path} for STS cluster {storage_id_str}: {e}")
 
-            # 3. Fallback to default 1
-            if nb_ts == 0:
-                logger.warning(
-                    f"Could not determine number of TS for STS cluster '{storage_id_str}' in area '{area_id_str}'. "
-                    f"Using default value 1."
+            if nb_ts <= 1:
+                logger.info(
+                    f"STS cluster '{storage_id_str}' in area '{area_id_str}' has no multi-column inflows "
+                    "timeseries. Skipping scenarisation."
                 )
-                nb_ts = 1
+                configured_clusters.add((area_id_str, storage_id_str))
+                continue
 
             scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
@@ -1220,13 +1216,12 @@ def _generate_scenarised_sts_constraints_series(
                         except Exception as e:
                             logger.debug(f"Could not get constraint term from storage {storage_id_str}: {e}")
 
-                    # Fallback to 1
-                    if nb_ts == 0:
-                        logger.warning(
-                            f"Could not determine number of TS for STS constraint '{c_id_str}' in cluster '{storage_id_str}' (area '{area_id_str}'). "
-                            f"Using default value 1."
+                    if nb_ts <= 1:
+                        logger.info(
+                            f"STS constraint '{c_id_str}' in cluster '{storage_id_str}' "
+                            f"(area '{area_id_str}') has no multi-column timeseries. Skipping scenarisation."
                         )
-                        nb_ts = 1
+                        continue
 
                     scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
