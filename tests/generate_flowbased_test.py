@@ -25,6 +25,7 @@ from antares.craft import (
     Month,
     TransmissionCapacities,
 )
+from antares.craft.exceptions.exceptions import ReferencedObjectDeletionNotAllowed
 from antares.craft.model.area import Area
 from antares.craft.model.renewable import RenewableCluster
 from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
@@ -37,6 +38,7 @@ from antares.datamanager.generator.generate_flowbased import (
     WINTER_MODEL_FILENAME,
     FlowbasedFileReader,
     _build_constraint_terms,
+    _delete_direct_links,
     _pad_to_binding_constraint_hourly_rows,
     _read_combined_res_series,
     _zscore_pooled,
@@ -561,6 +563,36 @@ def test_create_flowbased_areas_and_links_raises_on_malformed_link_name():
 
     with pytest.raises(FlowbasedGenerationError):
         create_flowbased_areas_and_links(study, flowbased_data, Month.JANUARY)
+
+
+def _fake_link(link_id: str) -> MagicMock:
+    link = MagicMock()
+    link.id = link_id
+    return link
+
+
+def test_create_flowbased_areas_and_links_deletes_hub_pairs_and_skips_the_rest():
+    # be-fr is a flowbased pair and exists -> deleted
+    # fr-itn is not flowbased -> not deleted
+
+    fr_be_link = _fake_link("be / fr")
+    fr_itn_link = _fake_link("fr / itn")
+    study = MagicMock()
+    study.get_links.return_value = {"be / fr": fr_be_link, "fr / itn": fr_itn_link}
+
+    create_flowbased_areas_and_links(study, _structural_flowbased_data(), Month.JANUARY)
+
+    study.delete_link.assert_called_once_with(fr_be_link)
+
+
+def test_delete_direct_links_wraps_referenced_object_error():
+    fr_be_link = _fake_link("be / fr")
+    study = MagicMock()
+    study.get_links.return_value = {"be / fr": fr_be_link}
+    study.delete_link.side_effect = ReferencedObjectDeletionNotAllowed("be / fr", ["some_bc"], object_type="Link")
+
+    with pytest.raises(FlowbasedGenerationError):
+        _delete_direct_links(study, ("be", "fr"))
 
 
 # --- Restriction AHC ---
