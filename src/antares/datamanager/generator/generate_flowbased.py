@@ -640,7 +640,7 @@ def _build_constraint_terms(
 def _wire_scenario_builder(study: Study, group_name: str, n_columns: int, nb_years: int) -> None:
     scenario_builder = study.get_scenario_builder()
     group_matrix = scenario_builder.binding_constraint.get_group(group_name)
-    group_matrix.set_new_scenario([year % n_columns for year in range(nb_years)])
+    group_matrix.set_new_scenario([(year % n_columns) + 1 for year in range(nb_years)])
     study.set_scenario_builder(scenario_builder)
     logger.info(f"Wired flowbased scenario builder group={group_name} nb_years={nb_years} n_columns={n_columns}")
 

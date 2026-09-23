@@ -300,8 +300,8 @@ def test_generate_flowbased_binding_constraints_wires_scenario_builder(mock_sett
 
     group_matrix = study.get_scenario_builder.return_value.binding_constraint.get_group.return_value
     study.get_scenario_builder.return_value.binding_constraint.get_group.assert_called_once_with("flowbased-fb2")
-    # nb_years=5, n_columns=2 -> [0 % 2, 1 % 2, 2 % 2, 3 % 2, 4 % 2]
-    group_matrix.set_new_scenario.assert_called_once_with([0, 1, 0, 1, 0])
+    # nb_years=5, n_columns=2 -> [(0 % 2) + 1, (1 % 2) + 1, (2 % 2) + 1, (3 % 2) + 1, (4 % 2) + 1]
+    group_matrix.set_new_scenario.assert_called_once_with([1, 2, 1, 2, 1])
     study.set_scenario_builder.assert_called_once_with(study.get_scenario_builder.return_value)
 
 
