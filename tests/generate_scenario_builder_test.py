@@ -13,7 +13,7 @@
 import pytest
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from antares.craft.model.study import Study
 from antares.datamanager.generator.generate_scenario_builder import _get_nb_ts, generate_scenario_builder
@@ -623,6 +623,26 @@ def test_generate_scenario_builder_thermal_nuclearfr_fallback_nb_ts_columns(mock
     mock_bc_group.set_new_scenario.assert_called_with(expected_scenario)
 
 
+def test_generate_scenario_builder_thermal_nuclearfr_nb_ts_1_not_scenarised():
+    study = MagicMock()
+    sb = MagicMock()
+    study.get_scenario_builder.return_value = sb
+
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Thermal": ["nuclearfr"]},
+        nuclear_modulation_binding_constraints={
+            "group": "scenarised200",
+            "nbTsColumns": 1,
+            "constraints": [],
+        },
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    sb.binding_constraint.get_group.assert_not_called()
+
+
 @patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
 @patch("antares.datamanager.generator.generate_scenario_builder.settings")
 def test_generate_scenario_builder_thermal_nuclear_fr_clusters_from_feather(mock_settings, mock_read_feather):
@@ -775,8 +795,8 @@ def test_generate_scenario_builder_thermal_nuclear_fr_clusters_fallback_default_
 
     generate_scenario_builder(study, study_data, set())
 
-    # nb_ts fallback = 1 -> scenario for 3 years: [1, 1, 1]
-    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 1, 1])
+    sb.thermal.get_cluster.assert_not_called()
+    mock_thermal_cluster_1.set_new_scenario.assert_not_called()
 
 
 @patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
@@ -931,8 +951,8 @@ def test_generate_scenario_builder_thermal_y_nuc_modulation_clusters_fallback_de
 
     generate_scenario_builder(study, study_data, set())
 
-    # nb_ts fallback = 1 -> scenario for 3 years: [1, 1, 1]
-    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 1, 1])
+    sb.thermal.get_cluster.assert_not_called()
+    mock_thermal_cluster_1.set_new_scenario.assert_not_called()
 
 
 @patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
@@ -1081,8 +1101,8 @@ def test_generate_scenario_builder_thermal_z_p2g_asservi_clusters_fallback_defau
 
     generate_scenario_builder(study, study_data, set())
 
-    # nb_ts fallback = 1 -> scenario for 3 years: [1, 1, 1]
-    mock_thermal_cluster_1.set_new_scenario.assert_called_with([1, 1, 1])
+    sb.thermal.get_cluster.assert_not_called()
+    mock_thermal_cluster_1.set_new_scenario.assert_not_called()
 
 
 def test_generate_scenario_builder_thermal_z_p2g_asservi_area_not_found():
@@ -1178,8 +1198,8 @@ def test_generate_scenario_builder_links_fallback_default_1():
 
     generate_scenario_builder(study, study_data, set())
 
-    sb.link.get_link.assert_called_with("nl / z_p2h_pachybride")
-    mock_link_sb.set_new_scenario.assert_called_with([1, 1, 1])
+    sb.link.get_link.assert_not_called()
+    mock_link_sb.set_new_scenario.assert_not_called()
 
 
 def test_generate_scenario_builder_links_reversed_order_and_casing():
@@ -1322,8 +1342,9 @@ def test_generate_scenario_builder_sts_inflows_priority_to_study_matrix():
         with patch("antares.datamanager.generator.generate_scenario_builder.Path.exists", return_value=True):
             generate_scenario_builder(study, study_data, set())
 
-    # Priority to matrix in study (1 TS) -> [1, 1, 1], not from feather file (4 TS) -> [1, 2, 3]
-    mock_storage_sb.set_new_scenario.assert_called_once_with([1, 1, 1])
+    # The study matrix remains authoritative, but one column means there is no scenario to configure.
+    sb.storage_inflows.get_storage.assert_not_called()
+    mock_storage_sb.set_new_scenario.assert_not_called()
 
 
 def test_generate_scenario_builder_sts_inflows_from_matrix():
@@ -1388,8 +1409,8 @@ def test_generate_scenario_builder_sts_inflows_fallback_1():
 
     generate_scenario_builder(study, study_data, set())
 
-    sb.storage_inflows.get_storage.assert_called_with("area1", "psp_c")
-    mock_storage_sb.set_new_scenario.assert_called_with([1, 1, 1])
+    sb.storage_inflows.get_storage.assert_not_called()
+    mock_storage_sb.set_new_scenario.assert_not_called()
 
 
 @patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
@@ -1741,8 +1762,8 @@ def test_generate_scenario_builder_sts_constraints_fallback_default_1():
 
     generate_scenario_builder(study, study_data, set())
 
-    sb.storage_constraints.get_constraint.assert_called_with("at", "psp_storage_1", "ve")
-    mock_constraint_matrix.set_new_scenario.assert_called_with([1, 1, 1])
+    sb.storage_constraints.get_constraint.assert_not_called()
+    mock_constraint_matrix.set_new_scenario.assert_not_called()
 
 
 def test_generate_scenario_builder_sts_constraints_filters_only_targeted_constraint():
@@ -1772,7 +1793,9 @@ def test_generate_scenario_builder_sts_constraints_filters_only_targeted_constra
         "v2g_limit_fr": mock_c1,
         "other_constraint": mock_c2,
     }
-    storage_pondage.get_constraint_term.return_value = None
+    constraint_matrix = MagicMock()
+    constraint_matrix.shape = (8760, 2)
+    storage_pondage.get_constraint_term.return_value = constraint_matrix
 
     area_fr.get_st_storages.return_value = {"pondage_2h_fr": storage_pondage}
     study.get_areas.return_value = {"fr": area_fr}
@@ -1791,7 +1814,7 @@ def test_generate_scenario_builder_sts_constraints_filters_only_targeted_constra
     # Only v2g_limit_fr should be configured, NOT other_constraint
     assert sb.storage_constraints.get_constraint.call_count == 1
     sb.storage_constraints.get_constraint.assert_called_once_with("fr", "pondage_2h_fr", "v2g_limit_fr")
-    mock_constraint_matrix.set_new_scenario.assert_called_once_with([1, 1, 1])
+    mock_constraint_matrix.set_new_scenario.assert_called_once_with([1, 2, 1])
 
 
 def test_generate_scenario_builder_sts_constraints_filters_only_targeted_cluster():
@@ -1824,7 +1847,9 @@ def test_generate_scenario_builder_sts_constraints_filters_only_targeted_cluster
     mock_c2.name = "v2g_limit_fr"
 
     storage_pondage_2h.get_constraints.return_value = {"v2g_limit_fr": mock_c1}
-    storage_pondage_2h.get_constraint_term.return_value = None
+    constraint_matrix = MagicMock()
+    constraint_matrix.shape = (8760, 2)
+    storage_pondage_2h.get_constraint_term.return_value = constraint_matrix
 
     storage_pondage_4h.get_constraints.return_value = {"v2g_limit_fr": mock_c2}
     storage_pondage_4h.get_constraint_term.return_value = None
@@ -1849,7 +1874,7 @@ def test_generate_scenario_builder_sts_constraints_filters_only_targeted_cluster
     # Only fr_pondage_2h should be configured, NOT fr_pondage_4h
     assert sb.storage_constraints.get_constraint.call_count == 1
     sb.storage_constraints.get_constraint.assert_called_once_with("fr", "fr_pondage_2h", "v2g_limit_fr")
-    mock_constraint_matrix.set_new_scenario.assert_called_once_with([1, 1, 1])
+    mock_constraint_matrix.set_new_scenario.assert_called_once_with([1, 2, 1])
 
 
 def test_generate_scenario_builder_sts_inflows_psp_open_closed_and_pondage():
@@ -1895,6 +1920,12 @@ def test_generate_scenario_builder_sts_inflows_psp_open_closed_and_pondage():
     storage_bat.name = "fr_battery"
     storage_bat.properties.group = "battery"
 
+    inflows_matrix = MagicMock()
+    inflows_matrix.shape = (8760, 2)
+    storage_psp_c.get_storage_inflows.return_value = inflows_matrix
+    storage_psp_o.get_storage_inflows.return_value = inflows_matrix
+    storage_pondage.get_storage_inflows.return_value = inflows_matrix
+
     area_fr.get_st_storages.return_value = {
         "fr_psp_closed": storage_psp_c,
         "fr_psp_open": storage_psp_o,
@@ -1912,9 +1943,9 @@ def test_generate_scenario_builder_sts_inflows_psp_open_closed_and_pondage():
     generate_scenario_builder(study, study_data, set())
 
     # psp_closed, psp_open, and pondage should all be configured
-    mock_sb_psp_c.set_new_scenario.assert_called_once_with([1, 1, 1])
-    mock_sb_psp_o.set_new_scenario.assert_called_once_with([1, 1, 1])
-    mock_sb_pondage.set_new_scenario.assert_called_once_with([1, 1, 1])
+    mock_sb_psp_c.set_new_scenario.assert_called_once_with([1, 2, 1])
+    mock_sb_psp_o.set_new_scenario.assert_called_once_with([1, 2, 1])
+    mock_sb_pondage.set_new_scenario.assert_called_once_with([1, 2, 1])
 
     # battery should not be configured
     configured_storages = [c[0][1] for c in sb.storage_inflows.get_storage.call_args_list]
@@ -1945,6 +1976,9 @@ def test_generate_scenario_builder_sts_inflows_zone_specific():
     storage_fr.id = "fr_psp_closed"
     storage_fr.name = "fr_psp_closed"
     storage_fr.properties.group = "psp_closed"
+    inflows_matrix = MagicMock()
+    inflows_matrix.shape = (8760, 2)
+    storage_fr.get_storage_inflows.return_value = inflows_matrix
     area_fr.get_st_storages.return_value = {"fr_psp_closed": storage_fr}
 
     area_be = MagicMock()
@@ -1954,6 +1988,7 @@ def test_generate_scenario_builder_sts_inflows_zone_specific():
     storage_be.id = "be_psp_closed"
     storage_be.name = "be_psp_closed"
     storage_be.properties.group = "psp_closed"
+    storage_be.get_storage_inflows.return_value = inflows_matrix
     area_be.get_st_storages.return_value = {"be_psp_closed": storage_be}
 
     study.get_areas.return_value = {"fr": area_fr, "be": area_be}
@@ -1967,7 +2002,7 @@ def test_generate_scenario_builder_sts_inflows_zone_specific():
     generate_scenario_builder(study, study_data, set())
 
     # Only fr_psp_closed should be configured, not be_psp_closed
-    mock_sb_fr.set_new_scenario.assert_called_once_with([1, 1, 1])
+    mock_sb_fr.set_new_scenario.assert_called_once_with([1, 2, 1])
     mock_sb_be.set_new_scenario.assert_not_called()
 
 
@@ -1998,6 +2033,27 @@ def test_get_nb_ts_load_fallback_other_area():
 
     nb_ts = _get_nb_ts(study, study_data, "load")
     assert nb_ts == 150
+
+
+def test_get_nb_ts_load_skips_single_column_fr_matrix():
+    study = MagicMock()
+    area_fr = MagicMock()
+    area_de = MagicMock()
+    df_load_fr = MagicMock()
+    df_load_fr.shape = (8760, 1)
+    df_load_de = MagicMock()
+    df_load_de.shape = (8760, 150)
+    area_fr.get_load_matrix.return_value = df_load_fr
+    area_de.get_load_matrix.return_value = df_load_de
+
+    study.get_areas.return_value = {"de": area_de, "fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "load")
+
+    assert nb_ts == 150
+    area_fr.get_load_matrix.assert_called_once()
+    area_de.get_load_matrix.assert_called_once()
 
 
 def test_get_nb_ts_load_no_areas():
@@ -2243,6 +2299,45 @@ def test_generate_scenario_builder_climatic_data_category_nb_ts_le_1_excluded():
     # Categories with nb_ts <= 1 must NOT be scenarised
     mock_hydro_area.set_new_scenario.assert_not_called()
     mock_solar_res.set_new_scenario.assert_not_called()
+
+
+def test_generate_scenario_builder_excludes_area_without_load_timeseries():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
+    df_5 = MagicMock()
+    df_5.shape = (8760, 5)
+    df_1 = MagicMock()
+    df_1.shape = (8760, 1)
+
+    area_fr = MagicMock()
+    area_fr.id = "fr"
+    area_fr.name = "FR"
+    area_fr.get_load_matrix.return_value = df_5
+    area_fr.hydro = None
+    area_fr.get_renewables.return_value = {}
+
+    area_de = MagicMock()
+    area_de.id = "de"
+    area_de.name = "DE"
+    area_de.get_load_matrix.return_value = df_1
+    area_de.hydro = None
+    area_de.get_renewables.return_value = {}
+
+    study.get_areas.return_value = {"fr": area_fr, "de": area_de}
+    sb = MagicMock()
+    mock_load_area = MagicMock()
+    sb.load.get_area.return_value = mock_load_area
+    study.get_scenario_builder.return_value = sb
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Climatic data": ["load"]},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    assert sb.load.get_area.call_args_list == [call("fr")]
+    mock_load_area.set_new_scenario.assert_called_once_with([1, 2, 3, 4, 5])
 
 
 def test_generate_scenario_builder_climatic_data_all_categories_nb_ts_1_no_scenarisation():
