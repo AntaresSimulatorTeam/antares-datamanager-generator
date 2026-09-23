@@ -13,7 +13,7 @@
 import pytest
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from antares.craft.model.study import Study
 from antares.datamanager.generator.generate_scenario_builder import _get_nb_ts, generate_scenario_builder
@@ -2000,6 +2000,27 @@ def test_get_nb_ts_load_fallback_other_area():
     assert nb_ts == 150
 
 
+def test_get_nb_ts_load_skips_single_column_fr_matrix():
+    study = MagicMock()
+    area_fr = MagicMock()
+    area_de = MagicMock()
+    df_load_fr = MagicMock()
+    df_load_fr.shape = (8760, 1)
+    df_load_de = MagicMock()
+    df_load_de.shape = (8760, 150)
+    area_fr.get_load_matrix.return_value = df_load_fr
+    area_de.get_load_matrix.return_value = df_load_de
+
+    study.get_areas.return_value = {"de": area_de, "fr": area_fr}
+    study_data = StudyData(name="test")
+
+    nb_ts = _get_nb_ts(study, study_data, "load")
+
+    assert nb_ts == 150
+    area_fr.get_load_matrix.assert_called_once()
+    area_de.get_load_matrix.assert_called_once()
+
+
 def test_get_nb_ts_load_no_areas():
     study = MagicMock()
     study.get_areas.return_value = {}
@@ -2243,6 +2264,45 @@ def test_generate_scenario_builder_climatic_data_category_nb_ts_le_1_excluded():
     # Categories with nb_ts <= 1 must NOT be scenarised
     mock_hydro_area.set_new_scenario.assert_not_called()
     mock_solar_res.set_new_scenario.assert_not_called()
+
+
+def test_generate_scenario_builder_excludes_area_without_load_timeseries():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+
+    df_5 = MagicMock()
+    df_5.shape = (8760, 5)
+    df_1 = MagicMock()
+    df_1.shape = (8760, 1)
+
+    area_fr = MagicMock()
+    area_fr.id = "fr"
+    area_fr.name = "FR"
+    area_fr.get_load_matrix.return_value = df_5
+    area_fr.hydro = None
+    area_fr.get_renewables.return_value = {}
+
+    area_de = MagicMock()
+    area_de.id = "de"
+    area_de.name = "DE"
+    area_de.get_load_matrix.return_value = df_1
+    area_de.hydro = None
+    area_de.get_renewables.return_value = {}
+
+    study.get_areas.return_value = {"fr": area_fr, "de": area_de}
+    sb = MagicMock()
+    mock_load_area = MagicMock()
+    sb.load.get_area.return_value = mock_load_area
+    study.get_scenario_builder.return_value = sb
+    study_data = StudyData(
+        name="test_study",
+        scenario_builder_config={"Climatic data": ["load"]},
+    )
+
+    generate_scenario_builder(study, study_data, set())
+
+    assert sb.load.get_area.call_args_list == [call("fr")]
+    mock_load_area.set_new_scenario.assert_called_once_with([1, 2, 3, 4, 5])
 
 
 def test_generate_scenario_builder_climatic_data_all_categories_nb_ts_1_no_scenarisation():

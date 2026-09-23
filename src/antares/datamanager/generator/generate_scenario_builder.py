@@ -179,6 +179,60 @@ def _normalize_res_group(group: str) -> str:
     return normalized
 
 
+def _matrix_nb_ts(matrix: Any) -> int:
+    if matrix is None or not hasattr(matrix, "shape") or len(matrix.shape) <= 1:
+        return 0
+    return matrix.shape[1]
+
+
+def _get_area_load_nb_ts(area: "Area") -> int:
+    if not hasattr(area, "get_load_matrix"):
+        return 0
+    return _matrix_nb_ts(area.get_load_matrix())
+
+
+def _get_area_hydro_nb_ts(area: "Area") -> int:
+    hydro = getattr(area, "hydro", None)
+    if hydro is None or not hasattr(hydro, "get_ror_series"):
+        return 0
+    return _matrix_nb_ts(hydro.get_ror_series())
+
+
+def _get_renewable_cluster_nb_ts(area: "Area", area_id: str, cluster_id: Any, cluster: Any) -> int:
+    raw_cluster_id = getattr(cluster, "id", None)
+    cluster_id_str = raw_cluster_id if isinstance(raw_cluster_id, str) else str(cluster_id)
+    raw_cluster_area = getattr(cluster, "area_id", None)
+    cluster_area_id = raw_cluster_area if isinstance(raw_cluster_area, str) else area_id
+    matrix = None
+    renewable_service = getattr(cluster, "_renewable_service", None) or getattr(area, "_renewable_service", None)
+
+    if renewable_service is not None and hasattr(renewable_service, "get_renewable_matrix"):
+        try:
+            matrix = renewable_service.get_renewable_matrix(cluster_id_str, cluster_area_id)
+        except Exception:
+            pass
+
+    if _matrix_nb_ts(matrix) == 0 and hasattr(cluster, "get_timeseries"):
+        try:
+            matrix = cluster.get_timeseries()
+        except Exception:
+            pass
+
+    if _matrix_nb_ts(matrix) == 0:
+        if hasattr(area, "get_renewable_matrix"):
+            try:
+                matrix = area.get_renewable_matrix(cluster_id_str, cluster_area_id)
+            except Exception:
+                pass
+        elif hasattr(cluster, "get_renewable_matrix"):
+            try:
+                matrix = cluster.get_renewable_matrix(cluster_id_str, cluster_area_id)
+            except Exception:
+                pass
+
+    return _matrix_nb_ts(matrix)
+
+
 def _get_nb_ts(study: Study, study_data: StudyData, category: str) -> int:
     """
     Helper to get nb_ts for a given category.
@@ -199,33 +253,26 @@ def _get_nb_ts(study: Study, study_data: StudyData, category: str) -> int:
         return 0
 
     # Determine areas to check: FR first, then others
-    areas_to_check: list[Area] = []
+    areas_to_check: list[tuple[str, Area]] = []
     for area_name, area_obj in areas.items():
         if str(area_name).lower() == "fr" or getattr(area_obj, "name", "").lower() == "fr":
-            areas_to_check.insert(0, area_obj)
+            areas_to_check.insert(0, (str(area_name), area_obj))
         else:
-            areas_to_check.append(area_obj)
+            areas_to_check.append((str(area_name), area_obj))
 
-    for target_area in areas_to_check:
+    for area_name, target_area in areas_to_check:
         if not target_area:
             continue
         try:
-            if category == "load" and hasattr(target_area, "get_load_matrix"):
-                matrix = target_area.get_load_matrix()
-                if matrix is not None and hasattr(matrix, "shape") and len(matrix.shape) > 1 and matrix.shape[1] > 0:
-                    return matrix.shape[1]
+            if category == "load":
+                nb_ts = _get_area_load_nb_ts(target_area)
+                if nb_ts > 1:
+                    return nb_ts
 
-            elif category == "hydro" and getattr(target_area, "hydro", None) is not None:
-                hydro_obj = target_area.hydro
-                if hasattr(hydro_obj, "get_ror_series"):
-                    matrix = hydro_obj.get_ror_series()
-                    if (
-                        matrix is not None
-                        and hasattr(matrix, "shape")
-                        and len(matrix.shape) > 1
-                        and matrix.shape[1] > 0
-                    ):
-                        return matrix.shape[1]
+            elif category == "hydro":
+                nb_ts = _get_area_hydro_nb_ts(target_area)
+                if nb_ts > 1:
+                    return nb_ts
 
             elif category in ["wind_onshore", "wind_offshore", "solar_pv", "solar_thermo"]:
                 if hasattr(target_area, "get_renewables"):
@@ -245,50 +292,9 @@ def _get_nb_ts(study: Study, study_data: StudyData, category: str) -> int:
                                 group = str(raw_grp) if isinstance(raw_grp, str) else ""
 
                             if _normalize_res_group(group) == _normalize_res_group(category):
-                                raw_cluster_id = getattr(cluster_obj, "id", None)
-                                cluster_id_str = raw_cluster_id if isinstance(raw_cluster_id, str) else str(cluster_id)
-                                raw_cluster_area = getattr(cluster_obj, "area_id", None)
-                                cluster_area_id = raw_cluster_area if isinstance(raw_cluster_area, str) else area_id
-                                matrix = None
-                                renewable_service = getattr(cluster_obj, "_renewable_service", None) or getattr(
-                                    target_area, "_renewable_service", None
-                                )
-                                if renewable_service is not None and hasattr(renewable_service, "get_renewable_matrix"):
-                                    try:
-                                        matrix = renewable_service.get_renewable_matrix(cluster_id_str, cluster_area_id)
-                                    except Exception:
-                                        pass
-
-                                if matrix is None or not (
-                                    hasattr(matrix, "shape") and len(matrix.shape) > 1 and matrix.shape[1] > 0
-                                ):
-                                    if hasattr(cluster_obj, "get_timeseries"):
-                                        try:
-                                            matrix = cluster_obj.get_timeseries()
-                                        except Exception:
-                                            pass
-
-                                if matrix is None or not (
-                                    hasattr(matrix, "shape") and len(matrix.shape) > 1 and matrix.shape[1] > 0
-                                ):
-                                    if hasattr(target_area, "get_renewable_matrix"):
-                                        try:
-                                            matrix = target_area.get_renewable_matrix(cluster_id_str, cluster_area_id)
-                                        except Exception:
-                                            pass
-                                    elif hasattr(cluster_obj, "get_renewable_matrix"):
-                                        try:
-                                            matrix = cluster_obj.get_renewable_matrix(cluster_id_str, cluster_area_id)
-                                        except Exception:
-                                            pass
-
-                                if (
-                                    matrix is not None
-                                    and hasattr(matrix, "shape")
-                                    and len(matrix.shape) > 1
-                                    and matrix.shape[1] > 0
-                                ):
-                                    return matrix.shape[1]
+                                nb_ts = _get_renewable_cluster_nb_ts(target_area, area_id, cluster_id, cluster_obj)
+                                if nb_ts > 1:
+                                    return nb_ts
         except Exception as e:
             logger.error(f"Failed to get {category} matrix for area: {e}")
 
@@ -369,10 +375,23 @@ def _generate_scenarised_climatic_data_series(
         )
 
         if not is_excluded_load_hydro:
-            if "load" in climatic_data and nb_ts_by_category.get("load", 0) > 1:
-                sb.load.get_area(area_id).set_new_scenario(scenario_series)
-            if "hydro" in climatic_data and nb_ts_by_category.get("hydro", 0) > 1:
-                sb.hydro.get_area(area_id).set_new_scenario(scenario_series)
+            if "load" in climatic_data:
+                try:
+                    load_nb_ts = _get_area_load_nb_ts(area_obj)
+                except Exception as e:
+                    logger.error(f"Failed to get load matrix for area '{area_id}': {e}")
+                else:
+                    if load_nb_ts > 1:
+                        sb.load.get_area(area_id).set_new_scenario(scenario_series)
+
+            if "hydro" in climatic_data:
+                try:
+                    hydro_nb_ts = _get_area_hydro_nb_ts(area_obj)
+                except Exception as e:
+                    logger.error(f"Failed to get hydro matrix for area '{area_id}': {e}")
+                else:
+                    if hydro_nb_ts > 1:
+                        sb.hydro.get_area(area_id).set_new_scenario(scenario_series)
 
         # Renewable clusters (wind_onshore, wind_offshore, solar_pv, solar_thermo)
         # mapped to sb.renewable which is a ScenarioCluster
@@ -385,7 +404,15 @@ def _generate_scenarised_climatic_data_series(
                 raw_group = getattr(cluster_obj.properties, "group", "") if hasattr(cluster_obj, "properties") else ""
                 for res_m in requested_res:
                     if _normalize_res_group(raw_group) == _normalize_res_group(res_m):
-                        sb.renewable.get_cluster(area_id, cluster_id).set_new_scenario(scenario_series)
+                        try:
+                            cluster_nb_ts = _get_renewable_cluster_nb_ts(area_obj, area_id_str, cluster_id, cluster_obj)
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to get {res_m} matrix for cluster '{cluster_id}' in area '{area_id}': {e}"
+                            )
+                            break
+                        if cluster_nb_ts > 1:
+                            sb.renewable.get_cluster(area_id, cluster_id).set_new_scenario(scenario_series)
                         break
 
 
