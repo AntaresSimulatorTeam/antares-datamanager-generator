@@ -29,13 +29,15 @@ def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_lin
     Generate random time series for 100% HVDC links.
     """
     prefix = mode.lower()
-    mw_key = f"hvdcmw{prefix}"
-    nb_key = f"hvdcnb{prefix}"
-    fo_rate_key = f"hvdcforate{prefix}"
-
-    hvdc_mw = link_data_lower.get(mw_key, 0)
-    hvdc_nb = link_data_lower.get(nb_key, 1)
-    hvdc_fo_rate = link_data_lower.get(fo_rate_key, 0)
+    hvdc_mw_direct = link_data_lower.get("hvdcmwdirect")
+    hvdc_mw_indirect = link_data_lower.get("hvdcmwindirect")
+    hvdc_mw = link_data_lower.get(f"hvdcmw{prefix}")
+    if hvdc_mw_direct is not None and hvdc_mw_indirect is not None:
+        hvdc_mw = np.minimum(hvdc_mw_direct, hvdc_mw_indirect)
+    if hvdc_mw is None:
+        hvdc_mw = 0.0
+    hvdc_nb = np.minimum(link_data_lower.get("hvdcnbdirect", 1), link_data_lower.get("hvdcnbindirect", 1))
+    hvdc_fo_rate = np.maximum(link_data_lower.get("hvdcforatedirect", 0), link_data_lower.get("hvdcforateindirect", 0))
 
     # outage generation parameters
     # fo_rate, po_rate, fo_duration, po_duration, npo_min, npo_max are indexed by day of year (365)
