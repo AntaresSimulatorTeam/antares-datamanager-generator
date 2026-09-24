@@ -17,7 +17,16 @@ from typing import Any, Set
 import numpy as np
 import pandas as pd
 
-from antares.craft import LinkProperties, LinkPropertiesUpdate, TransmissionCapacities
+from antares.craft import (
+    BindingConstraintFrequency,
+    BindingConstraintOperator,
+    BindingConstraintProperties,
+    ConstraintTerm,
+    LinkData,
+    LinkProperties,
+    LinkPropertiesUpdate,
+    TransmissionCapacities,
+)
 from antares.craft.model.area import Area, AreaProperties, AreaUi
 from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
@@ -54,6 +63,14 @@ EXPECTED_HOURS = 8760
 #       "directMw": 12000, "indirectMw": 12000, "hurdleCostDirect": 0.1, "hurdleCostIndirect": 0.1
 #     },
 #     "FR/z_p2g_long_fr": {"directMw": 6280, "indirectMw": 0, "hurdleCostDirect": 0, "hurdleCostIndirect": 0}
+#   },
+#   "binding_constraints_me": {
+#     "constraints_P2G": [
+#       {"node": "z_p2g_long_fr", "efficiency": 0.744}
+#       # one constraint per z_p2g_XX node in links_me
+#       # links to a v_me_* node get weight 1.0 (ME <-> ME),
+#       # links to anything else get weight = efficiency (ELEC <-> ME)
+#     ]
 #   }
 # }
 
@@ -180,8 +197,61 @@ def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], use
             raise MEGenerationError(f"Could not create ME short-term storage for area {area_name}: {e}") from e
 
 
+P2G_NODE_PREFIX = "z_p2g_"
+ME_NODE_PREFIX = "v_me_"
+
+
+def _collect_p2g_links(links_me: dict[str, Any]) -> dict[str, list[str]]:
+    """For each z_p2g_XX node, list the other area on every link it appears in"""
+    links_by_p2g_node: dict[str, list[str]] = {}
+    for link_key in links_me:
+        area_from, area_to = (part.lower() for part in link_key.split("/"))
+        for node, other_side in ((area_from, area_to), (area_to, area_from)):
+            if node.startswith(P2G_NODE_PREFIX):
+                links_by_p2g_node.setdefault(node, []).append(other_side)
+    return links_by_p2g_node
+
+
+def _build_p2g_terms(node: str, other_sides: list[str], efficiency_by_node: dict[str, float]) -> list[ConstraintTerm]:
+    # efficiency value is required, even if all links are ME <-> ME (efficiency not used)
+    if node not in efficiency_by_node:
+        raise MEGenerationError(f"Efficiency missing for P2G node {node}")
+
+    terms = []
+    for other_side in other_sides:
+        weight = 1.0 if other_side.startswith(ME_NODE_PREFIX) else efficiency_by_node[node]
+        terms.append(ConstraintTerm(data=LinkData(area1=node, area2=other_side), weight=weight))
+    return terms
+
+
+def add_me_p2g_binding_constraints(study: Study, links_me: dict[str, Any], constraints_p2g: list[Any]) -> None:
+    try:
+        efficiency_by_node = {str(entry["node"]).lower(): float(entry["efficiency"]) for entry in constraints_p2g}
+    except (KeyError, TypeError, ValueError) as e:
+        raise MEGenerationError(f"Invalid P2G efficiency entry in binding_constraints_me: {e}") from e
+
+    links_by_p2g_node = _collect_p2g_links(links_me)
+    properties = BindingConstraintProperties(
+        enabled=True, time_step=BindingConstraintFrequency.HOURLY, operator=BindingConstraintOperator.EQUAL
+    )
+
+    for node, other_sides in links_by_p2g_node.items():
+        try:
+            terms = _build_p2g_terms(node, other_sides, efficiency_by_node)
+            study.create_binding_constraint(name=f"efficiency_{node}", properties=properties, terms=terms)
+            logger.info(f"Created ME P2G binding constraint efficiency_{node}")
+        except MEGenerationError:
+            raise
+        except Exception as e:
+            raise MEGenerationError(f"Could not create ME P2G binding constraint for node {node}: {e}") from e
+
+
 def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) -> None:
     area_me = me_data.get("area_me") or {}
+    links_me = me_data.get("links_me") or {}
     area_objs = add_me_areas_to_study(study, area_me, used_files)
-    add_me_links_to_study(study, me_data.get("links_me") or {})
+    add_me_links_to_study(study, links_me)
     add_me_sts_to_study(area_objs, area_me, used_files)
+
+    binding_constraints_me = me_data.get("binding_constraints_me") or {}
+    add_me_p2g_binding_constraints(study, links_me, binding_constraints_me.get("constraints_P2G") or [])
