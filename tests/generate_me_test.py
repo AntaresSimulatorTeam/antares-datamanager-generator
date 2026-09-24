@@ -17,13 +17,14 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from antares.craft import Study, TransmissionCapacities
+from antares.craft import BindingConstraintOperator, Study, TransmissionCapacities
 from antares.datamanager.exceptions.exceptions import MEGenerationError
 from antares.datamanager.generator.generate_me import (
     EXPECTED_HOURS,
     _constant_hurdle_cost_df,
     add_me_areas_to_study,
     add_me_links_to_study,
+    add_me_p2g_binding_constraints,
     add_me_sts_to_study,
     generate_me,
 )
@@ -249,3 +250,113 @@ def test_generate_me_creates_sts_after_areas_and_links():
 
     assert call_order == ["area", "link", "sts"]
     mock_generate_sts.assert_called_once_with(mock_area_obj, sts_me, set())
+
+
+def test_generate_me_creates_p2g_binding_constraints_after_sts():
+    study = MagicMock(spec=Study)
+    mock_area_obj = MagicMock()
+    study.create_area.return_value = mock_area_obj
+    me_data = {
+        "area_me": {"V_ME_H2_SHORT_FR": {}},
+        "links_me": {"FR/z_p2g_short_fr": {"directMw": 100, "indirectMw": 100}},
+        "binding_constraints_me": {"constraints_P2G": [{"node": "z_p2g_short_fr", "efficiency": 0.744}]},
+    }
+    call_order: list[str] = []
+    study.create_area.side_effect = lambda **_: call_order.append("area") or mock_area_obj
+    study.create_link.side_effect = lambda **_: call_order.append("link") or MagicMock()
+    study.create_binding_constraint.side_effect = lambda **_: call_order.append("bc") or MagicMock()
+
+    with patch("antares.datamanager.generator.generate_me.settings") as mock_settings:
+        mock_settings.load_output_directory = Path("/fake/load/dir")
+        generate_me(study, me_data, used_files=set())
+
+    assert call_order == ["area", "link", "bc"]
+
+
+def test_add_me_p2g_binding_constraints_mixed_me_and_elec_links():
+    study = MagicMock(spec=Study)
+    links_me = {
+        "v_me_h2_short_fr/z_p2g_short_fr": {"directMw": None, "indirectMw": None},
+        "FR/z_p2g_short_fr": {"directMw": 100, "indirectMw": 100},
+    }
+    constraints_p2g = [{"node": "z_p2g_short_fr", "efficiency": 0.744}]
+
+    add_me_p2g_binding_constraints(study, links_me, constraints_p2g)
+
+    study.create_binding_constraint.assert_called_once()
+    kwargs = study.create_binding_constraint.call_args.kwargs
+    assert kwargs["name"] == "efficiency_z_p2g_short_fr"
+    assert kwargs["properties"].operator == BindingConstraintOperator.EQUAL
+    assert "equal_term_matrix" not in kwargs
+
+    weights_by_term_id = {term.id: term.weight for term in kwargs["terms"]}
+    assert weights_by_term_id["v_me_h2_short_fr%z_p2g_short_fr"] == 1.0
+    assert weights_by_term_id["fr%z_p2g_short_fr"] == 0.744
+
+
+def test_add_me_p2g_binding_constraints_skips_nodes_without_links():
+    study = MagicMock(spec=Study)
+    links_me = {"FR/BE": {"directMw": 100, "indirectMw": 100}}
+    constraints_p2g = [{"node": "z_p2g_short_fr", "efficiency": 0.744}]
+
+    add_me_p2g_binding_constraints(study, links_me, constraints_p2g)
+
+    study.create_binding_constraint.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "constraints_p2g",
+    [
+        [{"efficiency": 0.744}],  # missing node
+        [{"node": "z_p2g_short_fr"}],  # missing efficiency
+        [{"node": "z_p2g_short_fr", "efficiency": "not_a_number"}],
+    ],
+    ids=["missing_node", "missing_efficiency", "non_numeric_efficiency"],
+)
+def test_add_me_p2g_binding_constraints_invalid_entry_raises(constraints_p2g):
+    study = MagicMock(spec=Study)
+    links_me = {"FR/z_p2g_short_fr": {"directMw": 100, "indirectMw": 100}}
+
+    with pytest.raises(MEGenerationError, match="Invalid P2G efficiency entry"):
+        add_me_p2g_binding_constraints(study, links_me, constraints_p2g)
+
+
+@pytest.mark.parametrize(
+    "links_me",
+    [
+        {"FR/z_p2g_short_fr": {"directMw": 100, "indirectMw": 100}},  # ELEC<->ME link
+        {"v_me_h2_short_fr/z_p2g_short_fr": {"directMw": None, "indirectMw": None}},  # ME<->ME link only
+    ],
+    ids=["elec_link", "me_only_link"],
+)
+def test_add_me_p2g_binding_constraints_missing_efficiency_raises(links_me):
+    study = MagicMock(spec=Study)
+
+    with pytest.raises(MEGenerationError, match="z_p2g_short_fr"):
+        add_me_p2g_binding_constraints(study, links_me, constraints_p2g=[])
+
+    study.create_binding_constraint.assert_not_called()
+
+    study.create_binding_constraint.assert_not_called()
+
+
+def test_add_me_p2g_binding_constraints_case_insensitive():
+    study = MagicMock(spec=Study)
+    links_me = {"FR/Z_P2G_SHORT_FR": {"directMw": 100, "indirectMw": 100}}
+    constraints_p2g = [{"node": "Z_P2G_SHORT_FR", "efficiency": 0.744}]
+
+    add_me_p2g_binding_constraints(study, links_me, constraints_p2g)
+
+    kwargs = study.create_binding_constraint.call_args.kwargs
+    weights_by_term_id = {term.id: term.weight for term in kwargs["terms"]}
+    assert weights_by_term_id["fr%z_p2g_short_fr"] == 0.744
+
+
+def test_add_me_p2g_binding_constraints_wraps_unexpected_errors():
+    study = MagicMock(spec=Study)
+    study.create_binding_constraint.side_effect = Exception("backend failed")
+    links_me = {"v_me_h2_short_fr/z_p2g_short_fr": {"directMw": None, "indirectMw": None}}
+    constraints_p2g = [{"node": "z_p2g_short_fr", "efficiency": 0.744}]
+
+    with pytest.raises(MEGenerationError, match="z_p2g_short_fr"):
+        add_me_p2g_binding_constraints(study, links_me, constraints_p2g)
