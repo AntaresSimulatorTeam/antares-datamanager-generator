@@ -21,6 +21,7 @@ from antares.craft import (
     BindingConstraintFrequency,
     BindingConstraintOperator,
     BindingConstraintProperties,
+    ClusterData,
     ConstraintTerm,
     LinkData,
     LinkProperties,
@@ -70,6 +71,13 @@ EXPECTED_HOURS = 8760
 #       # one constraint per z_p2g_XX node in links_me
 #       # links to a v_me_* node get weight 1.0 (ME <-> ME),
 #       # links to anything else get weight = efficiency (ELEC <-> ME)
+#     ],
+#     "constraints_G2P": [
+#       {
+#         "name": "g2p_euest", "enabled": true, "type": "hourly", "operator": "equal",
+#         "node_1_left": "v_me_h2_long_euest", "node_2_left": "z_me_consoelec",
+#         "node_right_area": {"AT": {"CCGT H2 pcomp": {"efficiency": 51}}}
+#       }
 #     ]
 #   }
 # }
@@ -246,6 +254,54 @@ def add_me_p2g_binding_constraints(study: Study, links_me: dict[str, Any], const
             raise MEGenerationError(f"Could not create ME P2G binding constraint for node {node}: {e}") from e
 
 
+def _build_g2p_terms(constraint: dict[str, Any]) -> list[ConstraintTerm]:
+    node_1_left = str(constraint["node_1_left"]).lower()
+    node_2_left = str(constraint["node_2_left"]).lower()
+    node_right_area = constraint["node_right_area"]
+    if not node_1_left or not node_2_left or not isinstance(node_right_area, dict):
+        raise ValueError("node_1_left and node_2_left must be set and node_right_area must be an object")
+
+    terms = [ConstraintTerm(data=LinkData(area1=node_1_left, area2=node_2_left), weight=1.0)]
+    for area_name, clusters in node_right_area.items():
+        if not isinstance(clusters, dict):
+            raise ValueError(f"clusters for area {area_name} must be an object")
+        for cluster_name, cluster_data in clusters.items():
+            if not isinstance(cluster_data, dict):
+                raise ValueError(f"data for cluster {cluster_name} in area {area_name} must be an object")
+            efficiency = float(cluster_data["efficiency"])
+            if efficiency == 0:
+                raise ValueError(f"efficiency for cluster {cluster_name} in area {area_name} must not be zero")
+            normalized_area_name = str(area_name).lower()
+            normalized_cluster_name = f"{area_name}_{cluster_name}".lower()
+            terms.append(
+                ConstraintTerm(
+                    data=ClusterData(area=normalized_area_name, cluster=normalized_cluster_name),
+                    weight=-1.0 / efficiency,
+                )
+            )
+    return terms
+
+
+def add_me_g2p_binding_constraints(study: Study, constraints_g2p: list[Any]) -> None:
+    for constraint in constraints_g2p:
+        constraint_name = constraint.get("name") if isinstance(constraint, dict) else None
+        try:
+            if not isinstance(constraint, dict) or not constraint_name:
+                raise ValueError("each constraint must be an object with a name")
+            properties = BindingConstraintProperties(
+                enabled=constraint["enabled"],
+                time_step=BindingConstraintFrequency(constraint["type"]),
+                operator=BindingConstraintOperator(constraint["operator"]),
+            )
+            terms = _build_g2p_terms(constraint)
+            study.create_binding_constraint(name=str(constraint_name), properties=properties, terms=terms)
+            logger.info(f"Created ME G2P binding constraint {constraint_name}")
+        except (KeyError, TypeError, ValueError) as e:
+            raise MEGenerationError(f"Invalid G2P binding constraint {constraint_name or '<unnamed>'}: {e}") from e
+        except Exception as e:
+            raise MEGenerationError(f"Could not create ME G2P binding constraint {constraint_name}: {e}") from e
+
+
 def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) -> None:
     area_me = me_data.get("area_me") or {}
     links_me = me_data.get("links_me") or {}
@@ -255,3 +311,4 @@ def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) ->
 
     binding_constraints_me = me_data.get("binding_constraints_me") or {}
     add_me_p2g_binding_constraints(study, links_me, binding_constraints_me.get("constraints_P2G") or [])
+    add_me_g2p_binding_constraints(study, binding_constraints_me.get("constraints_G2P") or [])
