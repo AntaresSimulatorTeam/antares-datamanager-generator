@@ -17,12 +17,20 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from antares.craft import BindingConstraintOperator, Study, TransmissionCapacities
+from antares.craft import (
+    BindingConstraintFrequency,
+    BindingConstraintOperator,
+    ClusterData,
+    LinkData,
+    Study,
+    TransmissionCapacities,
+)
 from antares.datamanager.exceptions.exceptions import MEGenerationError
 from antares.datamanager.generator.generate_me import (
     EXPECTED_HOURS,
     _constant_hurdle_cost_df,
     add_me_areas_to_study,
+    add_me_g2p_binding_constraints,
     add_me_links_to_study,
     add_me_p2g_binding_constraints,
     add_me_sts_to_study,
@@ -360,3 +368,109 @@ def test_add_me_p2g_binding_constraints_wraps_unexpected_errors():
 
     with pytest.raises(MEGenerationError, match="z_p2g_short_fr"):
         add_me_p2g_binding_constraints(study, links_me, constraints_p2g)
+
+
+def test_add_me_g2p_binding_constraints_creates_link_and_cluster_terms():
+    study = MagicMock(spec=Study)
+    constraints_g2p = [
+        {
+            "name": "g2p_euest",
+            "enabled": True,
+            "type": "hourly",
+            "operator": "equal",
+            "node_1_left": "v_me_h2_long_euest",
+            "node_2_left": "z_ME_consoElec",
+            "node_right_area": {
+                "AT": {"CCGT H2 pcomp": {"efficiency": 51}},
+                "BE": {},
+                "DE": {"CCGT H2 pcomp": {"efficiency": 51}},
+            },
+        }
+    ]
+
+    add_me_g2p_binding_constraints(study, constraints_g2p)
+
+    study.create_binding_constraint.assert_called_once()
+    kwargs = study.create_binding_constraint.call_args.kwargs
+    assert kwargs["name"] == "g2p_euest"
+    assert kwargs["properties"].enabled is True
+    assert kwargs["properties"].time_step == BindingConstraintFrequency.HOURLY
+    assert kwargs["properties"].operator == BindingConstraintOperator.EQUAL
+
+    link_term = next(term for term in kwargs["terms"] if isinstance(term.data, LinkData))
+    assert link_term.data == LinkData(area1="v_me_h2_long_euest", area2="z_me_consoelec")
+    assert link_term.weight == 1.0
+
+    cluster_terms = [term for term in kwargs["terms"] if isinstance(term.data, ClusterData)]
+    assert {(term.data.area, term.data.cluster) for term in cluster_terms} == {
+        ("at", "at_ccgt h2 pcomp"),
+        ("de", "de_ccgt h2 pcomp"),
+    }
+    assert all(term.weight == pytest.approx(-1 / 51) for term in cluster_terms)
+
+
+def test_generate_me_creates_g2p_binding_constraint():
+    study = MagicMock(spec=Study)
+    constraint = {
+        "name": "g2p_euest",
+        "enabled": True,
+        "type": "hourly",
+        "operator": "equal",
+        "node_1_left": "v_me_h2_long_euest",
+        "node_2_left": "z_me_consoelec",
+        "node_right_area": {},
+    }
+
+    generate_me(
+        study,
+        {"binding_constraints_me": {"constraints_G2P": [constraint]}},
+        used_files=set(),
+    )
+
+    assert study.create_binding_constraint.call_args.kwargs["name"] == "g2p_euest"
+
+
+@pytest.mark.parametrize(
+    ("constraint_update", "error_match"),
+    [
+        ({"node_1_left": ""}, "node_1_left"),
+        ({"type": "monthly"}, "monthly"),
+        ({"operator": "invalid"}, "invalid"),
+        ({"node_right_area": {"AT": {"cluster": {"efficiency": 0}}}}, "must not be zero"),
+        ({"node_right_area": {"AT": {"cluster": {}}}}, "efficiency"),
+    ],
+)
+def test_add_me_g2p_binding_constraints_rejects_invalid_data(constraint_update, error_match):
+    study = MagicMock(spec=Study)
+    constraint = {
+        "name": "g2p",
+        "enabled": True,
+        "type": "hourly",
+        "operator": "equal",
+        "node_1_left": "left_1",
+        "node_2_left": "left_2",
+        "node_right_area": {},
+    }
+    constraint.update(constraint_update)
+
+    with pytest.raises(MEGenerationError, match=error_match):
+        add_me_g2p_binding_constraints(study, [constraint])
+
+    study.create_binding_constraint.assert_not_called()
+
+
+def test_add_me_g2p_binding_constraints_wraps_unexpected_errors():
+    study = MagicMock(spec=Study)
+    study.create_binding_constraint.side_effect = Exception("backend failed")
+    constraint = {
+        "name": "g2p_euest",
+        "enabled": True,
+        "type": "hourly",
+        "operator": "equal",
+        "node_1_left": "left_1",
+        "node_2_left": "left_2",
+        "node_right_area": {},
+    }
+
+    with pytest.raises(MEGenerationError, match="g2p_euest"):
+        add_me_g2p_binding_constraints(study, [constraint])
