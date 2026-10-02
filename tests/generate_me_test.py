@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pandas as pd
 
 from antares.craft import (
     BindingConstraintFrequency,
@@ -31,6 +32,7 @@ from antares.datamanager.generator.generate_me import (
     _constant_hurdle_cost_df,
     add_me_areas_to_study,
     add_me_g2p_binding_constraints,
+    add_me_hydro_to_study,
     add_me_links_to_study,
     add_me_p2g_binding_constraints,
     add_me_sts_to_study,
@@ -190,6 +192,219 @@ def test_generate_me_handles_missing_sections():
     generate_me(study, {}, used_files=set())
     study.create_area.assert_not_called()
     study.create_link.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("generating_daily", "pumping_daily"),
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_generate_me_hydro_maxpower_modes(tmp_path, monkeypatch, generating_daily, pumping_daily):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    study = MagicMock(spec=Study)
+    area = study.create_area.return_value
+    used_files: set[Path] = set()
+    hydro_def = {
+        "properties": {"reservoir_capacity": 72000000, "use_heuristic": False},
+        "inflow_structure": {"intermonthly_correlation": 0.5},
+        "allocation": {"AT": 1},
+        "generating_pmax": {"pmax": 100, "hours": 12},
+        "pumping_pmax": {"pmax": 200, "hours": 6},
+    }
+    for side, daily in (("generating", generating_daily), ("pumping", pumping_daily)):
+        if daily:
+            file_name = f"{side}.arrow"
+            pd.DataFrame({"V_ME_H2_LONG_FR": list(range(365)), "other": [999] * 365}).to_feather(tmp_path / file_name)
+            hydro_def[f"{side}_series"] = file_name
+
+    generate_me(
+        study,
+        {"area_me": {"V_ME_H2_LONG_FR": {}}, "hydro_me": {"v_me_h2_long_fr": hydro_def}},
+        used_files,
+    )
+
+    assert area.hydro.update_properties.call_args.args[0].reservoir_capacity == 72000000
+    assert area.hydro.update_properties.call_args.args[0].use_heuristic is False
+    assert area.hydro.update_inflow_structure.call_args.args[0].intermonthly_correlation == 0.5
+    area.hydro.set_allocation.assert_called_once()
+    assert area.hydro.set_allocation.call_args.args[0][0].area_id == "at"
+    assert area.hydro.set_allocation.call_args.args[0][0].coefficient == 1
+    maxpower = area.hydro.set_maxpower.call_args.args[0]
+    assert maxpower.shape == (365, 4)
+    assert list(maxpower.columns) == ["0", "1", "2", "3"]
+    for side, daily, column, annual_value, hours in (
+        ("generating", generating_daily, "0", 100, 12),
+        ("pumping", pumping_daily, "2", 200, 6),
+    ):
+        assert maxpower[column].tolist() == (list(range(365)) if daily else [annual_value] * 365)
+        assert (maxpower["1" if side == "generating" else "3"] == hours).all()
+    assert used_files == {
+        tmp_path / f"{side}.arrow"
+        for side, daily in (("generating", generating_daily), ("pumping", pumping_daily))
+        if daily
+    }
+
+
+def test_generate_me_hydro_generating_only_defaults_pumping(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    pd.DataFrame({"v_me_h2_long_fr": [7] * 365}).to_feather(tmp_path / "generating.arrow")
+    study = MagicMock(spec=Study)
+
+    generate_me(
+        study,
+        {
+            "area_me": {"v_me_h2_long_fr": {}},
+            "hydro_me": {"v_me_h2_long_fr": {"generating_series": "generating.arrow"}},
+        },
+        set(),
+    )
+
+    maxpower = study.create_area.return_value.hydro.set_maxpower.call_args.args[0]
+    assert (maxpower["0"] == 7).all()
+    assert (maxpower["1"] == 24).all()
+    assert (maxpower["2"] == 0).all()
+    assert (maxpower["3"] == 24).all()
+
+
+@pytest.mark.parametrize("failure", ["missing_area", "missing_file", "missing_node", "wrong_length"])
+def test_generate_me_hydro_invalid_input(tmp_path, monkeypatch, failure):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    area_objs = {} if failure == "missing_area" else {"v_me_h2_long_fr": MagicMock()}
+    hydro_def = {"generating_series": "generating.arrow"}
+    if failure in ("missing_node", "wrong_length"):
+        pd.DataFrame(
+            {
+                "other" if failure == "missing_node" else "v_me_h2_long_fr": [1]
+                * (364 if failure == "wrong_length" else 365)
+            }
+        ).to_feather(tmp_path / "generating.arrow")
+
+    with pytest.raises(MEGenerationError, match="v_me_h2_long_fr"):
+        add_me_hydro_to_study(area_objs, {"v_me_h2_long_fr": hydro_def}, set())
+
+    if area_objs:
+        area_objs["v_me_h2_long_fr"].hydro.set_maxpower.assert_not_called()
+
+
+def test_generate_me_hydro_reservoir_ts(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    file_name = "v_me_h2_long_fr_reservoir_levels_248d8fd2802d86348ce799154cacd252.arrow"
+    pd.DataFrame({"Minimum": [0.1] * 365, "Moyen": [0.5] * 365, "Maximum": [0.9] * 365}).to_feather(
+        tmp_path / file_name
+    )
+    area = MagicMock()
+    used_files: set[Path] = set()
+
+    add_me_hydro_to_study({"v_me_h2_long_fr": area}, {"v_me_h2_long_fr": {"reservoir_ts": file_name}}, used_files)
+
+    reservoir = area.hydro.set_reservoir.call_args.args[0]
+    assert reservoir.shape == (365, 3)
+    assert list(reservoir.columns) == [0, 1, 2]
+    assert reservoir.iloc[0].tolist() == [0.1, 0.5, 0.9]
+    assert tmp_path / file_name in used_files
+
+
+@pytest.mark.parametrize("failure", ["missing_file", "wrong_shape", "not_a_name"])
+def test_generate_me_hydro_reservoir_ts_invalid(tmp_path, monkeypatch, failure):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    reservoir_ts: object = "reservoir.arrow"
+    if failure == "wrong_shape":
+        pd.DataFrame({"Minimum": [0.1] * 365, "Moyen": [0.5] * 365}).to_feather(tmp_path / "reservoir.arrow")
+    elif failure == "not_a_name":
+        reservoir_ts = 42
+    area = MagicMock()
+
+    with pytest.raises(MEGenerationError, match="v_me_h2_long_fr"):
+        add_me_hydro_to_study({"v_me_h2_long_fr": area}, {"v_me_h2_long_fr": {"reservoir_ts": reservoir_ts}}, set())
+
+    area.hydro.set_reservoir.assert_not_called()
+
+
+def test_generate_me_hydro_timeseries_ts(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    pd.DataFrame({"ts1": [1.0] * 8760, "ts2": [2.0] * 8760}).to_feather(tmp_path / "n_ror.abc.arrow")
+    pd.DataFrame({"ts1": [3.0] * 365}).to_feather(tmp_path / "n_mod.abc.arrow")
+    area = MagicMock()
+    used_files: set[Path] = set()
+
+    add_me_hydro_to_study(
+        {"n": area},
+        {"n": {"timeseries_ts": {"ror": "n_ror.abc.arrow", "mod": "n_mod.abc.arrow"}}},
+        used_files,
+    )
+
+    ror = area.hydro.set_ror_series.call_args.args[0]
+    mod = area.hydro.set_mod_series.call_args.args[0]
+    assert ror.shape == (8760, 2) and ror.iloc[0].tolist() == [1.0, 2.0]
+    assert mod.shape == (365, 1) and (mod[0] == 3.0).all()
+    assert used_files == {tmp_path / "n_ror.abc.arrow", tmp_path / "n_mod.abc.arrow"}
+
+
+def test_generate_me_hydro_timeseries_ts_without_headers_keeps_all_data(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    ror_values = np.arange(8760 * 3, dtype=float).reshape(8760, 3)
+    mod_values = np.arange(365 * 2, dtype=float).reshape(365, 2)
+    pd.DataFrame(ror_values).rename(columns=str).to_feather(tmp_path / "n_ror.arrow")
+    pd.DataFrame(mod_values).rename(columns=str).to_feather(tmp_path / "n_mod.arrow")
+    area = MagicMock()
+
+    add_me_hydro_to_study({"n": area}, {"n": {"timeseries_ts": {"ror": "n_ror.arrow", "mod": "n_mod.arrow"}}}, set())
+
+    np.testing.assert_array_equal(area.hydro.set_ror_series.call_args.args[0].to_numpy(), ror_values)
+    np.testing.assert_array_equal(area.hydro.set_mod_series.call_args.args[0].to_numpy(), mod_values)
+
+
+@pytest.mark.parametrize("failure", ["unknown_key", "missing_file", "wrong_rows", "not_an_object"])
+def test_generate_me_hydro_timeseries_ts_invalid(tmp_path, monkeypatch, failure):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    timeseries_ts: object = {"ror": "n_ror.arrow"}
+    if failure == "unknown_key":
+        timeseries_ts = {"inflow": "n_ror.arrow"}
+    elif failure == "wrong_rows":
+        pd.DataFrame({"ts1": [1.0] * 365}).to_feather(tmp_path / "n_ror.arrow")
+    elif failure == "not_an_object":
+        timeseries_ts = "n_ror.arrow"
+    area = MagicMock()
+
+    with pytest.raises(MEGenerationError, match="ME hydro n"):
+        add_me_hydro_to_study({"n": area}, {"n": {"timeseries_ts": timeseries_ts}}, set())
+
+    area.hydro.set_ror_series.assert_not_called()
+
+
+def test_generate_me_hydro_water_values_ts(tmp_path, monkeypatch):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    values = np.arange(365 * 101, dtype=float).reshape(365, 101)
+    file_name = "v_me_h2_long_euest_f46b2a3b.arrow"
+    pd.DataFrame(values, columns=[f"Column{i}" for i in range(101)]).to_feather(tmp_path / file_name)
+    area = MagicMock()
+    used_files: set[Path] = set()
+
+    add_me_hydro_to_study({"n": area}, {"n": {"water_values_ts": file_name}}, used_files)
+
+    np.testing.assert_array_equal(area.hydro.set_water_values.call_args.args[0].to_numpy(), values)
+    assert used_files == {tmp_path / file_name}
+
+
+@pytest.mark.parametrize("shape", [(365, 100), (364, 101)])
+def test_generate_me_hydro_water_values_ts_wrong_shape(tmp_path, monkeypatch, shape):
+    monkeypatch.setenv("NAS_PATH", str(tmp_path))
+    monkeypatch.setenv("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY", str(tmp_path))
+    pd.DataFrame(np.zeros(shape)).rename(columns=str).to_feather(tmp_path / "wv.arrow")
+    area = MagicMock()
+
+    with pytest.raises(MEGenerationError, match="ME hydro n: water_values_ts"):
+        add_me_hydro_to_study({"n": area}, {"n": {"water_values_ts": "wv.arrow"}}, set())
+
+    area.hydro.set_water_values.assert_not_called()
 
 
 def test_add_me_sts_to_study_creates_clusters():

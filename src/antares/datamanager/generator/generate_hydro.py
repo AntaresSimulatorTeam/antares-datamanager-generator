@@ -72,20 +72,7 @@ def generate_hydro(
         allocation_data = properties.get("allocation", {})
 
     if allocation_data:
-        # Deduplicate allocation data by keeping the last occurrence of each area_id.
-        # We lowercase the area_id to avoid duplicates due to casing differences.
-        # We also exclude the current area itself because Antares automatically
-        # includes it in the allocation list.
-        current_area_id = area_obj.name.lower()
-        unique_allocations = {}
-        for target_area, coefficient in allocation_data.items():
-            target_area_lower = target_area.lower()
-            if target_area_lower != current_area_id:
-                unique_allocations[target_area_lower] = HydroAllocation(
-                    area_id=target_area_lower, coefficient=coefficient
-                )
-
-        area_obj.hydro.set_allocation(list(unique_allocations.values()))
+        set_hydro_allocation(area_obj, allocation_data)
 
     # Set series
     base_dir = _resolve_hydro_base_directory()
@@ -135,6 +122,17 @@ def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bo
 
     # fallback if retrieval by name didn't work (we assume it has 2 cols)
     return df.iloc[:, 0], df.iloc[:, 1]
+
+
+def set_hydro_allocation(area_obj: Any, allocation_data: dict[str, float]) -> None:
+    # Antares includes the current area automatically.
+    current_area_id = area_obj.name.lower()
+    unique_allocations = {}
+    for target_area, coefficient in allocation_data.items():
+        target_area_lower = target_area.lower()
+        if target_area_lower != current_area_id:
+            unique_allocations[target_area_lower] = HydroAllocation(area_id=target_area_lower, coefficient=coefficient)
+    area_obj.hydro.set_allocation(list(unique_allocations.values()))
 
 
 def _resolve_hydro_base_directory() -> Path:
