@@ -23,6 +23,8 @@ from antares.craft import (
     BindingConstraintProperties,
     ClusterData,
     ConstraintTerm,
+    HydroPropertiesUpdate,
+    InflowStructureUpdate,
     LinkData,
     LinkProperties,
     LinkPropertiesUpdate,
@@ -32,6 +34,7 @@ from antares.craft.model.area import Area, AreaProperties, AreaUi
 from antares.craft.model.study import Study
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import MEGenerationError
+from antares.datamanager.generator.generate_hydro import set_hydro_allocation
 from antares.datamanager.generator.generate_link_matrices import generate_constant_link_capacity_df
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
 from antares.datamanager.logs.logging_setup import get_logger
@@ -40,6 +43,7 @@ from antares.datamanager.utils.area_ui_utils import generate_random_color, gener
 logger = get_logger(__name__)
 
 EXPECTED_HOURS = 8760
+EXPECTED_DAYS = 365
 
 # Expected JSON (root level "ME" key)
 #
@@ -64,6 +68,22 @@ EXPECTED_HOURS = 8760
 #       "directMw": 12000, "indirectMw": 12000, "hurdleCostDirect": 0.1, "hurdleCostIndirect": 0.1
 #     },
 #     "FR/z_p2g_long_fr": {"directMw": 6280, "indirectMw": 0, "hurdleCostDirect": 0, "hurdleCostIndirect": 0}
+#   },
+#   "hydro_me": {
+#     "v_me_h2_long_fr": {
+#       "properties": {"reservoir_capacity": 2315000},
+#       "inflow_structure": {"intermonthly_correlation": 0.5},
+#       "generating_series": "generating_v_me_h2_long_fr.arrow",
+#       "pumping_pmax": {"pmax": 100, "hours": 24},
+#       "reservoir_ts": "v_me_h2_long_fr_reservoir_levels_<checksum>.arrow"
+#       # 365 x 3 (Minimum, Moyen, Maximum) -> input/hydro/common/capacity/reservoir_{area_id}.txt
+#       "water_values_ts": "v_me_h2_long_fr_<checksum>.arrow",
+#       # 365 x 101 -> input/hydro/common/capacity/waterValues_{area_id}.txt
+#       "timeseries_ts": {
+#         "ror": "v_me_h2_long_fr_ror.<checksum>.arrow",  # 8760 x N -> input/hydro/series/{area_id}/ror.txt
+#         "mod": "v_me_h2_long_fr_mod.<checksum>.arrow"   # 365 x N  -> input/hydro/series/{area_id}/mod.txt
+#       }
+#     }
 #   },
 #   "binding_constraints_me": {
 #     "constraints_P2G": [
@@ -205,6 +225,115 @@ def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], use
             raise MEGenerationError(f"Could not create ME short-term storage for area {area_name}: {e}") from e
 
 
+def _me_maxpower_side(
+    area_name: str, hydro_def: dict[str, Any], side: str, used_files: Set[Path]
+) -> tuple[pd.Series, float]:
+    capacity = hydro_def.get(f"{side}_pmax") or {}
+    if not isinstance(capacity, dict):
+        raise MEGenerationError(f"ME hydro {area_name}: {side}_pmax must be an object")
+    hours = capacity.get("hours", 24)
+    series_file = hydro_def.get(f"{side}_series")
+    if series_file is not None:
+        if not isinstance(series_file, str) or not series_file:
+            raise MEGenerationError(f"ME hydro {area_name}: {side}_series must be a file name")
+        file_path = settings.hydro_me_directory / series_file
+        if not file_path.is_file():
+            raise MEGenerationError(f"ME hydro {area_name}: missing {side} series file {file_path}")
+        used_files.add(file_path)
+        df = pd.read_feather(file_path)
+        columns = {str(column).lower(): column for column in df.columns}
+        if area_name.lower() not in columns:
+            raise MEGenerationError(f"ME hydro {area_name}: node not found in {side} series file {file_path}")
+        if len(df) != EXPECTED_DAYS:
+            raise MEGenerationError(f"ME hydro {area_name}: {side} series must contain {EXPECTED_DAYS} days")
+        return df[columns[area_name.lower()]].reset_index(drop=True), hours
+
+    return pd.Series([capacity.get("pmax", 0)] * EXPECTED_DAYS), hours
+
+
+def _read_me_hydro_matrix(
+    area_name: str, label: str, file_name: Any, rows: int, columns: int | None, used_files: Set[Path]
+) -> pd.DataFrame:
+    """Reads a HYDRO_ME Arrow file and returns its values only (headers dropped).
+    `columns=None` accepts any number of columns (at least one)."""
+    if not isinstance(file_name, str) or not file_name:
+        raise MEGenerationError(f"ME hydro {area_name}: {label} must be a file name")
+    file_path = settings.hydro_me_directory / file_name
+    if not file_path.is_file():
+        raise MEGenerationError(f"ME hydro {area_name}: missing {label} file {file_path}")
+    df = pd.read_feather(file_path)
+    valid_columns = df.shape[1] >= 1 if columns is None else df.shape[1] == columns
+    if len(df) != rows or not valid_columns:
+        expected_columns = "at least 1" if columns is None else str(columns)
+        raise MEGenerationError(
+            f"ME hydro {area_name}: {label} must contain {rows} rows and {expected_columns} columns, got {df.shape}"
+        )
+    used_files.add(file_path)
+    return pd.DataFrame(df.to_numpy(dtype=float))
+
+
+# key in timeseries_ts -> (expected number of rows, Area.hydro setter)
+ME_HYDRO_TIMESERIES = {"ror": (EXPECTED_HOURS, "set_ror_series"), "mod": (EXPECTED_DAYS, "set_mod_series")}
+WATER_VALUES_COLUMNS = 101
+
+
+def _set_me_hydro_timeseries(area_obj: Area, area_name: str, timeseries_ts: Any, used_files: Set[Path]) -> None:
+    if not isinstance(timeseries_ts, dict):
+        raise MEGenerationError(f"ME hydro {area_name}: timeseries_ts must be an object")
+    unknown = set(timeseries_ts) - set(ME_HYDRO_TIMESERIES)
+    if unknown:
+        raise MEGenerationError(f"ME hydro {area_name}: unknown timeseries_ts keys {sorted(unknown)}")
+
+    for key, file_name in timeseries_ts.items():
+        expected_rows, setter = ME_HYDRO_TIMESERIES[key]
+        df = _read_me_hydro_matrix(area_name, f"timeseries_ts.{key}", file_name, expected_rows, None, used_files)
+        getattr(area_obj.hydro, setter)(df)
+
+
+def add_me_hydro_to_study(area_objs: dict[str, Area], hydro_me: dict[str, Any], used_files: Set[Path]) -> None:
+    areas_by_id = {name.lower(): area for name, area in area_objs.items()}
+    for area_name, hydro_def in hydro_me.items():
+        area_obj = areas_by_id.get(area_name.lower())
+        if area_obj is None:
+            raise MEGenerationError(f"ME hydro area {area_name} is not present in area_me")
+        if not isinstance(hydro_def, dict):
+            raise MEGenerationError(f"ME hydro {area_name} must be an object")
+
+        properties = hydro_def.get("properties")
+        if properties is not None:
+            area_obj.hydro.update_properties(HydroPropertiesUpdate(**properties))
+        inflow_structure = hydro_def.get("inflow_structure")
+        if inflow_structure is not None:
+            area_obj.hydro.update_inflow_structure(InflowStructureUpdate(**inflow_structure))
+        allocation = hydro_def.get("allocation")
+        if allocation:
+            set_hydro_allocation(area_obj, allocation)
+
+        generating, generating_hours = _me_maxpower_side(area_name, hydro_def, "generating", used_files)
+        pumping, pumping_hours = _me_maxpower_side(area_name, hydro_def, "pumping", used_files)
+        area_obj.hydro.set_maxpower(
+            pd.DataFrame({"0": generating, "1": generating_hours, "2": pumping, "3": pumping_hours})
+        )
+
+        reservoir_ts = hydro_def.get("reservoir_ts")
+        if reservoir_ts is not None:
+            area_obj.hydro.set_reservoir(
+                _read_me_hydro_matrix(area_name, "reservoir_ts", reservoir_ts, EXPECTED_DAYS, 3, used_files)
+            )
+
+        water_values_ts = hydro_def.get("water_values_ts")
+        if water_values_ts is not None:
+            area_obj.hydro.set_water_values(
+                _read_me_hydro_matrix(
+                    area_name, "water_values_ts", water_values_ts, EXPECTED_DAYS, WATER_VALUES_COLUMNS, used_files
+                )
+            )
+
+        timeseries_ts = hydro_def.get("timeseries_ts")
+        if timeseries_ts is not None:
+            _set_me_hydro_timeseries(area_obj, area_name, timeseries_ts, used_files)
+
+
 P2G_NODE_PREFIX = "z_p2g_"
 ME_NODE_PREFIX = "v_me_"
 
@@ -308,6 +437,7 @@ def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) ->
     area_objs = add_me_areas_to_study(study, area_me, used_files)
     add_me_links_to_study(study, links_me)
     add_me_sts_to_study(area_objs, area_me, used_files)
+    add_me_hydro_to_study(area_objs, me_data.get("hydro_me") or {}, used_files)
 
     binding_constraints_me = me_data.get("binding_constraints_me") or {}
     add_me_p2g_binding_constraints(study, links_me, binding_constraints_me.get("constraints_P2G") or [])
