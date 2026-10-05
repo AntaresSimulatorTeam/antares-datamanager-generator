@@ -102,7 +102,12 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
                 used_files,
             )
 
-        if (study_data.area_thermals or study_data.area_dsr or study_data.p2g) and study_data.enable_random_ts:
+        if (
+            study_data.area_thermals
+            or study_data.area_dsr
+            or study_data.p2g
+            or _has_thermals_me(study_data)
+        ) and study_data.enable_random_ts:
             logger.info(f"Generating timeseries for {study.get_settings().general_parameters.nb_years} years")
             study.generate_thermal_timeseries(study.get_settings().general_parameters.nb_years)
 
@@ -132,6 +137,19 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         raise
     finally:
         _cleanup_arrow_files(used_files)
+
+
+def _has_thermals_me(study_data: StudyData) -> bool:
+    if not study_data.me or not isinstance(study_data.me, dict):
+        return False
+    area_me = study_data.me.get("area_me", {})
+    if not isinstance(area_me, dict):
+        return False
+    return any(
+        bool(area_def.get("thermals_me"))
+        for area_def in area_me.values()
+        if isinstance(area_def, dict)
+    )
 
 
 def _cleanup_arrow_files(used_files: Set[Path]) -> None:

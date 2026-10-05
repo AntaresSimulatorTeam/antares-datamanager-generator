@@ -36,6 +36,7 @@ from antares.datamanager.generator.generate_me import (
     add_me_links_to_study,
     add_me_p2g_binding_constraints,
     add_me_sts_to_study,
+    add_me_thermals_to_study,
     generate_me,
 )
 
@@ -98,6 +99,41 @@ def test_add_me_areas_to_study_applies_loads():
     mock_read_feather.assert_called_once_with(Path("/fake/load/dir/load_v_me_h2_long_fr_2026-2027.csv.uuid.arrow"))
     mock_area_obj.set_load.assert_called_once_with("fake_df")
     assert used_files == {Path("/fake/load/dir/load_v_me_h2_long_fr_2026-2027.csv.uuid.arrow")}
+
+
+def test_add_me_areas_to_study_calls_thermals():
+    study = MagicMock(spec=Study)
+    mock_area_obj = MagicMock()
+    study.create_area.return_value = mock_area_obj
+    used_files: set[Path] = set()
+
+    thermals_me = {"cluster_1": {"properties": {"nominal_capacity": 100}}}
+    area_me = {
+        "V_ME_H2_LONG_IBER": {
+            "loads": [],
+            "thermals_me": thermals_me,
+        }
+    }
+
+    with (
+        patch("antares.datamanager.generator.generate_me.settings") as mock_settings,
+        patch("antares.datamanager.generator.generate_me.generate_thermal_me_clusters") as mock_gen_thermals,
+    ):
+        mock_settings.load_output_directory = Path("/fake/load/dir")
+        add_me_areas_to_study(study, area_me, used_files)
+
+    mock_gen_thermals.assert_called_once_with(mock_area_obj, thermals_me, used_files)
+
+
+def test_add_me_thermals_to_study_wraps_error():
+    mock_area_obj = MagicMock()
+    used_files: set[Path] = set()
+    thermals_me = {"cluster_1": {}}
+
+    with patch("antares.datamanager.generator.generate_me.generate_thermal_me_clusters") as mock_gen_thermals:
+        mock_gen_thermals.side_effect = Exception("asdict() error")
+        with pytest.raises(MEGenerationError, match="Could not create ME Thermal for area"):
+            add_me_thermals_to_study(mock_area_obj, thermals_me, used_files)
 
 
 @pytest.mark.parametrize(

@@ -37,6 +37,7 @@ from antares.datamanager.exceptions.exceptions import MEGenerationError
 from antares.datamanager.generator.generate_hydro import set_hydro_allocation
 from antares.datamanager.generator.generate_link_matrices import generate_constant_link_capacity_df
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
+from antares.datamanager.generator.generate_thermal_clusters import generate_thermal_me_clusters
 from antares.datamanager.logs.logging_setup import get_logger
 from antares.datamanager.utils.area_ui_utils import generate_random_color, generate_random_coordinate
 
@@ -60,7 +61,30 @@ EXPECTED_DAYS = 365
 #           "series": ["lower_curve.xlsx.<UID>.arrow", "Pmax_injection.xlsx.<UID>.arrow"]
 #           # not all 4 series (lower_curve, Pmax_injection, Pmax_soutirage, upper_curve) are required
 #         }
-#       }
+#       },
+#         "thermal_me": {
+#             "V_ME_H2_LONG_EUEST_IMPORTS CANALISATION": {
+#                 "properties": {
+#                     "enabled": true,
+#                     "must_run": false,
+#                     "nb_unit": 1,
+#                     "nominal_capacity": 19350.0,
+#                     "marginal_cost": 95.0,
+#                     "market_bid_cost": 95.0,
+#                     "group": "Other"
+#                 },
+#                 "data": {
+#                     "marginal_cost_modulation": 1,
+#                     "marginal_cost_modulation": 1,
+#                     "market_bid_cost_modulation": "annual",
+#                     "market_bid_cost_modulation": 1,
+#                     "mr_timestep": "annual",
+#                     "mr_modulation": 1,
+#                     "cm_timestep": "annual",
+#                     "cm_modulation": 1
+#                 }
+#             },
+#         }
 #     }
 #   },
 #   "links_me": {
@@ -147,9 +171,12 @@ def add_me_areas_to_study(study: Study, area_me: dict[str, Any], used_files: Set
         ui = _build_me_area_ui(area_def)
         loads = area_def.get("loads", [])
         loads = loads if isinstance(loads, list) else []
+        thermals_me = area_def.get("thermals_me", {})
         try:
             area_obj = study.create_area(area_name=area_name, properties=properties, ui=ui)
             _set_me_area_loads(area_obj, loads, load_directory, used_files)
+            if thermals_me:
+                add_me_thermals_to_study(area_obj, thermals_me, used_files)
             area_objs[area_name] = area_obj
             logger.info(f"Created ME area {area_name}")
         except Exception as e:
@@ -224,6 +251,12 @@ def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], use
         except Exception as e:
             raise MEGenerationError(f"Could not create ME short-term storage for area {area_name}: {e}") from e
 
+def add_me_thermals_to_study(area_obj: Area, thermals_me, used_files: Set[Path]) -> None:
+        try:
+            generate_thermal_me_clusters(area_obj, thermals_me, used_files)
+            # logger.info(f"Created ME Thermal clusters for area {area_obj}")
+        except Exception as e:
+            raise MEGenerationError(f"Could not create ME Thermal for area {area_obj}: {e}") from e
 
 def _me_maxpower_side(
     area_name: str, hydro_def: dict[str, Any], side: str, used_files: Set[Path]
