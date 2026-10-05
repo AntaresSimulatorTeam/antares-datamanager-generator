@@ -98,6 +98,10 @@ class Settings:
         return self._resolve_env_path("PEGASE_HYDRO_TS_OUTPUT_DIRECTORY")
 
     @property
+    def hydro_me_directory(self) -> Path:
+        return self._resolve_env_path("PEGASE_HYDRO_ME_OUTPUT_DIRECTORY")
+
+    @property
     def nuclear_modulation_ts_directory(self) -> Path:
         return self._resolve_env_path("PEGASE_NUCLEAR_MODULATION_TS_OUTPUT_DIRECTORY")
 
