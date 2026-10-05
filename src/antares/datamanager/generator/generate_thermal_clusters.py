@@ -306,19 +306,19 @@ def resolve_and_validate_res_arrow_path(
     allowed_extensions: tuple[str, ...] = (".arrow",),
 ) -> Path:
     if not isinstance(filename, str) or not filename:
-        raise MEGenerationError("RES series filename must be a non-empty string")
+        raise MEGenerationError("ME series filename must be a non-empty string")
 
     if not filename.endswith(".arrow"):
-        raise MEGenerationError(f"Unexpected RES file extension for '{filename}', expected .arrow")
+        raise MEGenerationError(f"Unexpected ME file extension for '{filename}', expected .arrow")
 
     base_resolved = Path(base_dir).resolve()
     file_path = (base_resolved / filename).resolve()
 
     if base_resolved != file_path and base_resolved not in file_path.parents:
-        raise MEGenerationError(f"RES series path outside allowed directory: '{filename}'")
+        raise MEGenerationError(f"ME series path outside allowed directory: '{filename}'")
 
     if not file_path.exists():
-        raise FileNotFoundError(f"RES series file not found: {file_path}")
+        raise FileNotFoundError(f"ME series file not found: {file_path}")
 
     return file_path
 

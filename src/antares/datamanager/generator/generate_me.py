@@ -255,9 +255,9 @@ def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], use
 def add_me_thermals_to_study(area_obj: Area, thermals_me: dict[str, Any], used_files: Set[Path]) -> None:
     try:
         generate_thermal_me_clusters(area_obj, thermals_me, used_files)
-        logger.info(f"Created ME Thermal clusters for area {area_obj}")
+        logger.info(f"Created ME Thermal clusters for area {area_obj.name}")
     except Exception as e:
-        raise MEGenerationError(f"Could not create ME Thermal for area {area_obj}: {e}") from e
+        raise MEGenerationError(f"Could not create ME Thermal for area {area_obj.name}: {e}") from e
 
 
 def _me_maxpower_side(
