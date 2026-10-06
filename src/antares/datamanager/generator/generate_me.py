@@ -73,16 +73,13 @@ EXPECTED_DAYS = 365
 #                     "market_bid_cost": 95.0,
 #                     "group": "Other"
 #                 },
-#                 "data": {
-#                     "marginal_cost_modulation": 1,
-#                     "marginal_cost_modulation": 1,
-#                     "market_bid_cost_modulation": "annual",
+#                 "modulation": {
+#                     "marginal_cost_modulation": 1,                  
 #                     "market_bid_cost_modulation": 1,
-#                     "mr_timestep": "annual",
-#                     "mr_modulation": 1,
-#                     "cm_timestep": "annual",
-#                     "cm_modulation": 1
-#                 }
+#                     "must_run_modulation": 1,
+#                     "capacity_modulation": 1
+#                 },
+#                  "series": {}
 #             },
 #         }
 #     }
