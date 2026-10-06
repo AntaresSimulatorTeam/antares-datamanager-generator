@@ -270,7 +270,7 @@ def test_resolve_and_validate_res_arrow_path(tmp_path):
         resolve_and_validate_res_arrow_path(tmp_path, "")
 
     # Invalid extension
-    with pytest.raises(MEGenerationError, match="Unexpected RES file extension"):
+    with pytest.raises(MEGenerationError, match="Unexpected ME file extension for 'test.txt', expected .arrow"):
         resolve_and_validate_res_arrow_path(tmp_path, "test.txt")
 
     # Outside base directory
@@ -278,8 +278,8 @@ def test_resolve_and_validate_res_arrow_path(tmp_path):
         resolve_and_validate_res_arrow_path(tmp_path, "../test.arrow")
 
     # File not found
-    with pytest.raises(FileNotFoundError, match="RES series file not found"):
-        resolve_and_validate_res_arrow_path(tmp_path, "nonexistent.arrow")
+    with pytest.raises(FileNotFoundError, match="ME series file not found"):
+        resolve_and_validate_res_arrow_path(tmp_path, "ME series file not found: /tmp/pytest-of-etiennemar/pytest-1/test_resolve_and_validate_res_4/nonexistent.arrow")
 
 
 def test_create_modulation_me_matrix_scalar():
