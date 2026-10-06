@@ -279,7 +279,10 @@ def test_resolve_and_validate_res_arrow_path(tmp_path):
 
     # File not found
     with pytest.raises(FileNotFoundError, match="ME series file not found"):
-        resolve_and_validate_res_arrow_path(tmp_path, "ME series file not found: /tmp/pytest-of-etiennemar/pytest-1/test_resolve_and_validate_res_4/nonexistent.arrow")
+        resolve_and_validate_res_arrow_path(
+            tmp_path,
+            "ME series file not found: /tmp/pytest-of-etiennemar/pytest-1/test_resolve_and_validate_res_4/nonexistent.arrow",
+        )
 
 
 def test_create_modulation_me_matrix_scalar():
