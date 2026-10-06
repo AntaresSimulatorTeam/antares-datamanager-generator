@@ -74,12 +74,13 @@ EXPECTED_DAYS = 365
 #                     "group": "Other"
 #                 },
 #                 "modulation": {
-#                     "marginal_cost_modulation": 1,                  
+#                     "marginal_cost_modulation": 1,
 #                     "market_bid_cost_modulation": 1,
 #                     "must_run_modulation": 1,
 #                     "capacity_modulation": 1
 #                 },
-#                  "series": {}
+#                  "series":
+#                   ["<nom_ficher_modulation_checksum>.arrow"] // must_run_modulation_FE_prod_h2_central_v1.xlsx.e4a2a6a8-9c5c-4948-b20e-a24d2d6f3bf2.arrow
 #             },
 #         }
 #     }
