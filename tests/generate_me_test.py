@@ -195,6 +195,50 @@ def test_generate_me_handles_missing_sections():
 
 
 @pytest.mark.parametrize(
+    "binding_data",
+    [
+        {},
+        {"binding_constraints_me": None},
+        {"binding_constraints_me": {}},
+        {"binding_constraints_me": {"constraints_P2G": None, "constraints_G2P": None}},
+        {"binding_constraints_me": {"constraints_P2G": [], "constraints_G2P": []}},
+        {"binding_constraints_me": {"constraints_P2G": [{"node": "z_p2g_long_fr", "efficiency": 0.744}]}},
+        {"binding_constraints_me": {"constraints_G2P": [{"name": "g2p_fr"}]}},
+        {
+            "binding_constraints_me": {
+                "constraints_P2G": [{"node": "z_p2g_long_fr", "efficiency": 0.744}],
+                "constraints_G2P": [{"name": "g2p_fr"}],
+            }
+        },
+    ],
+)
+def test_generate_me_calls_only_nonempty_binding_constraints(binding_data):
+    study = MagicMock(spec=Study)
+    links_me = {"FR/z_p2g_long_fr": {"directMw": 100, "indirectMw": 100}}
+    me_data = {"area_me": {"z_p2g_long_fr": {}}, "links_me": links_me, **binding_data}
+
+    with (
+        patch("antares.datamanager.generator.generate_me.settings") as mock_settings,
+        patch("antares.datamanager.generator.generate_me.add_me_p2g_binding_constraints") as mock_p2g,
+        patch("antares.datamanager.generator.generate_me.add_me_g2p_binding_constraints") as mock_g2p,
+    ):
+        mock_settings.load_output_directory = Path("/fake/load/dir")
+        generate_me(study, me_data, used_files=set())
+
+    constraints = binding_data.get("binding_constraints_me") or {}
+    if constraints.get("constraints_P2G"):
+        mock_p2g.assert_called_once_with(study, links_me, constraints["constraints_P2G"])
+    else:
+        mock_p2g.assert_not_called()
+    if constraints.get("constraints_G2P"):
+        mock_g2p.assert_called_once_with(study, constraints["constraints_G2P"])
+    else:
+        mock_g2p.assert_not_called()
+    study.create_area.assert_called_once()
+    study.create_link.assert_called_once()
+
+
+@pytest.mark.parametrize(
     ("generating_daily", "pumping_daily"),
     [(False, False), (True, False), (False, True), (True, True)],
 )
