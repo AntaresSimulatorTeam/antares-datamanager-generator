@@ -9,8 +9,10 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
@@ -18,6 +20,7 @@ import pandas as pd
 from antares.craft import Month, ThermalClusterProperties, ThermalClusterPropertiesUpdate
 from antares.craft.model.area import Area
 from antares.datamanager.core.settings import settings
+from antares.datamanager.exceptions.exceptions import MEGenerationError
 from antares.datamanager.logs.logging_setup import get_logger
 from antares.datamanager.utils.season_utils import SeasonManager
 
@@ -28,13 +31,14 @@ logger = get_logger(__name__)
 # In winter, we divide by 4.
 NPO_SUMMER_DIVISOR = 3
 NPO_WINTER_DIVISOR = 4
+MODULATION_DEF = ["marginal_cost_modulation", "market_bid_modulation", "capacity_modulation", "must_run_modulation"]
 
 
 def calculate_min_stable_power(
     min_stable_power: float,
     cluster_modulation: list[str],
-    base_dir: Optional[Path] = None,
-    used_files: Optional[Set[Path]] = None,
+    base_dir: Path | None = None,
+    used_files: set[Path] | None = None,
 ) -> Any:
     cm_file = next((f for f in cluster_modulation if "CM_" in f), None)
     if cm_file is not None:
@@ -53,9 +57,9 @@ def calculate_min_stable_power(
 
 def generate_thermal_clusters(
     area_obj: Area,
-    thermals: Dict[str, Any],
+    thermals: dict[str, Any],
     first_month: Month,
-    used_files: Optional[Set[Path]] = None,
+    used_files: set[Path] | None = None,
 ) -> None:
     # Thermals
     for cluster_name, values in thermals.items():
@@ -78,12 +82,12 @@ def generate_thermal_clusters(
 def create_thermal_cluster_with_prepro(
     area_obj: Area,
     cluster_name: str,
-    cluster_values: Dict[str, Any],
+    cluster_values: dict[str, Any],
     prepro_matrix_func: Any,
-    modulation_matrix: Optional[pd.DataFrame] = None,
-    first_month: Optional[Month] = None,
-    base_dir: Optional[Path] = None,
-    used_files: Optional[Set[Path]] = None,
+    modulation_matrix: pd.DataFrame | None = None,
+    first_month: Month | None = None,
+    base_dir: Path | None = None,
+    used_files: set[Path] | None = None,
 ) -> None:
     """
     Creates a thermal cluster, generates its prepro matrix, and sets it.
@@ -217,7 +221,7 @@ def generator_param_modulation_directory() -> Path:
 
 
 def create_modulation_matrix(
-    cluster_modulation: list[str], base_dir: Optional[Path] = None, used_files: Optional[Set[Path]] = None
+    cluster_modulation: list[str], base_dir: Path | None = None, used_files: set[Path] | None = None
 ) -> pd.DataFrame:
     """
     cluster_modulation: list of filenames
@@ -286,3 +290,170 @@ def create_modulation_matrix(
 
     logger.info(f"Final DataFrame shape: {df.shape}")
     return df
+
+
+def thermal_me_directory() -> Path:
+    return settings.thermal_me_directory
+
+
+def thermal_me_modulation_output_directory() -> Path:
+    return settings.thermal_me_modulation_output_directory
+
+
+def resolve_and_validate_res_arrow_path(
+    base_dir: Path | str,
+    filename: str,
+    allowed_extensions: tuple[str, ...] = (".arrow",),
+) -> Path:
+    if not isinstance(filename, str) or not filename:
+        raise MEGenerationError("ME series filename must be a non-empty string")
+
+    if not filename.endswith(".arrow"):
+        raise MEGenerationError(f"Unexpected ME file extension for '{filename}', expected .arrow")
+
+    base_resolved = Path(base_dir).resolve()
+    file_path = (base_resolved / filename).resolve()
+
+    if base_resolved != file_path and base_resolved not in file_path.parents:
+        raise MEGenerationError(f"ME series path outside allowed directory: '{filename}'")
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"ME series file not found: {file_path}")
+
+    return file_path
+
+
+def create_modulation_me_matrix(
+    cluster_name: str,
+    cluster_values: Any,
+    used_files: set[Path] | None = None,
+) -> pd.DataFrame:
+    """
+    cluster_modulation: list of modulation properties :
+    {
+        "marginal_cost_modulation": 1,
+        "market_bid_cost_modulation": 1,
+        "must_run_modulation": 1,
+        "capacity_modulation": 1
+    }
+    Returns a 4-column DataFrame without column names:
+        [MC_value, MBC_value, CM_value, MR_value]
+
+    If cluster_modulation.prop is empty:
+        # use : must_run_modulation_FE_prod_h2_central_v1.xlsx.e4a2a6a8-9c5c-4948-b20e-a24d2d6f3bf2.arrow
+        returns 8760 rows of [prop.modulation.column, 1, 1, 0]
+    """
+    cluster_modulation = cluster_values.get("modulation", {})
+
+    if cluster_modulation is None:
+        logger.info("cluster_modulation is empty, skipping thermal modulation matrix generation.")
+        data = np.tile([1, 1, 1, 0], (8760, 1))
+        return pd.DataFrame(data)
+
+    column_name = cluster_name.lower()
+
+    cluster_series = cluster_values.get("series") or []
+    mod_dir = thermal_me_modulation_output_directory()
+
+    resolved_values = []
+    for val_key in MODULATION_DEF:
+        val = cluster_modulation.get(val_key)
+        if val is None:
+            file_name = next((s for s in cluster_series if s.startswith(val_key)), None)
+            if not file_name:
+                raise ValueError(f"Aucune valeur ni fichier spécifié pour '{val_key}' / '{file_name}'")
+
+            file_path = resolve_and_validate_res_arrow_path(mod_dir, file_name)
+            if used_files is not None:
+                used_files.add(file_path)
+
+            df = pd.read_feather(file_path)
+            if column_name not in df.columns:
+                raise ValueError(f"Colonne '{column_name}' introuvable dans '{file_path}'")
+
+            val = df[column_name]
+            logger.info(f"{val_key} file '{file_path}' size: {len(val)}")
+
+        resolved_values.append(val)
+
+    mc_values, mbc_values, cm_values, mr_values = resolved_values
+
+    modulations = {
+        "MC": mc_values,
+        "MBC": mbc_values,
+        "CM": cm_values,
+        "MR": mr_values,
+    }
+
+    # 1. Identifier la longueur cible (série de fichier ou 8760 par défaut si que des scalaires)
+    series_lengths = {
+        name: len(val)
+        for name, val in modulations.items()
+        if hasattr(val, "__len__") and not isinstance(val, (str, bytes))
+    }
+
+    if series_lengths:
+        # Vérifier que toutes les colonnes/fichiers fournis ont la même taille
+        unique_lengths = set(series_lengths.values())
+        if len(unique_lengths) > 1:
+            details = ", ".join(f"{k}: {v}" for k, v in series_lengths.items())
+            raise ValueError(
+                f"Toutes les colonnes de modulation de fichiers doivent avoir le même nombre de lignes. Reçu : {details}"
+            )
+        num_rows = next(iter(unique_lengths))
+    else:
+        num_rows = 8760  # Valeur par défaut (nombre d'heures dans une année)
+
+    # 2. Remplir chaque colonne (en étendant les scalaires sur num_rows)
+    cols = []
+    for val in [mc_values, mbc_values, cm_values, mr_values]:
+        if hasattr(val, "__len__") and not isinstance(val, (str, bytes)):
+            cols.append(np.asarray(val))
+        else:
+            cols.append(np.full(num_rows, val))
+
+    # 3. Création du DataFrame final (matrice num_rows x 4)
+    df = pd.DataFrame(np.column_stack(cols))
+
+    logger.info(f"Final DataFrame shape: {df.shape}")
+    return df
+
+
+def generate_thermal_me_clusters(
+    area_obj: Area,
+    thermals: dict[str, Any],
+    used_files: set[Path] | None = None,
+) -> None:
+    # Thermals
+    for cluster_name, values in thermals.items():
+        logger.info(f"Creating thermal ME cluster: {cluster_name}")
+
+        modulation_matrix = create_modulation_me_matrix(cluster_name, values, used_files=used_files)
+
+        create_thermal_me_cluster(
+            area_obj,
+            cluster_name,
+            values,
+            modulation_matrix=modulation_matrix,
+            used_files=used_files,
+        )
+
+
+def create_thermal_me_cluster(
+    area_obj: Area,
+    cluster_name: str,
+    cluster_values: dict[str, Any],
+    modulation_matrix: pd.DataFrame | None = None,
+    used_files: set[Path] | None = None,
+) -> None:
+    """
+    Creates a thermal cluster, generates its prepro matrix, and sets it.
+    """
+
+    properties = ThermalClusterProperties(**cluster_values.get("properties", {}))
+
+    if modulation_matrix is None:
+        modulation_matrix = create_modulation_me_matrix(cluster_name, cluster_values, used_files=used_files)
+
+    thermal_cluster = area_obj.create_thermal_cluster(cluster_name, properties)
+    thermal_cluster.set_prepro_modulation(modulation_matrix)
