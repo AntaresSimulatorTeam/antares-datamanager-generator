@@ -440,5 +440,9 @@ def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) ->
     add_me_hydro_to_study(area_objs, me_data.get("hydro_me") or {}, used_files)
 
     binding_constraints_me = me_data.get("binding_constraints_me") or {}
-    add_me_p2g_binding_constraints(study, links_me, binding_constraints_me.get("constraints_P2G") or [])
-    add_me_g2p_binding_constraints(study, binding_constraints_me.get("constraints_G2P") or [])
+    constraints_p2g = binding_constraints_me.get("constraints_P2G")
+    if constraints_p2g:
+        add_me_p2g_binding_constraints(study, links_me, constraints_p2g)
+    constraints_g2p = binding_constraints_me.get("constraints_G2P")
+    if constraints_g2p:
+        add_me_g2p_binding_constraints(study, constraints_g2p)
