@@ -142,13 +142,11 @@ def generate_scenario_builder(study: Study, study_data: StudyData, used_files: S
         ("sts constraints", "sts constraint", "stsconstraints", "STS Constraints"),
     )
 
-    if not climatic_data and not thermal_data and not links_data and not sts_inflows_data and not sts_constraints_data:
-        logger.info(
-            "No scenario builder configuration found in 'Climatic data', 'Thermal', 'Links', 'STS Inflows', or 'STS Constraints'."
-        )
-        return
-
     sb = study.get_scenario_builder()
+
+    _generate_nuclear_modulation_binding_constraints_scenario(
+        sb, study, study.get_settings().general_parameters.nb_years
+    )
 
     scenarised_modulos = ["load", "hydro", "wind_onshore", "wind_offshore", "solar_pv", "solar_thermo"]
     if any(m in climatic_data for m in scenarised_modulos):
@@ -454,81 +452,74 @@ def _generate_scenarised_thermal_series(
 
 def _generate_nuclear_fr_scenario(sb: "ScenarioBuilder", study: Study, study_data: StudyData) -> None:
     """
-    Generate scenario for nuclear modulation binding constraints and nuclear thermal clusters for area FR.
+    Generate scenario for nuclear thermal clusters for area FR.
     """
-    # 1.Generate scenario for nuclear modulation binding constraints if defined
-    _generate_nuclear_modulation_binding_constraints_scenario(
-        sb, study_data, study.get_settings().general_parameters.nb_years
-    )
-
-    # 2.Generate scenario for thermal clusters belonging to group 'nuclear' for area FR
+    # Generate scenario for thermal clusters belonging to group 'nuclear' for area FR
     _generate_nuclear_fr_thermal_clusters_scenario(sb, study, study_data)
 
 
+def _get_binding_constraint_nb_ts(constraint: Any) -> int:
+    """Return the number of timeseries columns of a binding constraint, based on its operator."""
+    operator = str(getattr(constraint.properties.operator, "value", constraint.properties.operator)).lower()
+    getters = []
+    if operator in ("less", "both"):
+        getters.append(constraint.get_less_term_matrix)
+    if operator in ("greater", "both"):
+        getters.append(constraint.get_greater_term_matrix)
+    if operator == "equal":
+        getters.append(constraint.get_equal_term_matrix)
+    return max((_matrix_nb_ts(getter()) for getter in getters), default=0)
+
+
 def _generate_nuclear_modulation_binding_constraints_scenario(
-    sb: "ScenarioBuilder", study_data: StudyData, nb_years: int
+    sb: "ScenarioBuilder", study: Study, nb_years: int
 ) -> None:
     """
-    Scenarize nuclear modulation binding constraints (Nuc_modulation_limit, Nuc_modulation_daily, Nuc_modulation_weekly).
+    Scenarize nuclear modulation binding constraints (nuc_modulation_limit, nuc_modulation_daily,
+    nuc_modulation_weekly) whenever they exist in the study, regardless of the scenario builder config.
     """
-    nuclear_modulation = study_data.nuclear_modulation_binding_constraints
-    if not nuclear_modulation:
-        logger.warning("No nuclear modulation binding constraints configuration found in study_data.")
+    target_constraint_names = {"nuc_modulation_limit", "nuc_modulation_daily", "nuc_modulation_weekly"}
+    constraints = [
+        constraint
+        for constraint in study.get_binding_constraints().values()
+        if str(constraint.name).lower() in target_constraint_names
+    ]
+    if not constraints:
+        logger.info("No nuclear modulation binding constraints found in the study. Skipping scenarisation.")
         return
 
-    constraints = nuclear_modulation.get("constraints", [])
-    base_dir = settings.nuclear_modulation_ts_directory
-
-    target_constraint_names = {"nuc_modulation_limit", "nuc_modulation_daily", "nuc_modulation_weekly"}
     expected_nb_ts = 0
-
+    groups: set[str] = set()
     for constraint in constraints:
-        name = constraint.get("name", "")
-        if name.lower() not in target_constraint_names:
-            continue
+        nb_ts = _get_binding_constraint_nb_ts(constraint)
+        if expected_nb_ts == 0:
+            expected_nb_ts = nb_ts
+        elif nb_ts and nb_ts != expected_nb_ts:
+            msg = (
+                f"Timeseries must have the same number of columns for nuclear modulation constraints. "
+                f"Found {nb_ts} for {constraint.name} but expected {expected_nb_ts}."
+            )
+            logger.error(msg)
+            raise ValueError(msg)
+        group = getattr(constraint.properties, "group", None)
+        if group:
+            groups.add(str(group))
 
-        series_file = constraint.get("series")
-        if not series_file:
-            continue
-
-        file_path = base_dir / series_file
-        if file_path.exists():
-            try:
-                df = pd.read_feather(file_path)
-                nb_ts = df.shape[1]
-                if expected_nb_ts == 0:
-                    expected_nb_ts = nb_ts
-                    logger.info(f"Reference nb_ts determined from {name}: {expected_nb_ts}")
-                elif nb_ts != expected_nb_ts:
-                    msg = (
-                        f"Timeseries must have the same number of columns for nuclear modulation constraints. "
-                        f"Found {nb_ts} for {name} but expected {expected_nb_ts}."
-                    )
-                    logger.error(msg)
-                    raise ValueError(msg)
-            except Exception as e:
-                if isinstance(e, ValueError):
-                    raise
-                logger.error(f"Failed to read file {file_path} for constraint {name}: {e}")
-
-    if expected_nb_ts == 0:
-        expected_nb_ts = nuclear_modulation.get("nbTsColumns", 0)
     if expected_nb_ts <= 1:
         logger.info("Nuclear modulation constraints have no multi-column timeseries. Skipping scenarisation.")
         return
 
     scenario_series = _build_scenario_series(nb_years, expected_nb_ts)
+    if not groups:
+        logger.warning("No group defined on nuclear modulation binding constraints.")
+        return
 
-    group = nuclear_modulation.get("group")
-    if group:
-        group_str = str(group)
+    for group_str in sorted(groups):
         logger.info(
             f"Applying nuclear modulation scenario series of length {len(scenario_series)} "
             f"(nb_ts={expected_nb_ts}) to constraint group '{group_str}'."
         )
         sb.binding_constraint.get_group(group_str).set_new_scenario(scenario_series)
-    else:
-        logger.warning("No group defined in nuclear_modulation_binding_constraints.")
 
 
 def _generate_area_thermal_clusters_scenario(
