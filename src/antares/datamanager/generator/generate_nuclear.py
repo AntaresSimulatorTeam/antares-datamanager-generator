@@ -74,7 +74,7 @@ logger = get_logger(__name__)
 #     "yNucModulationClusters": ["y_nuc_modulation_nuclear_cp0_cp1_cp2", ...],  # weight = -coeff
 #     "constraints": [
 #       {
-#         "name": "nuc_modulation_limit",   # -> binding constraint name
+#         "name": "nuc_modulation_hourly",   # -> binding constraint name
 #         "type": "hourly",                 # -> hourly | daily | weekly
 #         "coeff": 1.00,                    # -> y_nuc_modulation side weight (negated)
 #         "includesPeak": true,             # -> also include frPeakClusters on the FR side
@@ -99,7 +99,8 @@ NUCLEAR_TALON_CONSTRAINT_NAME = "talon_nuc"
 _TIME_STEP_BY_TYPE = {
     "hourly": BindingConstraintFrequency.HOURLY,
     "daily": BindingConstraintFrequency.DAILY,
-    "weekly": BindingConstraintFrequency.WEEKLY,
+    "min_weekly": BindingConstraintFrequency.WEEKLY,
+    "max_weekly": BindingConstraintFrequency.WEEKLY,
 }
 
 _ALL_FILTERS = {

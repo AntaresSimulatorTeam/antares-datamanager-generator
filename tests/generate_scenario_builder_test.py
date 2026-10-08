@@ -15,6 +15,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
+from antares.craft import BuildingMode, GeneralParametersUpdate, StudySettingsUpdate
 from antares.craft.model.study import Study
 from antares.datamanager.generator.generate_scenario_builder import _get_nb_ts, generate_scenario_builder
 from antares.datamanager.models.study_data_json_model import StudyData
@@ -29,6 +30,7 @@ def test_generate_scenario_builder_no_climatic_data():
     generate_scenario_builder(study, study_data, used_files)
 
     study.get_scenario_builder.return_value.binding_constraint.get_group.assert_not_called()
+    study.update_settings.assert_not_called()
 
 
 @patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
@@ -511,7 +513,11 @@ def _make_bc(name, nb_ts, group="scenarised200", operator="less"):
     return bc
 
 
-def test_nuclear_modulation_constraints_scenarised_without_config():
+@pytest.mark.parametrize(
+    "json_settings",
+    [{}, {"general_parameters": {"building_mode": "automatic", "nb_years": 5}}],
+)
+def test_nuclear_modulation_constraints_scenarised_without_config(json_settings):
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
@@ -519,24 +525,29 @@ def test_nuclear_modulation_constraints_scenarised_without_config():
     sb.binding_constraint.get_group.return_value = mock_bc_group
     study.get_scenario_builder.return_value = sb
     study.get_binding_constraints.return_value = {
-        "a": _make_bc("nuc_modulation_limit", 3),
+        "a": _make_bc("nuc_modulation_hourly", 3),
         "b": _make_bc("Nuc_Modulation_Daily", 3),
         "c": _make_bc("nuc_modulation_weekly", 3),
         "d": _make_bc("other", 7, group="other"),
     }
 
-    generate_scenario_builder(study, StudyData(name="test_study", scenario_builder_config={}), set())
+    generate_scenario_builder(
+        study, StudyData(name="test_study", settings=json_settings, scenario_builder_config={}), set()
+    )
 
     sb.binding_constraint.get_group.assert_called_once_with("scenarised200")
     mock_bc_group.set_new_scenario.assert_called_with([1, 2, 3, 1, 2])
     study.set_scenario_builder.assert_called_with(sb)
+    study.update_settings.assert_called_once_with(
+        StudySettingsUpdate(general_parameters=GeneralParametersUpdate(building_mode=BuildingMode.CUSTOM))
+    )
 
 
 def test_nuclear_modulation_constraints_column_mismatch_raises():
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
     study.get_binding_constraints.return_value = {
-        "a": _make_bc("nuc_modulation_limit", 3),
+        "a": _make_bc("nuc_modulation_hourly", 3),
         "b": _make_bc("nuc_modulation_daily", 5),
     }
 
@@ -544,6 +555,7 @@ def test_nuclear_modulation_constraints_column_mismatch_raises():
         generate_scenario_builder(study, StudyData(name="test_study", scenario_builder_config={}), set())
 
     assert "Found 5 for nuc_modulation_daily but expected 3" in str(excinfo.value)
+    study.update_settings.assert_not_called()
 
 
 def test_nuclear_modulation_constraints_single_column_not_scenarised():
@@ -556,6 +568,18 @@ def test_nuclear_modulation_constraints_single_column_not_scenarised():
     generate_scenario_builder(study, StudyData(name="test_study", scenario_builder_config={}), set())
 
     sb.binding_constraint.get_group.assert_not_called()
+    study.update_settings.assert_not_called()
+
+
+def test_nuclear_modulation_constraints_without_group_not_scenarised():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+    study.get_binding_constraints.return_value = {"a": _make_bc("nuc_modulation_limit", 3, group=None)}
+
+    generate_scenario_builder(study, StudyData(name="test_study"), set())
+
+    study.get_scenario_builder.return_value.binding_constraint.get_group.assert_not_called()
+    study.update_settings.assert_not_called()
 
 
 def test_generate_scenario_builder_thermal_empty_nuclear_modulation():

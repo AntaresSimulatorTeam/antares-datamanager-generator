@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 import pandas as pd
 
+from antares.craft import BuildingMode, GeneralParametersUpdate, StudySettingsUpdate
 from antares.craft.model.study import Study
 from antares.craft.tools.contents_tool import transform_name_to_id
 from antares.datamanager.core.settings import settings
@@ -476,9 +477,14 @@ def _generate_nuclear_modulation_binding_constraints_scenario(
 ) -> None:
     """
     Scenarize nuclear modulation binding constraints (nuc_modulation_limit, nuc_modulation_daily,
-    nuc_modulation_weekly) whenever they exist in the study, regardless of the scenario builder config.
+    nuc_modulation_weekly, nuc_modulation_max_weekly) whenever they exist in the study, regardless of the scenario builder config.
     """
-    target_constraint_names = {"nuc_modulation_limit", "nuc_modulation_daily", "nuc_modulation_weekly"}
+    target_constraint_names = {
+        "nuc_modulation_hourly",
+        "nuc_modulation_daily",
+        "nuc_modulation_min_weekly",
+        "nuc_modulation_max_weekly",
+    }
     constraints = [
         constraint
         for constraint in study.get_binding_constraints().values()
@@ -520,6 +526,10 @@ def _generate_nuclear_modulation_binding_constraints_scenario(
             f"(nb_ts={expected_nb_ts}) to constraint group '{group_str}'."
         )
         sb.binding_constraint.get_group(group_str).set_new_scenario(scenario_series)
+
+    study.update_settings(
+        StudySettingsUpdate(general_parameters=GeneralParametersUpdate(building_mode=BuildingMode.CUSTOM))
+    )
 
 
 def _generate_area_thermal_clusters_scenario(
