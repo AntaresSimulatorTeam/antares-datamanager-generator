@@ -59,18 +59,18 @@ def test_generate_nuclear_modulation_binding_constraints_builds_expected_terms(
         "yNucModulationClusters": ["y_nuc_modulation_nuclear_cp0_cp1_cp2", "y_nuc_modulation_nuclear_epr"],
         "constraints": [
             {
-                "name": "nuc_modulation_limit",
+                "name": "nuc_modulation_hourly",
                 "type": "hourly",
                 "coeff": 1.00,
                 "includesPeak": True,
-                "series": "limit.arrow",
+                "series": "hourly.arrow",
             },
             {
-                "name": "nuc_modulation_weekly",
-                "type": "weekly",
+                "name": "nuc_modulation_min_weekly",
+                "type": "min_weekly",
                 "coeff": 0.93,
                 "includesPeak": False,
-                "series": "weekly.arrow",
+                "series": "min_weekly.arrow",
             },
         ],
     }
@@ -78,16 +78,16 @@ def test_generate_nuclear_modulation_binding_constraints_builds_expected_terms(
     generate_nuclear_modulation_binding_constraints(study, nuclear_modulation_binding_constraints, used_files)
 
     assert study.create_binding_constraint.call_count == 2
-    assert used_files == {tmp_path / "limit.arrow", tmp_path / "weekly.arrow"}
+    assert used_files == {tmp_path / "hourly.arrow", tmp_path / "min_weekly.arrow"}
 
-    limit_kwargs = study.create_binding_constraint.call_args_list[0].kwargs
-    assert limit_kwargs["name"] == "nuc_modulation_limit"
-    assert limit_kwargs["properties"].time_step == BindingConstraintFrequency.HOURLY
-    assert limit_kwargs["properties"].operator == BindingConstraintOperator.LESS
-    assert limit_kwargs["properties"].group == "scenarised200"
+    hourly_kwargs = study.create_binding_constraint.call_args_list[0].kwargs
+    assert hourly_kwargs["name"] == "nuc_modulation_hourly"
+    assert hourly_kwargs["properties"].time_step == BindingConstraintFrequency.HOURLY
+    assert hourly_kwargs["properties"].operator == BindingConstraintOperator.LESS
+    assert hourly_kwargs["properties"].group == "scenarised200"
 
-    fr_terms = [t for t in limit_kwargs["terms"] if t.data.area == "fr"]
-    y_terms = [t for t in limit_kwargs["terms"] if t.data.area == "y_nuc_modulation"]
+    fr_terms = [t for t in hourly_kwargs["terms"] if t.data.area == "fr"]
+    y_terms = [t for t in hourly_kwargs["terms"] if t.data.area == "y_nuc_modulation"]
     assert {t.data.cluster for t in fr_terms} == {"fr_nuclear_cp0_cp1_cp2", "fr_nuclear_epr", "fr_nuclear_peak1"}
     assert all(t.weight == 1 for t in fr_terms)
     assert {t.data.cluster for t in y_terms} == {
@@ -189,7 +189,7 @@ def test_generate_nuclear_modulation_binding_constraints_raises_on_incomplete_co
                 "frPeakClusters": [],
                 "yNucModulationClusters": ["y_nuc_modulation_nuclear_epr"],
                 "constraints": [
-                    {"name": "nuc_modulation_limit", "type": "hourly", "includesPeak": True, "series": "s.arrow"}
+                    {"name": "nuc_modulation_hourly", "type": "hourly", "includesPeak": True, "series": "s.arrow"}
                 ],
             },
         )

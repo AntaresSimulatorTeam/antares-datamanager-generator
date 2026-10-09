@@ -15,6 +15,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
+from antares.craft import BuildingMode, GeneralParametersUpdate, StudySettingsUpdate
 from antares.craft.model.study import Study
 from antares.datamanager.generator.generate_scenario_builder import _get_nb_ts, generate_scenario_builder
 from antares.datamanager.models.study_data_json_model import StudyData
@@ -22,12 +23,14 @@ from antares.datamanager.models.study_data_json_model import StudyData
 
 def test_generate_scenario_builder_no_climatic_data():
     study = MagicMock(spec=Study)
+    study.get_binding_constraints.return_value = {}
     study_data = StudyData(name="test_study", scenario_builder_config={})
     used_files = set()
 
     generate_scenario_builder(study, study_data, used_files)
 
-    study.get_scenario_builder.assert_not_called()
+    study.get_scenario_builder.return_value.binding_constraint.get_group.assert_not_called()
+    study.update_settings.assert_not_called()
 
 
 @patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
@@ -497,85 +500,86 @@ def test_generate_scenario_builder_res_direct_tech_structure(mock_settings, mock
         assert "Found 186 for wind_onshore but expected 200" in str(excinfo.value)
 
 
-@patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
-@patch("antares.datamanager.generator.generate_scenario_builder.settings")
-def test_generate_scenario_builder_thermal_nuclearfr(mock_settings, mock_read_feather):
-    mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
+def _make_bc(name, nb_ts, group="scenarised200", operator="less"):
+    bc = MagicMock()
+    bc.name = name
+    bc.properties.group = group
+    bc.properties.operator = operator
+    matrix = MagicMock()
+    matrix.shape = (8760, nb_ts)
+    bc.get_less_term_matrix.return_value = matrix
+    bc.get_greater_term_matrix.return_value = matrix
+    bc.get_equal_term_matrix.return_value = matrix
+    return bc
 
-    df_limit = MagicMock()
-    df_limit.shape = (8760, 3)
-    df_daily = MagicMock()
-    df_daily.shape = (365, 3)
-    df_weekly = MagicMock()
-    df_weekly.shape = (52, 3)
 
-    mock_read_feather.side_effect = [df_limit, df_daily, df_weekly]
-
+@pytest.mark.parametrize(
+    "json_settings",
+    [{}, {"general_parameters": {"building_mode": "automatic", "nb_years": 5}}],
+)
+def test_nuclear_modulation_constraints_scenarised_without_config(json_settings):
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
     mock_bc_group = MagicMock()
     sb.binding_constraint.get_group.return_value = mock_bc_group
     study.get_scenario_builder.return_value = sb
+    study.get_binding_constraints.return_value = {
+        "a": _make_bc("nuc_modulation_hourly", 3),
+        "b": _make_bc("Nuc_Modulation_Daily", 3),
+        "c": _make_bc("nuc_modulation_weekly", 3),
+        "d": _make_bc("other", 7, group="other"),
+    }
 
-    study_data = StudyData(
-        name="test_study",
-        scenario_builder_config={"Thermal": ["nuclearfr", "z_p2g_asservi", "nucleary_nuc_modulation"]},
-        nuclear_modulation_binding_constraints={
-            "group": "scenarised200",
-            "nbTsColumns": 200,
-            "constraints": [
-                {"name": "Nuc_modulation_limit", "series": "limit.arrow"},
-                {"name": "Nuc_modulation_daily", "series": "daily.arrow"},
-                {"name": "Nuc_modulation_weekly", "series": "weekly.arrow"},
-            ],
-        },
+    generate_scenario_builder(
+        study, StudyData(name="test_study", settings=json_settings, scenario_builder_config={}), set()
     )
 
-    with patch("antares.datamanager.generator.generate_scenario_builder.Path.exists", return_value=True):
-        generate_scenario_builder(study, study_data, set())
-
-    sb.binding_constraint.get_group.assert_called_with("scenarised200")
-    expected_scenario = [1, 2, 3, 1, 2]
-    mock_bc_group.set_new_scenario.assert_called_with(expected_scenario)
+    sb.binding_constraint.get_group.assert_called_once_with("scenarised200")
+    mock_bc_group.set_new_scenario.assert_called_with([1, 2, 3, 1, 2])
     study.set_scenario_builder.assert_called_with(sb)
+    study.update_settings.assert_called_once_with(
+        StudySettingsUpdate(general_parameters=GeneralParametersUpdate(building_mode=BuildingMode.CUSTOM))
+    )
 
 
-@patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
-@patch("antares.datamanager.generator.generate_scenario_builder.settings")
-def test_generate_scenario_builder_thermal_nuclearfr_column_mismatch_raises(mock_settings, mock_read_feather):
-    mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
+def test_nuclear_modulation_constraints_column_mismatch_raises():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+    study.get_binding_constraints.return_value = {
+        "a": _make_bc("nuc_modulation_hourly", 3),
+        "b": _make_bc("nuc_modulation_daily", 5),
+    }
 
-    df_limit = MagicMock()
-    df_limit.shape = (8760, 3)
-    df_daily = MagicMock()
-    df_daily.shape = (365, 5)  # Mismatch
+    with pytest.raises(ValueError) as excinfo:
+        generate_scenario_builder(study, StudyData(name="test_study", scenario_builder_config={}), set())
 
-    mock_read_feather.side_effect = [df_limit, df_daily]
+    assert "Found 5 for nuc_modulation_daily but expected 3" in str(excinfo.value)
+    study.update_settings.assert_not_called()
 
+
+def test_nuclear_modulation_constraints_single_column_not_scenarised():
     study = MagicMock()
     study.get_settings.return_value.general_parameters.nb_years = 5
     sb = MagicMock()
     study.get_scenario_builder.return_value = sb
+    study.get_binding_constraints.return_value = {"a": _make_bc("nuc_modulation_limit", 1)}
 
-    study_data = StudyData(
-        name="test_study",
-        scenario_builder_config={"Thermal": ["nuclearfr"]},
-        nuclear_modulation_binding_constraints={
-            "group": "scenarised200",
-            "constraints": [
-                {"name": "nuc_modulation_limit", "series": "limit.arrow"},
-                {"name": "nuc_modulation_daily", "series": "daily.arrow"},
-            ],
-        },
-    )
+    generate_scenario_builder(study, StudyData(name="test_study", scenario_builder_config={}), set())
 
-    with patch("antares.datamanager.generator.generate_scenario_builder.Path.exists", return_value=True):
-        with pytest.raises(ValueError) as excinfo:
-            generate_scenario_builder(study, study_data, set())
+    sb.binding_constraint.get_group.assert_not_called()
+    study.update_settings.assert_not_called()
 
-    assert "Timeseries must have the same number of columns for nuclear modulation constraints" in str(excinfo.value)
-    assert "Found 5 for nuc_modulation_daily but expected 3" in str(excinfo.value)
+
+def test_nuclear_modulation_constraints_without_group_not_scenarised():
+    study = MagicMock()
+    study.get_settings.return_value.general_parameters.nb_years = 5
+    study.get_binding_constraints.return_value = {"a": _make_bc("nuc_modulation_limit", 3, group=None)}
+
+    generate_scenario_builder(study, StudyData(name="test_study"), set())
+
+    study.get_scenario_builder.return_value.binding_constraint.get_group.assert_not_called()
+    study.update_settings.assert_not_called()
 
 
 def test_generate_scenario_builder_thermal_empty_nuclear_modulation():
@@ -592,35 +596,6 @@ def test_generate_scenario_builder_thermal_empty_nuclear_modulation():
     generate_scenario_builder(study, study_data, set())
     study.set_scenario_builder.assert_called_with(sb)
     sb.binding_constraint.get_group.assert_not_called()
-
-
-@patch("antares.datamanager.generator.generate_scenario_builder.pd.read_feather")
-@patch("antares.datamanager.generator.generate_scenario_builder.settings")
-def test_generate_scenario_builder_thermal_nuclearfr_fallback_nb_ts_columns(mock_settings, mock_read_feather):
-    mock_settings.nuclear_modulation_ts_directory = Path("/tmp/nuclear_modulation")
-
-    study = MagicMock()
-    study.get_settings.return_value.general_parameters.nb_years = 3
-    sb = MagicMock()
-    mock_bc_group = MagicMock()
-    sb.binding_constraint.get_group.return_value = mock_bc_group
-    study.get_scenario_builder.return_value = sb
-
-    study_data = StudyData(
-        name="test_study",
-        scenario_builder_config={"Thermal": ["nuclearfr"]},
-        nuclear_modulation_binding_constraints={
-            "group": "scenarised200",
-            "nbTsColumns": 2,
-            "constraints": [],
-        },
-    )
-
-    generate_scenario_builder(study, study_data, set())
-
-    sb.binding_constraint.get_group.assert_called_with("scenarised200")
-    expected_scenario = [1, 2, 1]
-    mock_bc_group.set_new_scenario.assert_called_with(expected_scenario)
 
 
 def test_generate_scenario_builder_thermal_nuclearfr_nb_ts_1_not_scenarised():
