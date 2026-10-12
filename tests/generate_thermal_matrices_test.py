@@ -11,14 +11,23 @@
 # This file is part of the Antares project.
 import pytest
 
+import dataclasses
+
+from unittest.mock import MagicMock
+
 import numpy as np
 import pandas as pd
 
-from antares.craft import Month
+from antares.craft import Month, ThermalClusterProperties
+from antares.datamanager.exceptions.exceptions import MEGenerationError
 from antares.datamanager.generator.generate_thermal_clusters import (
     NPO_SUMMER_DIVISOR,
     NPO_WINTER_DIVISOR,
+    create_modulation_me_matrix,
     create_prepro_data_matrix,
+    create_thermal_me_cluster,
+    generate_thermal_me_clusters,
+    resolve_and_validate_res_arrow_path,
 )
 
 
@@ -243,3 +252,251 @@ def test_flexibility_january_start(monkeypatch):
     # April 1st is Day 91 (0-indexed 90)
     # npo_max for April should be summer (4)
     assert df.iloc[90, 5] == 4
+
+
+def test_resolve_and_validate_res_arrow_path(tmp_path):
+    # Test valid path with Path and str
+    arrow_file = tmp_path / "test.arrow"
+    arrow_file.write_text("dummy")
+
+    resolved_path = resolve_and_validate_res_arrow_path(tmp_path, "test.arrow")
+    assert resolved_path == arrow_file.resolve()
+
+    resolved_str_path = resolve_and_validate_res_arrow_path(str(tmp_path), "test.arrow")
+    assert resolved_str_path == arrow_file.resolve()
+
+    # Invalid filename
+    with pytest.raises(MEGenerationError, match="must be a non-empty string"):
+        resolve_and_validate_res_arrow_path(tmp_path, "")
+
+    # Invalid extension
+    with pytest.raises(MEGenerationError, match="Unexpected ME file extension for 'test.txt', expected .arrow"):
+        resolve_and_validate_res_arrow_path(tmp_path, "test.txt")
+
+    # Outside base directory
+    with pytest.raises(MEGenerationError, match="outside allowed directory"):
+        resolve_and_validate_res_arrow_path(tmp_path, "../test.arrow")
+
+    # File not found
+    with pytest.raises(FileNotFoundError, match="ME series file not found"):
+        resolve_and_validate_res_arrow_path(
+            tmp_path,
+            "ME series file not found: /tmp/pytest-of-etiennemar/pytest-1/test_resolve_and_validate_res_4/nonexistent.arrow",
+        )
+
+
+def test_create_modulation_me_matrix_scalar():
+    cluster_values = {
+        "modulation": {
+            "marginal_cost_modulation": 1.5,
+            "market_bid_modulation": 2.0,
+            "capacity_modulation": 0.8,
+            "must_run_modulation": 0.5,
+        }
+    }
+    df = create_modulation_me_matrix("cluster_1", cluster_values)
+    assert df.shape == (8760, 4)
+    assert (df.iloc[:, 0] == 1.5).all()
+    assert (df.iloc[:, 1] == 2.0).all()
+    assert (df.iloc[:, 2] == 0.8).all()
+    assert (df.iloc[:, 3] == 0.5).all()
+
+
+def test_create_modulation_me_matrix_feather(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_thermal_clusters.thermal_me_modulation_output_directory",
+        lambda: tmp_path,
+    )
+    df_series = pd.DataFrame({"cluster_1": [1.0, 2.0, 3.0]})
+    file_path = tmp_path / "capacity_modulation_test.arrow"
+    df_series.to_feather(file_path)
+
+    cluster_values = {
+        "modulation": {
+            "marginal_cost_modulation": 1.0,
+            "market_bid_modulation": 1.0,
+            "must_run_modulation": 0.0,
+        },
+        "series": ["capacity_modulation_test.arrow"],
+    }
+    df = create_modulation_me_matrix("cluster_1", cluster_values)
+    assert df.shape == (3, 4)
+    assert (df.iloc[:, 2] == [1.0, 2.0, 3.0]).all()
+    assert (df.iloc[:, 0] == 1.0).all()
+    assert (df.iloc[:, 1] == 1.0).all()
+    assert (df.iloc[:, 3] == 0.0).all()
+
+
+def test_create_modulation_me_matrix_empty_or_none():
+    # If modulation is None
+    df_none = create_modulation_me_matrix("cluster_1", {"modulation": None})
+    assert df_none.shape == (8760, 4)
+    assert (df_none.iloc[:, 0] == 1).all()
+    assert (df_none.iloc[:, 1] == 1).all()
+    assert (df_none.iloc[:, 2] == 1).all()
+    assert (df_none.iloc[:, 3] == 0).all()
+
+
+def test_create_modulation_me_matrix_missing_value_and_file_raises():
+    cluster_values = {
+        "modulation": {
+            "marginal_cost_modulation": 1.0,
+            # market_bid_modulation missing and not in series
+            "capacity_modulation": 1.0,
+            "must_run_modulation": 0.0,
+        },
+        "series": [],
+    }
+    with pytest.raises(ValueError, match="Aucune valeur ni fichier spécifié pour 'market_bid_modulation'"):
+        create_modulation_me_matrix("cluster_1", cluster_values)
+
+
+def test_create_modulation_me_matrix_column_not_found_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_thermal_clusters.thermal_me_modulation_output_directory",
+        lambda: tmp_path,
+    )
+    df_series = pd.DataFrame({"other_cluster": [1.0, 2.0, 3.0]})
+    file_path = tmp_path / "marginal_cost_modulation_test.arrow"
+    df_series.to_feather(file_path)
+
+    cluster_values = {
+        "modulation": {
+            "market_bid_modulation": 1.0,
+            "capacity_modulation": 1.0,
+            "must_run_modulation": 0.0,
+        },
+        "series": ["marginal_cost_modulation_test.arrow"],
+    }
+    with pytest.raises(ValueError, match="Colonne 'cluster_1' introuvable"):
+        create_modulation_me_matrix("cluster_1", cluster_values)
+
+
+def test_create_modulation_me_matrix_mismatched_series_lengths_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_thermal_clusters.thermal_me_modulation_output_directory",
+        lambda: tmp_path,
+    )
+    df_series_1 = pd.DataFrame({"cluster_1": [1.0, 2.0, 3.0]})
+    file_path_1 = tmp_path / "marginal_cost_modulation_test.arrow"
+    df_series_1.to_feather(file_path_1)
+
+    df_series_2 = pd.DataFrame({"cluster_1": [1.0, 2.0, 3.0, 4.0]})
+    file_path_2 = tmp_path / "market_bid_modulation_test.arrow"
+    df_series_2.to_feather(file_path_2)
+
+    cluster_values = {
+        "modulation": {
+            "capacity_modulation": 1.0,
+            "must_run_modulation": 0.0,
+        },
+        "series": ["marginal_cost_modulation_test.arrow", "market_bid_modulation_test.arrow"],
+    }
+    with pytest.raises(
+        ValueError, match="Toutes les colonnes de modulation de fichiers doivent avoir le même nombre de lignes"
+    ):
+        create_modulation_me_matrix("cluster_1", cluster_values)
+
+
+def test_create_modulation_me_matrix_tracks_used_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "antares.datamanager.generator.generate_thermal_clusters.thermal_me_modulation_output_directory",
+        lambda: tmp_path,
+    )
+    df_series = pd.DataFrame({"cluster_1": [1.0, 2.0, 3.0]})
+    file_path = tmp_path / "capacity_modulation_test.arrow"
+    df_series.to_feather(file_path)
+
+    cluster_values = {
+        "modulation": {
+            "marginal_cost_modulation": 1.0,
+            "market_bid_modulation": 1.0,
+            "must_run_modulation": 0.0,
+        },
+        "series": ["capacity_modulation_test.arrow"],
+    }
+    used_files = set()
+    create_modulation_me_matrix("cluster_1", cluster_values, used_files=used_files)
+    assert file_path in used_files
+
+
+def test_create_thermal_me_cluster():
+    area_mock = MagicMock()
+    thermal_cluster_mock = MagicMock()
+    area_mock.create_thermal_cluster.return_value = thermal_cluster_mock
+
+    cluster_values = {
+        "properties": {
+            "nominal_capacity": 500.0,
+            "unit_count": 2,
+            "enabled": True,
+            "must_run": True,
+            "marginal_cost": 45.0,
+            "market_bid_cost": 50.0,
+            "group": "Other 1",
+        },
+        "modulation": {
+            "marginal_cost_modulation": 1.0,
+            "market_bid_modulation": 1.0,
+            "capacity_modulation": 1.0,
+            "must_run_modulation": 0.0,
+        },
+    }
+
+    create_thermal_me_cluster(
+        area_obj=area_mock,
+        cluster_name="V_ME_H2_LONG_IBER_cluster",
+        cluster_values=cluster_values,
+    )
+
+    area_mock.create_thermal_cluster.assert_called_once()
+    cluster_name_arg, properties_arg = area_mock.create_thermal_cluster.call_args[0]
+    assert cluster_name_arg == "V_ME_H2_LONG_IBER_cluster"
+    assert isinstance(properties_arg, ThermalClusterProperties)
+    assert dataclasses.is_dataclass(properties_arg)
+    # Ensure asdict succeeds without raising TypeError
+    props_dict = dataclasses.asdict(properties_arg)
+    assert props_dict["nominal_capacity"] == 500.0
+    assert props_dict["unit_count"] == 2
+    assert props_dict["enabled"] is True
+    assert props_dict["must_run"] is True
+    assert props_dict["marginal_cost"] == 45.0
+    assert props_dict["market_bid_cost"] == 50.0
+    assert props_dict["group"] == "Other 1"
+
+    thermal_cluster_mock.set_prepro_modulation.assert_called_once()
+
+
+def test_generate_thermal_me_clusters(tmp_path):
+    area_mock = MagicMock()
+    thermal_cluster_mock1 = MagicMock()
+    thermal_cluster_mock2 = MagicMock()
+    area_mock.create_thermal_cluster.side_effect = [thermal_cluster_mock1, thermal_cluster_mock2]
+
+    thermals = {
+        "cluster_1": {
+            "properties": {"nominal_capacity": 100.0},
+            "modulation": {
+                "marginal_cost_modulation": 1.0,
+                "market_bid_modulation": 1.0,
+                "capacity_modulation": 1.0,
+                "must_run_modulation": 0.0,
+            },
+        },
+        "cluster_2": {
+            "properties": {"nominal_capacity": 200.0},
+            "modulation": {
+                "marginal_cost_modulation": 2.0,
+                "market_bid_modulation": 2.0,
+                "capacity_modulation": 2.0,
+                "must_run_modulation": 1.0,
+            },
+        },
+    }
+
+    used_files = set()
+    generate_thermal_me_clusters(area_mock, thermals, used_files=used_files)
+
+    assert area_mock.create_thermal_cluster.call_count == 2
+    thermal_cluster_mock1.set_prepro_modulation.assert_called_once()
+    thermal_cluster_mock2.set_prepro_modulation.assert_called_once()

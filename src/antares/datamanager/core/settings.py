@@ -118,6 +118,14 @@ class Settings:
         return self._resolve_env_path("PEGASE_TRAJECTORY_FILE_PATH") / self._get_required("PEGASE_FLOWBASED_DIRECTORY")
 
     @property
+    def thermal_me_directory(self) -> Path:
+        return self._resolve_env_path("PEGASE_TRAJECTORY_FILE_PATH") / self._get_required("PEGASE_THERMAL_ME_DIRECTORY")
+
+    @property
+    def thermal_me_modulation_output_directory(self) -> Path:
+        return self._resolve_env_path("PEGASE_THERMAL_ME_MODULATION_OUTPUT_DIRECTORY")
+
+    @property
     def api_host(self) -> str:
         return os.getenv("AW_API_HOST", "")
 

@@ -24,6 +24,7 @@ from antares.datamanager.core.settings import GenerationMode
 from antares.datamanager.exceptions.exceptions import APIGenerationError, AreaGenerationError, MiscGenerationError
 from antares.datamanager.generator.build_study_settings import build_study_settings
 from antares.datamanager.generator.generate_study_process import (
+    _has_thermals_me,
     _package_and_upload_local_study,
     add_areas_to_study,
     add_links_to_study,
@@ -642,6 +643,106 @@ def test_generate_study_skips_me_when_absent(
     mock_generate_me.assert_not_called()
 
 
+@patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
+@patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
+@patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
+@patch("antares.datamanager.generator.generate_study_process.generate_me")
+def test_generate_study_calls_thermal_timeseries_when_me_thermals_present(
+    mock_generate_me, mock_add_links, mock_add_areas, mock_read_study_data_from_json
+):
+    mock_study = MagicMock()
+    mock_study.service.study_id = "dummy_id"
+    mock_study.path = ""
+    mock_study.get_settings.return_value.general_parameters.nb_years = 3
+    mock_factory = MagicMock()
+    mock_factory.create_study.return_value = mock_study
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    me_data = {
+        "area_me": {
+            "V_ME_H2_LONG_EUEST": {
+                "thermals_me": {
+                    "V_ME_H2_LONG_EUEST_IMPORTS_CANALISATION": {
+                        "properties": {"enabled": True, "nominal_capacity": 10200.0}
+                    }
+                }
+            },
+            "V_ME_H2_LONG_FR": {"thermals_me": {}},
+        }
+    }
+    study_data = StudyData(
+        name="study_name",
+        areas={"fr": {}},
+        me=me_data,
+        enable_random_ts=True,
+    )
+    mock_read_study_data_from_json.return_value = study_data
+
+    generate_study("dummy_id", mock_factory)
+
+    mock_study.generate_thermal_timeseries.assert_called_once_with(3)
+
+
+@patch("antares.datamanager.generator.generate_study_process.read_study_data_from_json")
+@patch("antares.datamanager.generator.generate_study_process.add_areas_to_study")
+@patch("antares.datamanager.generator.generate_study_process.add_links_to_study")
+@patch("antares.datamanager.generator.generate_study_process.generate_me")
+def test_generate_study_skips_thermal_timeseries_when_me_thermals_empty(
+    mock_generate_me, mock_add_links, mock_add_areas, mock_read_study_data_from_json
+):
+    mock_study = MagicMock()
+    mock_study.service.study_id = "dummy_id"
+    mock_study.path = ""
+    mock_study.get_settings.return_value.general_parameters.nb_years = 3
+    mock_factory = MagicMock()
+    mock_factory.create_study.return_value = mock_study
+
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    me_data = {
+        "area_me": {
+            "V_ME_H2_LONG_FR": {"thermals_me": {}},
+        }
+    }
+    study_data = StudyData(
+        name="study_name",
+        areas={"fr": {}},
+        me=me_data,
+        enable_random_ts=True,
+    )
+    mock_read_study_data_from_json.return_value = study_data
+
+    generate_study("dummy_id", mock_factory)
+
+    mock_study.generate_thermal_timeseries.assert_not_called()
+
+
+def test_has_thermals_me():
+    from antares.datamanager.models.study_data_json_model import StudyData
+
+    assert not _has_thermals_me(StudyData(name="test", me=None))
+    assert not _has_thermals_me(StudyData(name="test", me={}))
+    assert not _has_thermals_me(StudyData(name="test", me={"area_me": {}}))
+    assert not _has_thermals_me(
+        StudyData(
+            name="test",
+            me={"area_me": {"area1": {"thermals_me": {}}, "area2": {"thermals_me": {}}}},
+        )
+    )
+    assert _has_thermals_me(
+        StudyData(
+            name="test",
+            me={
+                "area_me": {
+                    "area1": {"thermals_me": {}},
+                    "area2": {"thermals_me": {"cluster1": {"properties": {}}}},
+                }
+            },
+        )
+    )
+
+
 @patch("antares.datamanager.generator.generate_study_process.generator_load_directory")
 def test_add_areas_to_study_creates_thermal_clusters(mock_generator_load_directory):
     mock_study = MagicMock()
@@ -897,6 +998,9 @@ class TestInfrastructure:
             "PEGASE_LOAD_OUTPUT_DIRECTORY": "load_dir",
             "PEGASE_STUDY_JSON_OUTPUT_DIRECTORY": "json_dir",
             "PEGASE_PARAM_MODULATION_OUTPUT_DIRECTORY": "mod_dir",
+            "PEGASE_THERMAL_ME_DIRECTORY": "thermal_me_dir",
+            "PEGASE_THERMAL_ME_MODULATION_OUTPUT_DIRECTORY": "thermal_me_mod_dir",
+            "PEGASE_TRAJECTORY_FILE_PATH": "/env/nas/traj",
         },
     )
     def test_settings_initialization(self):
@@ -905,6 +1009,8 @@ class TestInfrastructure:
         assert settings.generation_mode == GenerationMode.LOCAL
         assert settings.nas_path == Path("/env/nas")
         assert settings.load_output_directory == Path("/env/nas/load_dir")
+        assert settings.thermal_me_directory == Path("/env/nas/traj/thermal_me_dir")
+        assert settings.thermal_me_modulation_output_directory == Path("/env/nas/thermal_me_mod_dir")
 
     @patch("antares.datamanager.core.dependencies.settings")
     def test_get_study_factory_selection(self, mock_settings):
