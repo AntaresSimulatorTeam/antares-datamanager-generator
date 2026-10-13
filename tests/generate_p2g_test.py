@@ -33,16 +33,19 @@ from antares.datamanager.generator.generate_p2g import (
     EXPECTED_HOURS,
     P2G_FATAL_BAND_PREFIX,
     P2G_TYPES,
-    _build_area_properties,
+    _extract_hourly_series,
+    _resolve_and_validate_arrow_path,
+    build_area_properties,
     build_binding_constraint,
     compute_total_links_capacity,
     create_p2g_asservi_links,
     create_p2g_links,
     generate_h2_profile_time_series,
-    generate_modulation_df_from_csv,
+    generate_modulation_matrix,
     generate_p2g,
     generate_profile_hydro,
     get_mean_load_factor,
+    p2g_market_modulation_output_directory,
 )
 
 
@@ -55,15 +58,15 @@ def _make_mock_res_cluster(time_series: pd.DataFrame | None, name: str = "cluste
 
 
 # ---------------------------------------------------------------------------
-# Tests: _build_area_properties
+# Tests: build_area_properties
 # ---------------------------------------------------------------------------
 
 
 def test_build_area_properties():
-    assert _build_area_properties(None) is None
-    assert _build_area_properties("not_a_dict") is None
+    assert build_area_properties(None) is None
+    assert build_area_properties("not_a_dict") is None
 
-    empty_props = _build_area_properties({})
+    empty_props = build_area_properties({})
     assert isinstance(empty_props, AreaProperties)
 
     props_dict = {
@@ -73,7 +76,7 @@ def test_build_area_properties():
         "nominal_capacity": 4000,
         "cost": 78.0,
     }
-    props = _build_area_properties(props_dict)
+    props = build_area_properties(props_dict)
     assert isinstance(props, AreaProperties)
     assert props.energy_cost_unsupplied == 3000.0
     assert props.energy_cost_spilled == 0.0
@@ -172,63 +175,147 @@ def test_generate_h2_profile_time_series_success():
 
 
 # ---------------------------------------------------------------------------
-# Tests: generate_modulation_df_from_csv
+# Tests: p2g_market_modulation_output_directory
 # ---------------------------------------------------------------------------
 
 
-def test_generate_modulation_df_from_csv_file_not_found(tmp_path):
+def test_p2g_market_modulation_output_directory(tmp_path):
     with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.trajectory_input_path = tmp_path
+        mock_settings.p2g_market_modulation_output_directory = tmp_path
+        assert p2g_market_modulation_output_directory() == tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Tests: _resolve_and_validate_arrow_path
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_and_validate_arrow_path_invalid_filename(tmp_path):
+    with pytest.raises(P2GGenerationError, match="P2G series filename must be a non-empty string"):
+        _resolve_and_validate_arrow_path(tmp_path, "")
+
+    with pytest.raises(P2GGenerationError, match="P2G series filename must be a non-empty string"):
+        _resolve_and_validate_arrow_path(tmp_path, None)  # type: ignore[arg-type]
+
+
+def test_resolve_and_validate_arrow_path_invalid_extension(tmp_path):
+    with pytest.raises(P2GGenerationError, match="Unexpected P2G file extension for 'file.csv', expected .arrow"):
+        _resolve_and_validate_arrow_path(tmp_path, "file.csv")
+
+
+def test_resolve_and_validate_arrow_path_outside_allowed_directory(tmp_path):
+    with pytest.raises(P2GGenerationError, match="P2G series path outside allowed directory"):
+        _resolve_and_validate_arrow_path(tmp_path, "../outside.arrow")
+
+
+def test_resolve_and_validate_arrow_path_file_not_found(tmp_path):
+    with pytest.raises(FileNotFoundError, match="P2G series file not found"):
+        _resolve_and_validate_arrow_path(tmp_path, "missing.arrow")
+
+
+def test_resolve_and_validate_arrow_path_success(tmp_path):
+    arrow_file = tmp_path / "valid.arrow"
+    arrow_file.touch()
+
+    resolved_path = _resolve_and_validate_arrow_path(tmp_path, "valid.arrow")
+    assert resolved_path == arrow_file.resolve()
+
+    resolved_path_str = _resolve_and_validate_arrow_path(str(tmp_path), "valid.arrow")
+    assert resolved_path_str == arrow_file.resolve()
+
+    used_files = set()
+    resolved_path_used = _resolve_and_validate_arrow_path(tmp_path, "valid.arrow", used_files=used_files)
+    assert resolved_path_used == arrow_file.resolve()
+    assert arrow_file.resolve() in used_files
+
+
+# ---------------------------------------------------------------------------
+# Tests: _extract_hourly_series
+# ---------------------------------------------------------------------------
+
+
+def test_extract_hourly_series_empty_df():
+    with pytest.raises(P2GGenerationError, match="P2G .arrow file has no time series column"):
+        _extract_hourly_series(pd.DataFrame(), "test.arrow", "H2")
+
+
+def test_extract_hourly_series_invalid_rows():
+    df = pd.DataFrame({"H2": [1.0] * 100})
+    with pytest.raises(P2GGenerationError, match=f"P2G .arrow file must contain {EXPECTED_HOURS} rows"):
+        _extract_hourly_series(df, "test.arrow", "H2")
+
+
+def test_extract_hourly_series_missing_column():
+    df = pd.DataFrame({"Gas": [1.0] * EXPECTED_HOURS})
+    with pytest.raises(KeyError):
+        _extract_hourly_series(df, "test.arrow", "H2")
+
+
+def test_extract_hourly_series_invalid_values():
+    df = pd.DataFrame({"H2": ["invalid"] * EXPECTED_HOURS})
+    with pytest.raises(P2GGenerationError, match="P2G .arrow file contains invalid values"):
+        _extract_hourly_series(df, "test.arrow", "H2")
+
+
+def test_extract_hourly_series_success():
+    df = pd.DataFrame({"H2": [1.5] * EXPECTED_HOURS, "Gas": [2.0] * EXPECTED_HOURS})
+    series = _extract_hourly_series(df, "test.arrow", "H2")
+    assert len(series) == EXPECTED_HOURS
+    assert np.allclose(series.to_numpy(), 1.5)
+
+
+# ---------------------------------------------------------------------------
+# Tests: generate_modulation_matrix
+# ---------------------------------------------------------------------------
+
+
+def test_generate_modulation_matrix_base_dir_not_found(tmp_path):
+    non_existent_dir = tmp_path / "non_existent"
+    with patch("antares.datamanager.generator.generate_p2g.p2g_market_modulation_output_directory") as mock_dir:
+        mock_dir.return_value = non_existent_dir
         with pytest.raises(FileNotFoundError, match="Fichier de modulation introuvable"):
-            generate_modulation_df_from_csv("missing_file.csv", "H2")
+            generate_modulation_matrix("mod.arrow", "H2")
 
 
-def test_generate_modulation_df_from_csv_missing_column(tmp_path):
-    csv_file = tmp_path / "mod.csv"
-    csv_file.write_text("Gas\tOther\n" + "1.0\t2.0\n" * EXPECTED_HOURS)
+def test_generate_modulation_matrix_contains_nan(tmp_path):
+    arrow_file = tmp_path / "mod.arrow"
+    values = [1.0] * EXPECTED_HOURS
+    values[10] = np.nan
+    pd.DataFrame({"H2": values}).to_feather(arrow_file)
 
-    with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.trajectory_input_path = tmp_path
-        with pytest.raises(KeyError, match="introuvable dans le fichier"):
-            generate_modulation_df_from_csv("mod.csv", "H2")
-
-
-def test_generate_modulation_df_from_csv_non_numeric(tmp_path):
-    csv_file = tmp_path / "mod.csv"
-    csv_file.write_text("H2\n" + "invalid\n" * EXPECTED_HOURS)
-
-    with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.trajectory_input_path = tmp_path
-        with pytest.raises(ValueError, match="contient des valeurs non numériques"):
-            generate_modulation_df_from_csv("mod.csv", "H2")
+    with patch("antares.datamanager.generator.generate_p2g.p2g_market_modulation_output_directory") as mock_dir:
+        mock_dir.return_value = tmp_path
+        with pytest.raises(ValueError, match="contient des valeurs non numériques ou manquantes"):
+            generate_modulation_matrix("mod.arrow", "H2")
 
 
-def test_generate_modulation_df_from_csv_invalid_length(tmp_path):
-    csv_file = tmp_path / "mod.csv"
-    csv_file.write_text("H2\n" + "1.0\n" * 100)
+def test_generate_modulation_matrix_invalid_rows(tmp_path):
+    arrow_file = tmp_path / "mod.arrow"
+    pd.DataFrame({"H2": [1.0] * 100}).to_feather(arrow_file)
 
-    with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.trajectory_input_path = tmp_path
-        with pytest.raises(ValueError, match="Nombre de lignes incorrect"):
-            generate_modulation_df_from_csv("mod.csv", "H2")
+    with patch("antares.datamanager.generator.generate_p2g.p2g_market_modulation_output_directory") as mock_dir:
+        mock_dir.return_value = tmp_path
+        with pytest.raises(P2GGenerationError, match=f"P2G .arrow file must contain {EXPECTED_HOURS} rows"):
+            generate_modulation_matrix("mod.arrow", "H2")
 
 
-def test_generate_modulation_df_from_csv_success(tmp_path):
-    csv_file = tmp_path / "mod.csv"
-    lines = ["H2\tGas"] + [f"{float(i % 10)}\t0.5" for i in range(EXPECTED_HOURS)]
-    csv_file.write_text("\n".join(lines))
+def test_generate_modulation_matrix_success(tmp_path):
+    arrow_file = tmp_path / "mod.arrow"
+    expected_values = np.array([float(i % 10) for i in range(EXPECTED_HOURS)])
+    pd.DataFrame({"H2": expected_values, "Gas": [0.5] * EXPECTED_HOURS}).to_feather(arrow_file)
 
-    with patch("antares.datamanager.generator.generate_p2g.settings") as mock_settings:
-        mock_settings.trajectory_input_path = tmp_path
-        df = generate_modulation_df_from_csv("mod.csv", "H2")
+    used_files = set()
+    with patch("antares.datamanager.generator.generate_p2g.p2g_market_modulation_output_directory") as mock_dir:
+        mock_dir.return_value = tmp_path
+        df = generate_modulation_matrix("mod.arrow", "H2", used_files=used_files)
 
         assert df.shape == (EXPECTED_HOURS, 4)
         # Column 0: values, Column 1: values, Column 2: 1s, Column 3: 0s
-        expected_values = np.array([float(i % 10) for i in range(EXPECTED_HOURS)])
         assert np.allclose(df.iloc[:, 0].to_numpy(), expected_values)
         assert np.allclose(df.iloc[:, 1].to_numpy(), expected_values)
         assert np.all(df.iloc[:, 2].to_numpy() == 1)
         assert np.all(df.iloc[:, 3].to_numpy() == 0)
+        assert arrow_file.resolve() in used_files
 
 
 # ---------------------------------------------------------------------------
@@ -540,7 +627,7 @@ def test_create_p2g_asservi_links_missing_area_or_renewables():
 # ---------------------------------------------------------------------------
 
 
-@patch("antares.datamanager.generator.generate_p2g.generate_modulation_df_from_csv")
+@patch("antares.datamanager.generator.generate_p2g.generate_modulation_matrix")
 def test_generate_p2g_complete(mock_gen_modulation):
     mock_gen_modulation.return_value = pd.DataFrame(np.ones((EXPECTED_HOURS, 4)))
 
@@ -560,7 +647,7 @@ def test_generate_p2g_complete(mock_gen_modulation):
     study.get_areas.return_value = {"fr": area_fr}
 
     data_p2g = {
-        "market_modulation": "modulation.csv",
+        "market_modulation": "modulation.arrow",
         "base": {
             "properties": {
                 "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
@@ -603,7 +690,8 @@ def test_generate_p2g_complete(mock_gen_modulation):
         },
     }
 
-    generate_p2g(study=study, data_p2g=data_p2g)
+    used_files = set()
+    generate_p2g(study=study, data_p2g=data_p2g, used_files=used_files)
 
     # 4 virtual areas should be created
     assert study.create_area.call_count == len(P2G_TYPES)
@@ -618,3 +706,44 @@ def test_generate_p2g_complete(mock_gen_modulation):
     assert mock_area.set_load.call_count == len(P2G_TYPES)
     # Modulation called for base, marg, asservi (3 times)
     assert mock_gen_modulation.call_count == 3
+    mock_gen_modulation.assert_any_call(
+        modulation_file_name="modulation.arrow", modulation_name="H2", used_files=used_files
+    )
+    mock_gen_modulation.assert_any_call(
+        modulation_file_name="modulation.arrow", modulation_name="Gas", used_files=used_files
+    )
+    assert mock_thermal_cluster.set_prepro_modulation.call_count == 3
+
+
+def test_generate_p2g_without_market_modulation():
+    study = MagicMock(spec=Study)
+    mock_area = MagicMock()
+    mock_thermal_cluster = MagicMock()
+    mock_area.create_thermal_cluster.return_value = mock_thermal_cluster
+    study.create_area.return_value = mock_area
+
+    data_p2g = {
+        "base": {
+            "properties": {
+                "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
+                "nominal_capacity": 4000,
+                "cost": 78.0,
+            },
+            "modulation": "H2",
+            "links": {"FR": {"capacity": 1500, "fatal_band": 300}},
+        },
+        "marg": {
+            "properties": {
+                "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
+                "nominal_capacity": 5000,
+                "cost": 78.0,
+            },
+            "modulation": "Gas",
+            "links": {"FR": {"capacity": 250}},
+        },
+    }
+
+    generate_p2g(study=study, data_p2g=data_p2g)
+
+    assert study.create_area.call_count == 2
+    mock_thermal_cluster.set_prepro_modulation.assert_not_called()

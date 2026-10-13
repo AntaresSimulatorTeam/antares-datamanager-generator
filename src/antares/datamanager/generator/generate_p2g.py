@@ -41,7 +41,7 @@ BINDING_CONSTRAINT_HOURLY_ROWS = 8784
 EXPECTED_HOURS = 8760
 
 
-def _build_area_properties(properties_json: dict[str, Any] | None) -> AreaProperties | None:
+def build_area_properties(properties_json: dict[str, Any] | None) -> AreaProperties | None:
     if not isinstance(properties_json, dict):
         return None
 
@@ -118,45 +118,88 @@ def generate_h2_profile_time_series(
     )
 
 
-def generate_modulation_df_from_csv(
-    trajectory_path: str,
-    modulation_name: str,
-    expected_hours: int = EXPECTED_HOURS,
-) -> pd.DataFrame:
-    csv_path = (settings.trajectory_input_path / trajectory_path).resolve()
+def p2g_market_modulation_output_directory() -> Path:
+    return settings.p2g_market_modulation_output_directory
 
-    path = Path(csv_path)
+
+def _resolve_and_validate_arrow_path(
+    base_dir: Path | str,
+    filename: str,
+    used_files: set[Path] | None = None,
+) -> Path:
+    if not isinstance(filename, str) or not filename:
+        raise P2GGenerationError("P2G series filename must be a non-empty string")
+
+    if not filename.endswith(".arrow"):
+        raise P2GGenerationError(f"Unexpected P2G file extension for '{filename}', expected .arrow")
+
+    base_resolved = Path(base_dir).resolve()
+    file_path = (base_resolved / filename).resolve()
+
+    if base_resolved != file_path and base_resolved not in file_path.parents:
+        raise P2GGenerationError(f"P2G series path outside allowed directory: '{filename}'")
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"P2G series file not found: {file_path}")
+
+    if used_files is not None:
+        used_files.add(file_path)
+    return file_path
+
+
+def _extract_hourly_series(
+    df: pd.DataFrame,
+    filename: str,
+    column_name: str,
+) -> pd.Series[Any]:
+    if df.empty or df.shape[1] < 1:
+        raise P2GGenerationError(
+            f"P2G .arrow file has no time series column for column='{column_name}', file='{filename}'"
+        )
+
+    if len(df.index) != EXPECTED_HOURS:
+        raise P2GGenerationError(
+            f"P2G .arrow file must contain {EXPECTED_HOURS} rows for column='{column_name}', "
+            f"file='{filename}', got {len(df.index)}"
+        )
+
+    column_modulation = df[column_name]
+    try:
+        return pd.to_numeric(column_modulation, errors="raise")
+    except (TypeError, ValueError) as exc:
+        raise P2GGenerationError(
+            f"P2G .arrow file contains invalid values for column='{column_name}', file='{filename}'"
+        ) from exc
+
+
+def generate_modulation_matrix(
+    modulation_file_name: str,
+    modulation_name: str,
+    used_files: set[Path] | None = None,
+) -> pd.DataFrame:
+    base_dir = p2g_market_modulation_output_directory()
+
+    path = Path(base_dir)
     if not path.exists():
         raise FileNotFoundError(f"Fichier de modulation introuvable: {path}")
 
-    # Lecture avec détection automatique du séparateur (tabulation, virgule, point-virgule ou espaces)
-    df = pd.read_csv(path, sep=r"[\t,;\s]+", engine="python")
-
-    # Nettoyage des noms de colonnes (suppression des espaces superflus)
-    df.columns = df.columns.str.strip()
-    target_col = modulation_name.strip()
-
-    if target_col not in df.columns:
-        raise KeyError(
-            f"La colonne '{target_col}' est introuvable dans le fichier {path.name}. "
-            f"Colonnes disponibles : {list(df.columns)}"
-        )
-
     # Extraction et conversion des valeurs en float
-    values = pd.to_numeric(df[target_col], errors="coerce").to_numpy(dtype=np.float64)
+    file_path = _resolve_and_validate_arrow_path(path, modulation_file_name, used_files)
+    df = pd.read_feather(file_path)
+    values = _extract_hourly_series(df, modulation_file_name, modulation_name)
 
     if np.isnan(values).any():
-        raise ValueError(f"La colonne '{target_col}' contient des valeurs non numériques ou manquantes.")
+        raise ValueError(f"La colonne '{modulation_name}' contient des valeurs non numériques ou manquantes.")
 
-    if len(values) != expected_hours:
+    if len(values) != EXPECTED_HOURS:
         raise ValueError(
-            f"Nombre de lignes incorrect pour '{target_col}' dans {path.name} : "
-            f"attendu {expected_hours}, obtenu {len(values)}"
+            f"Nombre de lignes incorrect pour '{modulation_name}' dans {path.name} : "
+            f"attendu {EXPECTED_HOURS}, obtenu {len(values)}"
         )
 
     # Construction vectorisée des 4 colonnes : [valeur, valeur, 1, 0]
-    ones = np.ones(expected_hours, dtype=int)
-    zeros = np.zeros(expected_hours, dtype=int)
+    ones = np.ones(EXPECTED_HOURS, dtype=int)
+    zeros = np.zeros(EXPECTED_HOURS, dtype=int)
 
     data_4cols = np.column_stack([values, values, ones, zeros])
 
@@ -262,11 +305,11 @@ def build_binding_constraint(study: Study, area_name: str, capacity: float) -> N
     logger.info(f"Created P2G base binding constraint {constraint_name}")
 
 
-def generate_p2g(study: Study, data_p2g: dict[str, Any]) -> None:
+def generate_p2g(study: Study, data_p2g: dict[str, Any], used_files: set[Path] | None = None) -> None:
     """
     Expected P2G JSON
     data = {"p2g": {
-      "market_modulation": "thermal/economic parameters/market_bid_marg_cost_modulation/FE60_liv1_saME/MB_MC_modulation_FE60_liv1_saME_2027.csv",
+      "market_modulation": <cost_modulation>_<nom_trajectoire>_checksum.arrow", // cost_modulation : H2, Gas...
       "base": {
         "properties": {
           "adequacy_patch_mode": AdequacyPatchMode.VIRTUAL,
@@ -322,6 +365,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any]) -> None:
       }
     }}
     """
+    modulation_file_name = data_p2g.get("market_modulation")
 
     for p2g_type in P2G_TYPES:
         type_data = data_p2g.get(p2g_type)
@@ -334,7 +378,7 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any]) -> None:
             area_props = {}
         nominal_capacity = area_props.get("nominal_capacity", 0.0)
         cost = area_props.get("cost", 0.0)
-        area_properties = _build_area_properties(area_props)
+        area_properties = build_area_properties(area_props)
         area = study.create_area(area_name=virtual_area, properties=area_properties)
 
         if p2g_type == "asservi":
@@ -370,11 +414,10 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any]) -> None:
                 group="other",
             ),
         )
-        modulation_type = type_data.get("modulation")
-        if modulation_type is not None:
-            trajectory_path = str(data_p2g.get("market_modulation", ""))
-            modulation_df = generate_modulation_df_from_csv(
-                trajectory_path=trajectory_path, modulation_name=modulation_type
+        modulation_name = type_data.get("modulation")
+        if modulation_name is not None and modulation_file_name is not None:
+            modulation_df = generate_modulation_matrix(
+                modulation_file_name=modulation_file_name, modulation_name=modulation_name, used_files=used_files
             )
             cluster_thermal.set_prepro_modulation(modulation_df)
         logger.info(f"Created P2G virtual area {virtual_area}")

@@ -292,10 +292,6 @@ def create_modulation_matrix(
     return df
 
 
-def thermal_me_directory() -> Path:
-    return settings.thermal_me_directory
-
-
 def thermal_me_modulation_output_directory() -> Path:
     return settings.thermal_me_modulation_output_directory
 
