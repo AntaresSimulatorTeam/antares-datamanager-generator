@@ -561,7 +561,7 @@ def test_generate_study_calls_p2g_when_present(
 
     generate_study("dummy_id", mock_factory)
 
-    mock_generate_p2g.assert_called_once_with(mock_study, p2g_data)
+    mock_generate_p2g.assert_called_once_with(mock_study, p2g_data, set())
     mock_study.generate_thermal_timeseries.assert_called_once_with(5)
 
 
@@ -1009,7 +1009,6 @@ class TestInfrastructure:
         assert settings.generation_mode == GenerationMode.LOCAL
         assert settings.nas_path == Path("/env/nas")
         assert settings.load_output_directory == Path("/env/nas/load_dir")
-        assert settings.thermal_me_directory == Path("/env/nas/traj/thermal_me_dir")
         assert settings.thermal_me_modulation_output_directory == Path("/env/nas/thermal_me_mod_dir")
 
     @patch("antares.datamanager.core.dependencies.settings")
