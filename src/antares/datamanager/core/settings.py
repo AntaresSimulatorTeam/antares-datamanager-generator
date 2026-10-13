@@ -120,7 +120,7 @@ class Settings:
     @property
     def thermal_me_modulation_output_directory(self) -> Path:
         return self._resolve_env_path("PEGASE_THERMAL_ME_MODULATION_OUTPUT_DIRECTORY")
-        
+
     @property
     def p2g_market_modulation_output_directory(self) -> Path:
         return self._resolve_env_path("PEGASE_P2G_MODULATION_OUTPUT_DIRECTORY")

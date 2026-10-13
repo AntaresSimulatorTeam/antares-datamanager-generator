@@ -117,8 +117,10 @@ def generate_h2_profile_time_series(
         index=ts_wind.index,
     )
 
+
 def p2g_market_modulation_output_directory() -> Path:
     return settings.p2g_market_modulation_output_directory
+
 
 def _resolve_and_validate_arrow_path(
     base_dir: Path | str,
@@ -144,10 +146,11 @@ def _resolve_and_validate_arrow_path(
         used_files.add(file_path)
     return file_path
 
+
 def _extract_hourly_series(
-        df: pd.DataFrame,
-        filename: str,
-        column_name: str,
+    df: pd.DataFrame,
+    filename: str,
+    column_name: str,
 ) -> pd.Series[Any]:
     if df.empty or df.shape[1] < 1:
         raise P2GGenerationError(
@@ -168,12 +171,12 @@ def _extract_hourly_series(
             f"P2G .arrow file contains invalid values for column='{column_name}', file='{filename}'"
         ) from exc
 
+
 def generate_modulation_matrix(
     modulation_file_name: str,
     modulation_name: str,
     used_files: set[Path] | None = None,
 ) -> pd.DataFrame:
-    
     base_dir = p2g_market_modulation_output_directory()
 
     path = Path(base_dir)
@@ -413,7 +416,9 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], used_files: set[Path] |
         )
         modulation_name = type_data.get("modulation")
         if modulation_name is not None and modulation_file_name is not None:
-            modulation_df = generate_modulation_matrix(modulation_file_name=modulation_file_name, modulation_name=modulation_name, used_files=used_files)
+            modulation_df = generate_modulation_matrix(
+                modulation_file_name=modulation_file_name, modulation_name=modulation_name, used_files=used_files
+            )
             cluster_thermal.set_prepro_modulation(modulation_df)
         logger.info(f"Created P2G virtual area {virtual_area}")
 
