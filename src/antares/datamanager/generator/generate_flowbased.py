@@ -11,6 +11,8 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
+import re
+
 from collections import Counter
 from itertools import combinations
 from pathlib import Path
@@ -23,12 +25,10 @@ from antares.craft import (
     BindingConstraintFrequency,
     BindingConstraintOperator,
     BindingConstraintProperties,
-    ClusterData,
     ConstraintTerm,
     LinkData,
     LinkProperties,
     Month,
-    ThermalClusterProperties,
     TransmissionCapacities,
 )
 from antares.craft.exceptions.exceptions import ReferencedObjectDeletionNotAllowed
@@ -89,6 +89,8 @@ _REQUIRED_LINK_CAPACITY_KEYS = (
     "summer_HC_indirect_MW",
     "summer_HP_indirect_MW",
 )
+_HVDC_LINK_CAPACITY_KEYS = ("hvdcmwdirect", "hvdcmwindirect")
+_REQUIRED_RESTRICTION_CONSTRAINT_KEYS = ("name", "enabled", "type", "operator", "links", "series")
 
 
 class FlowbasedFileReader:
@@ -258,13 +260,146 @@ def generate_flowbased_binding_constraints(
         logger.info(f"Created flowbased binding constraint {constraint_name}")
 
     _wire_scenario_builder(study, group_name, n_columns, nb_years)
+    generate_restriction_ahc_constraints(study, flowbased_data, nb_years, used_files)
+
+
+def generate_restriction_ahc_constraints(
+    study: Study, flowbased_data: dict[str, Any], nb_years: int, used_files: Set[Path]
+) -> None:
+    """Create configured restriction constraints with their RHS series and scenario."""
+    constraints = flowbased_data.get("restriction_ahc_constraints") or []
+    scenario_groups: dict[str, int] = {}
+    for constraint in constraints:
+        if not isinstance(constraint, dict):
+            raise FlowbasedGenerationError("Each restriction_ahc_constraints entry must be an object")
+
+        missing = [key for key in _REQUIRED_RESTRICTION_CONSTRAINT_KEYS if key not in constraint]
+        name = constraint.get("name", "<unnamed>")
+        if missing:
+            raise FlowbasedGenerationError(
+                f"restriction_ahc_constraints entry {name!r} is missing required field(s): {missing}"
+            )
+
+        links = constraint["links"]
+        if not isinstance(links, list) or not links:
+            raise FlowbasedGenerationError(
+                f"restriction_ahc_constraints entry {name!r} must contain a non-empty links list"
+            )
+
+        study_areas = study.get_areas()
+        area_names_by_normalized_id = {}
+        for area_id, area in study_areas.items():
+            area_name = getattr(area, "name", None)
+            if not isinstance(area_name, str) or not area_name:
+                area_name = str(area_id)
+            area_names_by_normalized_id[area_name.casefold()] = area_name
+        try:
+            time_step = BindingConstraintFrequency(str(constraint["type"]).lower())
+            operator = BindingConstraintOperator(str(constraint["operator"]).lower())
+        except ValueError as exc:
+            raise FlowbasedGenerationError(
+                f"Unsupported type or operator for restriction constraint {name!r}: "
+                f"type={constraint['type']!r}, operator={constraint['operator']!r}"
+            ) from exc
+
+        terms = []
+        for link_name in links:
+            parts = [part.strip() for part in str(link_name).split("-")]
+            if len(parts) != 2 or not all(parts):
+                raise FlowbasedGenerationError(
+                    f"Invalid link {link_name!r} in restriction constraint {name!r}; expected 'area1-area2'"
+                )
+            normalized_parts = [part.casefold() for part in parts]
+            if normalized_parts[0] not in area_names_by_normalized_id:
+                raise FlowbasedGenerationError(
+                    f"Area {parts[0]!r} from link {link_name!r} in restriction constraint {name!r} "
+                    "does not exist in the study"
+                )
+            if normalized_parts[1] not in area_names_by_normalized_id:
+                raise FlowbasedGenerationError(
+                    f"Area {parts[1]!r} from link {link_name!r} in restriction constraint {name!r} "
+                    "does not exist in the study"
+                )
+            area1 = area_names_by_normalized_id[normalized_parts[0]]
+            area2 = area_names_by_normalized_id[normalized_parts[1]]
+            if normalized_parts[0] == "fr":
+                weight = 1.0
+            elif normalized_parts[1] == "fr":
+                weight = -1.0
+            else:
+                raise FlowbasedGenerationError(
+                    f"Link {link_name!r} in restriction constraint {name!r} must have France as one endpoint"
+                )
+            terms.append(
+                ConstraintTerm(
+                    data=LinkData(area1=area1, area2=area2),
+                    weight=weight,
+                )
+            )
+
+        series_path = settings.flowbased_directory / str(constraint["series"]).lstrip("/\\")
+        used_files.add(series_path)
+        try:
+            rhs = pd.read_csv(series_path, sep=r"\s+", header=None)
+        except (OSError, pd.errors.ParserError) as exc:
+            raise FlowbasedGenerationError(
+                f"Could not read RHS series for restriction constraint {name!r} at {series_path}: {exc}"
+            ) from exc
+
+        if rhs.shape[1] != 1:
+            raise FlowbasedGenerationError(
+                f"Expected one RHS column for restriction constraint {name!r} in {series_path}, got {rhs.shape[1]}"
+            )
+        try:
+            rhs = rhs.apply(pd.to_numeric, errors="raise")
+        except (ValueError, TypeError) as exc:
+            raise FlowbasedGenerationError(
+                f"RHS series for restriction constraint {name!r} contains non-numeric values"
+            ) from exc
+        if rhs.isna().any(axis=None):
+            raise FlowbasedGenerationError(f"RHS series for restriction constraint {name!r} contains missing values")
+        if len(rhs) == EXPECTED_HOURS:
+            rhs = _pad_to_binding_constraint_hourly_rows(rhs)
+        elif len(rhs) != BINDING_CONSTRAINT_HOURLY_ROWS:
+            raise FlowbasedGenerationError(
+                f"Expected {EXPECTED_HOURS} or {BINDING_CONSTRAINT_HOURLY_ROWS} RHS rows "
+                f"for restriction constraint {name!r}, got {len(rhs)}"
+            )
+
+        group_name = f"flowbased-{name}"
+        properties = BindingConstraintProperties(
+            enabled=bool(constraint["enabled"]),
+            time_step=time_step,
+            operator=operator,
+            group=group_name,
+        )
+        matrix_parameter = {
+            BindingConstraintOperator.LESS: {"less_term_matrix": rhs},
+            BindingConstraintOperator.GREATER: {"greater_term_matrix": rhs},
+            BindingConstraintOperator.EQUAL: {"equal_term_matrix": rhs},
+            BindingConstraintOperator.BOTH: {"less_term_matrix": rhs, "greater_term_matrix": rhs},
+        }[operator]
+        study.create_binding_constraint(
+            name=str(name),
+            properties=properties,
+            terms=terms,
+            **matrix_parameter,
+        )
+        scenario_groups[group_name] = 1
+        logger.info(f"Created Flow-Based restriction constraint {name}")
+
+    if scenario_groups:
+        _wire_scenario_builder_groups(study, scenario_groups, nb_years)
 
 
 # virtual zones + hub/alegro links
 
 
 def create_flowbased_areas_and_links(
-    study: Study, flowbased_data: dict[str, Any], first_month: Optional[Month]
+    study: Study,
+    flowbased_data: dict[str, Any],
+    first_month: Optional[Month],
+    study_links_data: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Create the flowbased virtual zones and their links.
 
@@ -273,6 +408,7 @@ def create_flowbased_areas_and_links(
     Args:
         study: The Antares study being generated.
         flowbased_data: The JSON `flowbased` block (`virtual_nodes`, `links`).
+        study_links_data: The study.json links used to identify source HVDC links.
 
     Raises:
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
@@ -284,15 +420,102 @@ def create_flowbased_areas_and_links(
         study.create_area(area_name=area_name)
         logger.info(f"Created flowbased virtual area {area_name}")
 
+    interconnectors = _get_interconnector_sources(study, flowbased_data, study_links_data or {})
+    created_interconnector_connectors: set[str] = set()
     for entry in flowbased_data.get("links") or []:
         area1, area2 = _parse_link_name(entry.get("name"))
-        _create_flowbased_link(study, area1, area2, entry, first_month)
+        interconnector = interconnectors.get((area1, area2))
+        if interconnector:
+            direct_capacity, indirect_capacity, _ = interconnector
+            _create_flowbased_link(
+                study,
+                area1,
+                area2,
+                entry,
+                first_month,
+                capacity_direct=direct_capacity,
+                capacity_indirect=indirect_capacity,
+            )
+            created_interconnector_connectors.add(f"{area1}-{area2}")
+        else:
+            _create_flowbased_link(study, area1, area2, entry, first_month)
 
-    # Création du cluster et de la contrainte restriction_ahc si model_description_fb est présent
-    if "model_description_fb" in (flowbased_data.get("virtual_nodes") or []):
-        create_restriction_ahc(study)
+    expected_connectors = {f"{area1}-{node}" for area1, node in interconnectors}
+    missing_connectors = expected_connectors - created_interconnector_connectors
+    if missing_connectors:
+        raise FlowbasedGenerationError(
+            f"Missing Flow-Based connector link(s) for virtual interconnector(s): {sorted(missing_connectors)}"
+        )
 
-    _delete_direct_links(study, HUB_AREAS)
+    source_links = [source_link for _, _, source_link in interconnectors.values()]
+    _delete_links(study, [*source_links, *_get_direct_links(study, HUB_AREAS)])
+
+
+def _get_interconnector_sources(
+    study: Study, flowbased_data: dict[str, Any], study_links_data: dict[str, dict[str, Any]]
+) -> dict[tuple[str, str], tuple[pd.DataFrame, pd.DataFrame, Any]]:
+    """Resolve virtual interconnector connector capacities from existing HVDC links."""
+    study_links = study.get_links()
+    interconnectors = {}
+    for virtual_node in flowbased_data.get("virtual_nodes") or []:
+        match = re.fullmatch(r"z_([^_]+)_([^_]+)", str(virtual_node).strip().lower())
+        if not match:
+            continue
+
+        country1, country2 = match.groups()
+        pair = frozenset((country1, country2))
+        link_data = next(
+            (data for link_name, data in study_links_data.items() if _canonical_link_pair(link_name) == pair),
+            None,
+        )
+        if link_data is None:
+            raise FlowbasedGenerationError(
+                f"Missing study.json link data for virtual interconnector '{virtual_node}' "
+                f"(expected {country1}/{country2})"
+            )
+
+        normalized_link_data = {str(key).lower(): value for key, value in link_data.items()}
+        hvdc_values = [normalized_link_data.get(key) for key in _HVDC_LINK_CAPACITY_KEYS]
+        try:
+            has_hvdc_capacity = any(value is not None and float(value) > 0 for value in hvdc_values)
+        except (TypeError, ValueError) as exc:
+            raise FlowbasedGenerationError(f"Invalid HVDC capacity data for source link {country1}/{country2}") from exc
+        if not has_hvdc_capacity:
+            raise FlowbasedGenerationError(
+                f"Source link {country1}/{country2} for virtual interconnector '{virtual_node}' "
+                "does not contain a positive HVDC capacity"
+            )
+
+        source_link = next(
+            (link for link_name, link in study_links.items() if _canonical_link_pair(str(link_name)) == pair),
+            None,
+        )
+        if source_link is None:
+            raise FlowbasedGenerationError(
+                f"Generated source link {country1}/{country2} for virtual interconnector '{virtual_node}' was not found"
+            )
+
+        direct_capacity = source_link.get_capacity_direct()
+        indirect_capacity = source_link.get_capacity_indirect()
+        for mode, matrix in (("direct", direct_capacity), ("indirect", indirect_capacity)):
+            if not isinstance(matrix, pd.DataFrame) or matrix.empty:
+                raise FlowbasedGenerationError(
+                    f"Source link {country1}/{country2} has no generated {mode} capacity matrix "
+                    f"for virtual interconnector '{virtual_node}'"
+                )
+        interconnectors[(country1, str(virtual_node).strip().lower())] = (
+            direct_capacity.copy(deep=True),
+            indirect_capacity.copy(deep=True),
+            source_link,
+        )
+    return interconnectors
+
+
+def _canonical_link_pair(link_name: str) -> frozenset[str]:
+    parts = [part.strip().lower() for part in link_name.split("/")]
+    if len(parts) != 2 or not all(parts):
+        return frozenset()
+    return frozenset(parts)
 
 
 def _delete_direct_links(study: Study, hub_areas: tuple[str, ...]) -> None:
@@ -302,17 +525,31 @@ def _delete_direct_links(study: Study, hub_areas: tuple[str, ...]) -> None:
     Raises:
         FlowbasedGenerationError: If a direct link is still referenced by a BC
     """
+    _delete_links(study, _get_direct_links(study, hub_areas))
+
+
+def _get_direct_links(study: Study, hub_areas: tuple[str, ...]) -> list[Any]:
     links = study.get_links()
+    direct_links = []
     for area1, area2 in combinations(hub_areas, 2):
         area_from, area_to = sorted([area1, area2])
         link = links.get(f"{area_from} / {area_to}")
-        if link is None:
+        if link is not None:
+            direct_links.append(link)
+    return direct_links
+
+
+def _delete_links(study: Study, links: list[Any]) -> None:
+    seen_links: set[int] = set()
+    for link in links:
+        if id(link) in seen_links:
             continue
+        seen_links.add(id(link))
         try:
             study.delete_link(link)
         except ReferencedObjectDeletionNotAllowed as exc:
             raise FlowbasedGenerationError(f"Could not delete direct link {link.id}: {exc}") from exc
-        logger.info(f"Deleted direct link {link.id} (replaced by zz_flowbased link)")
+        logger.info(f"Deleted direct link {link.id} (replaced by Flow-Based path)")
 
 
 def _parse_link_name(name: Any) -> tuple[str, str]:
@@ -324,11 +561,21 @@ def _parse_link_name(name: Any) -> tuple[str, str]:
 
 
 def _create_flowbased_link(
-    study: Study, area1: str, area2: str, link_entry: dict[str, Any], first_month: Optional[Month]
+    study: Study,
+    area1: str,
+    area2: str,
+    link_entry: dict[str, Any],
+    first_month: Optional[Month],
+    capacity_direct: pd.DataFrame | None = None,
+    capacity_indirect: pd.DataFrame | None = None,
 ) -> None:
     """`transmission_capacities` is always present, ENABLED or INFINITE. Capacity fields
     (winter_HP_direct_MW, ...) are only read when ENABLED;"""
-    transmission_capacities = _parse_transmission_capacities(link_entry.get("transmission_capacities", "ENABLED"))
+    transmission_capacities = (
+        TransmissionCapacities.ENABLED
+        if capacity_direct is not None and capacity_indirect is not None
+        else _parse_transmission_capacities(link_entry.get("transmission_capacities", "ENABLED"))
+    )
     link_name = f"{area1}-{area2}"
     link = study.create_link(
         area_from=area1, area_to=area2, properties=LinkProperties(transmission_capacities=transmission_capacities)
@@ -338,13 +585,17 @@ def _create_flowbased_link(
         logger.info(f"Created flowbased link {link_name} (transmission_capacities={transmission_capacities})")
         return
 
-    link_data = _to_link_capacity_data(link_entry, area1, area2)
-    link.set_capacity_direct(
-        generate_link_capacity_df(link_data, "direct", 0, link_name=link_name, first_month=first_month)
-    )
-    link.set_capacity_indirect(
-        generate_link_capacity_df(link_data, "indirect", 0, link_name=link_name, first_month=first_month)
-    )
+    if capacity_direct is not None and capacity_indirect is not None:
+        link.set_capacity_direct(capacity_direct)
+        link.set_capacity_indirect(capacity_indirect)
+    else:
+        link_data = _to_link_capacity_data(link_entry, area1, area2)
+        link.set_capacity_direct(
+            generate_link_capacity_df(link_data, "direct", 0, link_name=link_name, first_month=first_month)
+        )
+        link.set_capacity_indirect(
+            generate_link_capacity_df(link_data, "indirect", 0, link_name=link_name, first_month=first_month)
+        )
     logger.info(f"Created flowbased link {link_name}")
 
 
@@ -638,63 +889,13 @@ def _build_constraint_terms(
 
 
 def _wire_scenario_builder(study: Study, group_name: str, n_columns: int, nb_years: int) -> None:
+    _wire_scenario_builder_groups(study, {group_name: n_columns}, nb_years)
+
+
+def _wire_scenario_builder_groups(study: Study, groups: dict[str, int], nb_years: int) -> None:
     scenario_builder = study.get_scenario_builder()
-    group_matrix = scenario_builder.binding_constraint.get_group(group_name)
-    group_matrix.set_new_scenario([(year % n_columns) + 1 for year in range(nb_years)])
+    for group_name, n_columns in groups.items():
+        group_matrix = scenario_builder.binding_constraint.get_group(group_name)
+        group_matrix.set_new_scenario([(year % n_columns) + 1 for year in range(nb_years)])
+        logger.info(f"Wired flowbased scenario builder group={group_name} nb_years={nb_years} n_columns={n_columns}")
     study.set_scenario_builder(scenario_builder)
-    logger.info(f"Wired flowbased scenario builder group={group_name} nb_years={nb_years} n_columns={n_columns}")
-
-
-def create_restriction_ahc(study: Study, limitation_mw: float = 10000.0) -> None:
-    """Crée le cluster thermique virtuel et la contrainte couplante restriction_ahc.
-
-    Équation :
-        1 * (ch%fr) - 1 * (fr%itn) - 1 * (fr%zz_flowbased) - 1 * (model_description_fb.restriction_ahc) <= 0
-    """
-    area_name = "model_description_fb"
-    cluster_name = "restriction_ahc"
-
-    # 1. Récupération de la zone et création du cluster thermique virtuel
-    area_obj = study.get_areas()[area_name]
-
-    # Création du cluster thermique avec sa capacité nominale (ex: 10000 MW)
-    area_obj.create_thermal_cluster(
-        thermal_name=cluster_name,
-        properties=ThermalClusterProperties(
-            nominal_capacity=limitation_mw,
-            unit_count=1,
-            enabled=True,
-        ),
-    )
-    logger.info(f"Created virtual thermal cluster {cluster_name} in area {area_name}")
-
-    # 2. Définition des propriétés de la contrainte couplante
-    properties = BindingConstraintProperties(
-        enabled=True,
-        time_step=BindingConstraintFrequency.HOURLY,
-        operator=BindingConstraintOperator.LESS,
-    )
-
-    # 3. Définition des termes (coefficients PTDF et cluster)
-    terms = [
-        ConstraintTerm(data=LinkData(area1="ch", area2="fr"), weight=1.0),
-        ConstraintTerm(data=LinkData(area1="fr", area2="itn"), weight=-1.0),
-        ConstraintTerm(data=LinkData(area1="fr", area2="zz_flowbased"), weight=-1.0),
-        ConstraintTerm(
-            data=ClusterData(area=area_name, cluster=cluster_name),
-            weight=-1.0,
-        ),
-    ]
-
-    # 4. Matrice second membre (RHS) : 0 pour 8760 heures
-    # Le cluster virtuel avec coefficient -1 porte la limitation
-    less_term_matrix = pd.DataFrame(1000, index=range(8784), columns=[0])
-
-    # 5. Création de la contrainte couplante dans l'étude
-    study.create_binding_constraint(
-        name="restriction_ahc",
-        properties=properties,
-        terms=terms,
-        less_term_matrix=less_term_matrix,
-    )
-    logger.info("Created restriction_ahc binding constraint")
