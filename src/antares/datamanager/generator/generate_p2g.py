@@ -24,6 +24,7 @@ from antares.craft import (
     BindingConstraintProperties,
     ConstraintTerm,
     LinkData,
+    LinkProperties,
     ThermalClusterProperties,
 )
 from antares.craft.model.study import Study
@@ -39,7 +40,8 @@ P2G_TYPES = {"base", "marg", "methanation", "asservi"}
 P2G_FATAL_BAND_PREFIX = "P2G_fatalband_"
 BINDING_CONSTRAINT_HOURLY_ROWS = 8784
 EXPECTED_HOURS = 8760
-
+HURDLE_COSTS_DIRECT = 0.1
+HURDLE_COSTS_INDIRECT = 0.1
 
 def build_area_properties(properties_json: dict[str, Any] | None) -> AreaProperties | None:
     if not isinstance(properties_json, dict):
@@ -64,6 +66,18 @@ def get_mean_load_factor(res_cluster: Any) -> float:
 
     return float(time_series.to_numpy().mean())
 
+def _generate_link_series() -> pd.DataFrame:
+    """
+    8760 x 6 matrix:
+    column 0 = 0,1,
+    column 1 = 0,1,
+    columns 2-5 = 0
+    """
+
+    data = np.zeros((EXPECTED_HOURS, 6), dtype=float)
+    data[:, 0] = HURDLE_COSTS_DIRECT
+    data[:, 1] = HURDLE_COSTS_INDIRECT
+    return pd.DataFrame(data)
 
 def generate_h2_profile_time_series(
     cluster_solar_pv: Any,
@@ -431,7 +445,7 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         if not isinstance(area_link, dict):
             continue
         link_name = f"{area_name}-{virtual_area}"
-        link = study.create_link(area_from=area_name, area_to=virtual_area)
+        link = study.create_link(area_from=area_name, area_to=virtual_area, properties=LinkProperties(hurdles_cost=True))
 
         # Multiplier le tableau de 1 par la valeur souhaitée
         capacity = round(area_link.get("capacity", 0.0), 0)
@@ -440,6 +454,8 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         if p2g_type == "base":
             build_binding_constraint(study, area_name, round(area_link.get("fatal_band", 0.0), 0))
         link.set_capacity_direct(link_time_series)
+        df_link = _generate_link_series()
+        link.set_parameters(df_link)
         logger.info(f"Created P2G link {link_name}")
     return None
 
@@ -486,9 +502,11 @@ def _process_single_asservi_link(
 
     if not isinstance(link_time_series, pd.DataFrame):
         link_time_series = pd.DataFrame(link_time_series)
-
-    link = study.create_link(area_from=area_name, area_to=virtual_area)
+    
+    link = study.create_link(area_from=area_name, area_to=virtual_area, properties=LinkProperties(hurdles_cost=True))
     link.set_capacity_direct(link_time_series)
+    df_link = _generate_link_series()
+    link.set_parameters(df_link)
     link_name = f"{area_name}-{virtual_area}"
     logger.info(f"Created P2G link {link_name}")
     return link_time_series
