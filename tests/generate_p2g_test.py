@@ -23,6 +23,7 @@ from antares.craft import (
     BindingConstraintFrequency,
     BindingConstraintOperator,
     LinkData,
+    LinkProperties,
     Study,
 )
 from antares.craft.model.renewable import RenewableCluster
@@ -31,9 +32,12 @@ from antares.datamanager.generator.generate_p2g import (
     AREA_PREFIX,
     BINDING_CONSTRAINT_HOURLY_ROWS,
     EXPECTED_HOURS,
+    HURDLE_COSTS_DIRECT,
+    HURDLE_COSTS_INDIRECT,
     P2G_FATAL_BAND_PREFIX,
     P2G_TYPES,
     _extract_hourly_series,
+    _generate_link_series,
     _resolve_and_validate_arrow_path,
     build_area_properties,
     build_binding_constraint,
@@ -102,6 +106,21 @@ def test_get_mean_load_factor_valid():
     df = pd.DataFrame({"col1": [0.2, 0.4], "col2": [0.6, 0.8]})
     cluster = _make_mock_res_cluster(df)
     assert pytest.approx(get_mean_load_factor(cluster)) == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Tests: _generate_link_series
+# ---------------------------------------------------------------------------
+
+
+def test_generate_link_series():
+    df = _generate_link_series()
+    assert isinstance(df, pd.DataFrame)
+    assert df.shape == (EXPECTED_HOURS, 6)
+    assert np.all(df.iloc[:, 0].to_numpy() == HURDLE_COSTS_DIRECT)
+    assert np.all(df.iloc[:, 1].to_numpy() == HURDLE_COSTS_INDIRECT)
+    for col_idx in range(2, 6):
+        assert np.all(df.iloc[:, col_idx].to_numpy() == 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -496,8 +515,15 @@ def test_create_p2g_links_base():
     create_p2g_links(study, f"{AREA_PREFIX}base", "base", type_data)
 
     assert study.create_link.call_count == 2
+    study.create_link.assert_any_call(
+        area_from="FR", area_to=f"{AREA_PREFIX}base", properties=LinkProperties(hurdles_cost=True)
+    )
+    study.create_link.assert_any_call(
+        area_from="BE", area_to=f"{AREA_PREFIX}base", properties=LinkProperties(hurdles_cost=True)
+    )
     assert study.create_binding_constraint.call_count == 2
     assert mock_link.set_capacity_direct.call_count == 2
+    assert mock_link.set_parameters.call_count == 2
 
 
 def test_create_p2g_links_non_base():
@@ -513,8 +539,11 @@ def test_create_p2g_links_non_base():
 
     create_p2g_links(study, f"{AREA_PREFIX}marg", "marg", type_data)
 
-    study.create_link.assert_called_once_with(area_from="FR", area_to=f"{AREA_PREFIX}marg")
+    study.create_link.assert_called_once_with(
+        area_from="FR", area_to=f"{AREA_PREFIX}marg", properties=LinkProperties(hurdles_cost=True)
+    )
     mock_link.set_capacity_direct.assert_called_once()
+    mock_link.set_parameters.assert_called_once()
     study.create_binding_constraint.assert_not_called()
 
 
@@ -562,7 +591,14 @@ def test_create_p2g_asservi_links_success():
     total_profile = create_p2g_asservi_links(study, f"{AREA_PREFIX}asservi", type_data)
 
     assert study.create_link.call_count == 2
+    study.create_link.assert_any_call(
+        area_from="FR", area_to=f"{AREA_PREFIX}asservi", properties=LinkProperties(hurdles_cost=True)
+    )
+    study.create_link.assert_any_call(
+        area_from="BE", area_to=f"{AREA_PREFIX}asservi", properties=LinkProperties(hurdles_cost=True)
+    )
     assert mock_link.set_capacity_direct.call_count == 2
+    assert mock_link.set_parameters.call_count == 2
     assert total_profile is not None
     assert total_profile.shape == (EXPECTED_HOURS, 1)
 
@@ -595,7 +631,11 @@ def test_create_p2g_asservi_links_case_insensitive_areas():
 
     total_profile = create_p2g_asservi_links(study, f"{AREA_PREFIX}asservi", type_data)
     assert study.create_link.call_count == 1
+    study.create_link.assert_called_once_with(
+        area_from="FR", area_to=f"{AREA_PREFIX}asservi", properties=LinkProperties(hurdles_cost=True)
+    )
     assert mock_link.set_capacity_direct.call_count == 1
+    assert mock_link.set_parameters.call_count == 1
     assert total_profile is not None
 
 
