@@ -95,7 +95,6 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
                 study,
                 study_data.flowbased,
                 study.get_settings().general_parameters.first_month_in_year,
-                study_data.links,
             )
             generate_flowbased_binding_constraints(
                 study,

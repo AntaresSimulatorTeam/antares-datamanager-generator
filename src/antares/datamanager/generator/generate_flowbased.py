@@ -44,6 +44,7 @@ from antares.datamanager.utils.season_utils import SeasonManager
 
 logger = get_logger(__name__)
 
+
 # Expected JSON layout (top-level "flowbased" key)
 #
 # "flowbased": {
@@ -89,7 +90,6 @@ _REQUIRED_LINK_CAPACITY_KEYS = (
     "summer_HC_indirect_MW",
     "summer_HP_indirect_MW",
 )
-_HVDC_LINK_CAPACITY_KEYS = ("hvdcmwdirect", "hvdcmwindirect")
 _REQUIRED_RESTRICTION_CONSTRAINT_KEYS = ("name", "enabled", "type", "operator", "links", "series")
 
 
@@ -240,6 +240,7 @@ def generate_flowbased_binding_constraints(
     else:
         id_day_types = _read_ts_file(trajectory_directory, used_files)
 
+    day_type_codes, unique_day_types = _factorize_id_day_types(id_day_types)
     n_columns = id_day_types.shape[1]
 
     group_name = f"{SCENARIO_BUILDER_GROUP_PREFIX}{n_columns}".replace("_", "-")
@@ -250,13 +251,28 @@ def generate_flowbased_binding_constraints(
         group=group_name,
     )
 
+    constraint_data: dict[str, tuple[BindingConstraintProperties, list[ConstraintTerm]]] = {}
     for constraint_name, weight_row in weight_df.iterrows():
+        name = str(constraint_name)
+        if name in constraint_data:
+            raise FlowbasedGenerationError(f"Duplicate Flow-Based constraint name {name!r} in weight file")
         terms = _build_constraint_terms(weight_row, flowbased_data, study.get_areas())
-        rhs = build_rhs_matrix(id_day_types, vect_b_lookup, str(constraint_name))
-        rhs = _pad_to_binding_constraint_hourly_rows(rhs)
-        study.create_binding_constraint(
-            name=str(constraint_name), properties=properties, terms=terms, less_term_matrix=rhs
+        constraint_data[name] = (properties, terms)
+
+    if constraint_data:
+        study.create_multiple_binding_constraints(constraint_data)
+    constraints_by_name = {constraint.name: constraint for constraint in study.get_binding_constraints().values()}
+    for constraint_name in constraint_data:
+        rhs = _build_rhs_matrix_from_codes(
+            day_type_codes,
+            unique_day_types,
+            vect_b_lookup,
+            constraint_name,
+            id_day_types.index,
+            id_day_types.columns,
         )
+        rhs = _pad_to_binding_constraint_hourly_rows(rhs)
+        constraints_by_name[constraint_name].set_less_term(rhs)
         logger.info(f"Created flowbased binding constraint {constraint_name}")
 
     _wire_scenario_builder(study, group_name, n_columns, nb_years)
@@ -303,8 +319,18 @@ def generate_restriction_ahc_constraints(
             ) from exc
 
         terms = []
-        for link_name in links:
-            parts = [part.strip() for part in str(link_name).split("-")]
+        for link in links:
+            if not isinstance(link, dict) or "name" not in link or "weight" not in link:
+                raise FlowbasedGenerationError(
+                    f"Each link in restriction constraint {name!r} must be an object with name and weight"
+                )
+            link_name = link["name"]
+            weight = link["weight"]
+            if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not np.isfinite(weight):
+                raise FlowbasedGenerationError(
+                    f"Weight for link {link_name!r} in restriction constraint {name!r} must be a finite number"
+                )
+            parts = [part.strip() for part in link_name.split("-")] if isinstance(link_name, str) else []
             if len(parts) != 2 or not all(parts):
                 raise FlowbasedGenerationError(
                     f"Invalid link {link_name!r} in restriction constraint {name!r}; expected 'area1-area2'"
@@ -322,14 +348,6 @@ def generate_restriction_ahc_constraints(
                 )
             area1 = area_names_by_normalized_id[normalized_parts[0]]
             area2 = area_names_by_normalized_id[normalized_parts[1]]
-            if normalized_parts[0] == "fr":
-                weight = 1.0
-            elif normalized_parts[1] == "fr":
-                weight = -1.0
-            else:
-                raise FlowbasedGenerationError(
-                    f"Link {link_name!r} in restriction constraint {name!r} must have France as one endpoint"
-                )
             terms.append(
                 ConstraintTerm(
                     data=LinkData(area1=area1, area2=area2),
@@ -399,7 +417,6 @@ def create_flowbased_areas_and_links(
     study: Study,
     flowbased_data: dict[str, Any],
     first_month: Optional[Month],
-    study_links_data: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Create the flowbased virtual zones and their links.
 
@@ -408,7 +425,6 @@ def create_flowbased_areas_and_links(
     Args:
         study: The Antares study being generated.
         flowbased_data: The JSON `flowbased` block (`virtual_nodes`, `links`).
-        study_links_data: The study.json links used to identify source HVDC links.
 
     Raises:
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
@@ -420,7 +436,7 @@ def create_flowbased_areas_and_links(
         study.create_area(area_name=area_name)
         logger.info(f"Created flowbased virtual area {area_name}")
 
-    interconnectors = _get_interconnector_sources(study, flowbased_data, study_links_data or {})
+    interconnectors = _get_interconnector_sources(study, flowbased_data)
     created_interconnector_connectors: set[str] = set()
     for entry in flowbased_data.get("links") or []:
         area1, area2 = _parse_link_name(entry.get("name"))
@@ -452,7 +468,7 @@ def create_flowbased_areas_and_links(
 
 
 def _get_interconnector_sources(
-    study: Study, flowbased_data: dict[str, Any], study_links_data: dict[str, dict[str, Any]]
+    study: Study, flowbased_data: dict[str, Any]
 ) -> dict[tuple[str, str], tuple[pd.DataFrame, pd.DataFrame, Any]]:
     """Resolve virtual interconnector connector capacities from existing HVDC links."""
     study_links = study.get_links()
@@ -464,28 +480,6 @@ def _get_interconnector_sources(
 
         country1, country2 = match.groups()
         pair = frozenset((country1, country2))
-        link_data = next(
-            (data for link_name, data in study_links_data.items() if _canonical_link_pair(link_name) == pair),
-            None,
-        )
-        if link_data is None:
-            raise FlowbasedGenerationError(
-                f"Missing study.json link data for virtual interconnector '{virtual_node}' "
-                f"(expected {country1}/{country2})"
-            )
-
-        normalized_link_data = {str(key).lower(): value for key, value in link_data.items()}
-        hvdc_values = [normalized_link_data.get(key) for key in _HVDC_LINK_CAPACITY_KEYS]
-        try:
-            has_hvdc_capacity = any(value is not None and float(value) > 0 for value in hvdc_values)
-        except (TypeError, ValueError) as exc:
-            raise FlowbasedGenerationError(f"Invalid HVDC capacity data for source link {country1}/{country2}") from exc
-        if not has_hvdc_capacity:
-            raise FlowbasedGenerationError(
-                f"Source link {country1}/{country2} for virtual interconnector '{virtual_node}' "
-                "does not contain a positive HVDC capacity"
-            )
-
         source_link = next(
             (link for link_name, link in study_links.items() if _canonical_link_pair(str(link_name)) == pair),
             None,
@@ -503,6 +497,9 @@ def _get_interconnector_sources(
                     f"Source link {country1}/{country2} has no generated {mode} capacity matrix "
                     f"for virtual interconnector '{virtual_node}'"
                 )
+        # Source links are alphabetically oriented, unlike the virtual node's country order.
+        if source_link.area_from_id != country1:
+            direct_capacity, indirect_capacity = indirect_capacity, direct_capacity
         interconnectors[(country1, str(virtual_node).strip().lower())] = (
             direct_capacity.copy(deep=True),
             indirect_capacity.copy(deep=True),
@@ -834,14 +831,43 @@ def build_vect_b_lookup_table(second_member: pd.DataFrame) -> dict[str, dict[int
 def build_rhs_matrix(
     id_day_types: pd.DataFrame, vect_b_lookup: dict[str, dict[int, float]], constraint_name: str
 ) -> pd.DataFrame:
+    codes, unique_day_types = _factorize_id_day_types(id_day_types)
+    return _build_rhs_matrix_from_codes(
+        codes,
+        unique_day_types,
+        vect_b_lookup,
+        constraint_name,
+        id_day_types.index,
+        id_day_types.columns,
+    )
+
+
+def _factorize_id_day_types(id_day_types: pd.DataFrame) -> tuple[np.ndarray[Any, Any], np.ndarray[Any, Any]]:
+    values = id_day_types.to_numpy()
+    codes, unique_day_types = pd.factorize(values.ravel(), sort=False)
+    return codes.reshape(values.shape), unique_day_types
+
+
+def _build_rhs_matrix_from_codes(
+    day_type_codes: np.ndarray[Any, Any],
+    unique_day_types: np.ndarray[Any, Any],
+    vect_b_lookup: dict[str, dict[int, float]],
+    constraint_name: str,
+    index: pd.Index,
+    columns: pd.Index,
+) -> pd.DataFrame:
     vect_b_by_id_day = vect_b_lookup.get(constraint_name)
     if not vect_b_by_id_day:
         raise FlowbasedGenerationError(f"No second_member rows found for constraint '{constraint_name}'")
 
-    rhs: pd.DataFrame = id_day_types.apply(lambda column: column.map(vect_b_by_id_day))
-    if rhs.isna().any(axis=None):
+    vect_b_by_code = np.fromiter(
+        (vect_b_by_id_day.get(day_type, np.nan) for day_type in unique_day_types),
+        dtype=np.float64,
+        count=len(unique_day_types),
+    )
+    if np.any(day_type_codes < 0) or np.isnan(vect_b_by_code).any():
         raise FlowbasedGenerationError(f"idDayType value has no matching vect_b for constraint '{constraint_name}'")
-    return rhs
+    return pd.DataFrame(vect_b_by_code[day_type_codes], index=index, columns=columns)
 
 
 # Extra rows must be zero padded before being handed to create_binding_constraint
