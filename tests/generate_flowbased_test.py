@@ -20,13 +20,14 @@ import pandas as pd
 from antares.craft import (
     BindingConstraintFrequency,
     BindingConstraintOperator,
-    ClusterData,
-    LinkData,
     Month,
     TransmissionCapacities,
+    create_study_local,
+    read_study_local,
 )
 from antares.craft.exceptions.exceptions import ReferencedObjectDeletionNotAllowed
 from antares.craft.model.area import Area
+from antares.craft.model.binding_constraint import BindingConstraint
 from antares.craft.model.renewable import RenewableCluster
 from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
 from antares.datamanager.generator.generate_flowbased import (
@@ -42,10 +43,11 @@ from antares.datamanager.generator.generate_flowbased import (
     _pad_to_binding_constraint_hourly_rows,
     _read_combined_res_series,
     _zscore_pooled,
+    build_rhs_matrix,
     compute_id_day_types,
     create_flowbased_areas_and_links,
-    create_restriction_ahc,
     generate_flowbased_binding_constraints,
+    generate_restriction_ahc_constraints,
 )
 from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.random_forest_reader import load_forest_model
@@ -56,6 +58,31 @@ SPLIT_FIELD = "fr_load_normalized"
 # Pooled z-score of two constants centers on 0 - the fake model's split threshold is the
 # z-scored midpoint, not the raw midpoint (see _single_split_pmml docstring).
 SPLIT_THRESHOLD = 0.0
+
+
+def test_build_rhs_matrix_maps_sparse_day_type_ids_and_preserves_labels():
+    id_day_types = pd.DataFrame(
+        {"climate_b": [42, 7, 42], "climate_a": [7, 42, 7]},
+        index=[10, 20, 30],
+    )
+
+    rhs = build_rhs_matrix(id_day_types, {"FB001": {7: 100.0, 42: 250.0}}, "FB001")
+
+    expected = pd.DataFrame(
+        {"climate_b": [250.0, 100.0, 250.0], "climate_a": [100.0, 250.0, 100.0]},
+        index=[10, 20, 30],
+    )
+    pd.testing.assert_frame_equal(rhs, expected)
+
+
+def test_build_rhs_matrix_raises_for_missing_constraint_or_day_type():
+    id_day_types = pd.DataFrame({"climate": [7, 42]})
+
+    with pytest.raises(FlowbasedGenerationError, match="No second_member rows"):
+        build_rhs_matrix(id_day_types, {}, "FB001")
+
+    with pytest.raises(FlowbasedGenerationError, match="no matching vect_b"):
+        build_rhs_matrix(id_day_types, {"FB001": {7: 100.0}}, "FB001")
 
 
 def _single_split_pmml(class_low: str, class_high: str) -> str:
@@ -144,6 +171,12 @@ def flowbased_fixture(tmp_path: Path) -> dict:
 
     study = MagicMock()
     study.get_areas.return_value = areas
+    constraints = {}
+    for name in ("FB001", "FB002"):
+        constraint = MagicMock(spec=BindingConstraint)
+        constraint.name = name
+        constraints[name.lower()] = constraint
+    study.get_binding_constraints.return_value = constraints
 
     (trajectory_dir / SUMMER_MODEL_FILENAME).write_text(_single_split_pmml("summer1", "summer2"))
     (trajectory_dir / WINTER_MODEL_FILENAME).write_text(_single_split_pmml("winter1", "winter2"))
@@ -207,19 +240,20 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
         used_files,
     )
 
-    assert study.create_binding_constraint.call_count == 2
-    calls_by_name = {call.kwargs["name"]: call.kwargs for call in study.create_binding_constraint.call_args_list}
+    study.create_binding_constraint.assert_not_called()
+    study.create_multiple_binding_constraints.assert_called_once()
+    calls_by_name = study.create_multiple_binding_constraints.call_args.args[0]
     assert set(calls_by_name) == {"FB001", "FB002"}
 
-    fb001_kwargs = calls_by_name["FB001"]
-    assert fb001_kwargs["properties"].time_step == BindingConstraintFrequency.HOURLY
-    assert fb001_kwargs["properties"].operator == BindingConstraintOperator.LESS
-    assert fb001_kwargs["properties"].group == "flowbased-fb2"
+    properties, terms = calls_by_name["FB001"]
+    assert properties.time_step == BindingConstraintFrequency.HOURLY
+    assert properties.operator == BindingConstraintOperator.LESS
+    assert properties.group == "flowbased-fb2"
 
-    terms_by_link = {(t.data.area1, t.data.area2): t.weight for t in fb001_kwargs["terms"]}
+    terms_by_link = {(t.data.area1, t.data.area2): t.weight for t in terms}
     assert terms_by_link == {("fr", "zz_flowbased"): -1.0, ("ch", "fr"): 1.0}
 
-    rhs = fb001_kwargs["less_term_matrix"]
+    rhs = study.get_binding_constraints.return_value["fb001"].set_less_term.call_args.args[0]
     # Winter day (hour 0, day 1): column 0 -> idDayType 3 -> vect_b 30, column 1 -> idDayType 4 -> vect_b 40
     assert rhs.iloc[0, 0] == 30.0
     assert rhs.iloc[0, 1] == 40.0
@@ -233,7 +267,7 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
     assert rhs.shape == (BINDING_CONSTRAINT_HOURLY_ROWS, 2)
     assert (rhs.iloc[EXPECTED_HOURS:BINDING_CONSTRAINT_HOURLY_ROWS] == 0.0).all(axis=None)
 
-    fb002_rhs = calls_by_name["FB002"]["less_term_matrix"]
+    fb002_rhs = study.get_binding_constraints.return_value["fb002"].set_less_term.call_args.args[0]
     assert fb002_rhs.iloc[0, 0] == 300.0
     assert fb002_rhs.iloc[3000, 1] == 200.0
     assert fb002_rhs.shape == (BINDING_CONSTRAINT_HOURLY_ROWS, 2)
@@ -260,27 +294,95 @@ def test_generate_flowbased_read_binding_constraints_builds_expected_rhs(mock_se
         used_files,
     )
 
-    assert study.create_binding_constraint.call_count == 2
-    calls_by_name = {call.kwargs["name"]: call.kwargs for call in study.create_binding_constraint.call_args_list}
+    study.create_binding_constraint.assert_not_called()
+    study.create_multiple_binding_constraints.assert_called_once()
+    calls_by_name = study.create_multiple_binding_constraints.call_args.args[0]
     assert set(calls_by_name) == {"FB001", "FB002"}
 
-    fb001_kwargs = calls_by_name["FB001"]
-    assert fb001_kwargs["properties"].time_step == BindingConstraintFrequency.HOURLY
-    assert fb001_kwargs["properties"].operator == BindingConstraintOperator.LESS
-    assert fb001_kwargs["properties"].group == "flowbased-fb2"
+    properties, terms = calls_by_name["FB001"]
+    assert properties.time_step == BindingConstraintFrequency.HOURLY
+    assert properties.operator == BindingConstraintOperator.LESS
+    assert properties.group == "flowbased-fb2"
 
-    terms_by_link = {(t.data.area1, t.data.area2): t.weight for t in fb001_kwargs["terms"]}
+    terms_by_link = {(t.data.area1, t.data.area2): t.weight for t in terms}
     assert terms_by_link == {("fr", "zz_flowbased"): -1.0, ("ch", "fr"): 1.0}
 
-    rhs = fb001_kwargs["less_term_matrix"]
+    rhs = study.get_binding_constraints.return_value["fb001"].set_less_term.call_args.args[0]
     assert rhs.iloc[0, 0] == 30.0
     assert rhs.iloc[0, 1] == 40.0
     assert rhs.iloc[1, 0] == 30.0
     assert rhs.iloc[1, 1] == 40.0
 
-    fb002_rhs = calls_by_name["FB002"]["less_term_matrix"]
+    fb002_rhs = study.get_binding_constraints.return_value["fb002"].set_less_term.call_args.args[0]
     assert fb002_rhs.iloc[0, 0] == 300.0
     assert fb002_rhs.iloc[1, 1] == 400.0
+
+
+@patch("antares.datamanager.generator.generate_flowbased.settings")
+def test_generate_flowbased_read_persists_100_constraints_in_one_batch(mock_settings, flowbased_fixture, tmp_path):
+    mock_settings.flowbased_directory = flowbased_fixture["flowbased_root"]
+    trajectory_dir = flowbased_fixture["flowbased_root"] / "model_2024"
+    names = [f"FB{i:03d}" for i in range(1, 101)]
+    (trajectory_dir / WEIGHT_FILENAME).write_text(
+        "Name fr.zz_flowbased ch.fr\n" + "".join(f"{name} -1.0 1.0\n" for name in names)
+    )
+    (trajectory_dir / SECOND_MEMBER_FILENAME).write_text(
+        "Id_Day Id_Hour Name vect_b\n"
+        + "".join(f"{day} 16 {name} {number * day}.0\n" for number, name in enumerate(names, 1) for day in (3, 4))
+    )
+    study = create_study_local("flowbased-batch", "9.2", tmp_path)
+    for name in ("fr", "ch", "zz_flowbased"):
+        study.create_area(area_name=name)
+    study.create_link(area_from="fr", area_to="zz_flowbased")
+    study.create_link(area_from="ch", area_to="fr")
+
+    with (
+        patch.object(
+            study, "create_multiple_binding_constraints", wraps=study.create_multiple_binding_constraints
+        ) as bulk,
+        patch.object(study, "create_binding_constraint", wraps=study.create_binding_constraint) as single,
+    ):
+        generate_flowbased_binding_constraints(
+            study,
+            {"recalculate_ts": False, "ts_path": "flowbased/model_2024", "virtual_nodes": ["zz_flowbased"]},
+            Month.JULY,
+            1,
+            set(),
+        )
+        bulk.assert_called_once()
+        assert len(bulk.call_args.args[0]) == 100
+        single.assert_not_called()
+
+    reloaded = read_study_local(tmp_path / "flowbased-batch")
+    constraints = {constraint.name: constraint for constraint in reloaded.get_binding_constraints().values()}
+    assert set(constraints) == set(names)
+    for number, name in enumerate(names, 1):
+        constraint = constraints[name]
+        assert constraint.properties.group == "flowbased-fb2"
+        assert constraint.properties.operator == BindingConstraintOperator.LESS
+        assert {(term.data.area1, term.data.area2): term.weight for term in constraint.get_terms().values()} == {
+            ("fr", "zz_flowbased"): -1.0,
+            ("ch", "fr"): 1.0,
+        }
+        rhs = constraint.get_less_term_matrix()
+        assert rhs.shape == (BINDING_CONSTRAINT_HOURLY_ROWS, 2)
+        assert (rhs.iloc[:EXPECTED_HOURS, 0] == number * 3).all()
+        assert (rhs.iloc[:EXPECTED_HOURS, 1] == number * 4).all()
+        assert (rhs.iloc[EXPECTED_HOURS:] == 0).all(axis=None)
+
+
+@patch("antares.datamanager.generator.generate_flowbased.settings")
+def test_generate_flowbased_batch_failure_does_not_write_rhs_or_scenarios(mock_settings, flowbased_fixture):
+    mock_settings.flowbased_directory = flowbased_fixture["flowbased_root"]
+    study = flowbased_fixture["study"]
+    study.create_multiple_binding_constraints.side_effect = RuntimeError("Batch creation failed")
+
+    with pytest.raises(RuntimeError, match="Batch creation failed"):
+        generate_flowbased_binding_constraints(study, flowbased_fixture["flowbased_data"], Month.JULY, 1, set())
+
+    study.get_binding_constraints.assert_not_called()
+    study.get_scenario_builder.assert_not_called()
+    study.set_scenario_builder.assert_not_called()
 
 
 @patch("antares.datamanager.generator.generate_flowbased.settings")
@@ -311,10 +413,29 @@ def test_generate_flowbased_binding_constraints_tracks_used_files(mock_settings,
 
     study = flowbased_fixture["study"]
     used_files: set[Path] = set()
+    restriction_series = flowbased_fixture["flowbased_root"] / "restriction_ahc" / "ts" / "ts10GW.txt"
+    restriction_series.parent.mkdir(parents=True)
+    restriction_series.write_text("10000\n" * EXPECTED_HOURS)
+    flowbased_data = dict(flowbased_fixture["flowbased_data"])
+    flowbased_data["restriction_ahc_constraints"] = [
+        {
+            "name": "restriction_ahc",
+            "enabled": True,
+            "type": "hourly",
+            "operator": "less",
+            "links": [{"name": "ch-fr", "weight": 1}, {"name": "fr-itn", "weight": -1}],
+            "series": "/restriction_ahc/ts/ts10GW.txt",
+        }
+    ]
+    study_areas = dict(study.get_areas.return_value)
+    study_areas["ch"].name = "CH"
+    study_areas["fr"].name = "FR"
+    study_areas["itn"].name = "ITN"
+    study.get_areas.return_value = study_areas
 
     generate_flowbased_binding_constraints(
         study,
-        flowbased_fixture["flowbased_data"],
+        flowbased_data,
         Month.JULY,
         1,
         used_files,
@@ -325,6 +446,168 @@ def test_generate_flowbased_binding_constraints_tracks_used_files(mock_settings,
     assert trajectory_dir / WINTER_MODEL_FILENAME in used_files
     assert trajectory_dir / WEIGHT_FILENAME in used_files
     assert trajectory_dir / SECOND_MEMBER_FILENAME in used_files
+    assert restriction_series in used_files
+    binding_constraint_names = {call.kwargs["name"] for call in study.create_binding_constraint.call_args_list}
+    assert binding_constraint_names == {"restriction_ahc"}
+    assert set(study.create_multiple_binding_constraints.call_args.args[0]) == {"FB001", "FB002"}
+
+
+@patch("antares.datamanager.generator.generate_flowbased.settings")
+def test_generate_restriction_ahc_constraints_uses_series_and_json_weights(mock_settings, tmp_path: Path):
+    mock_settings.flowbased_directory = tmp_path
+    series_path = tmp_path / "Porygon_CNEC_interne_2027" / "2027" / "restriction_ahc" / "ts" / "ts10GW.txt"
+    series_path.parent.mkdir(parents=True)
+    series_path.write_text("10000\n" * EXPECTED_HOURS)
+    study = MagicMock()
+    study.get_areas.return_value = {
+        "ch": MagicMock(),
+        "fr": MagicMock(),
+        "itn": MagicMock(),
+        "zz_flowbased": MagicMock(),
+    }
+    study.get_areas.return_value["ch"].name = "CH"
+    study.get_areas.return_value["fr"].name = "FR"
+    study.get_areas.return_value["itn"].name = "ITN"
+    study.get_areas.return_value["zz_flowbased"].name = "zz_flowbased"
+    used_files: set[Path] = set()
+    flowbased_data = {
+        "restriction_ahc_constraints": [
+            {
+                "name": "restriction_ahc",
+                "enabled": True,
+                "type": "hourly",
+                "operator": "less",
+                "links": [
+                    {"name": "ch-fr", "weight": 1},
+                    {"name": "fr-itn", "weight": -1},
+                    {"name": "fr-zz_flowbased", "weight": 1},
+                ],
+                "series": "/Porygon_CNEC_interne_2027/2027/restriction_ahc/ts/ts10GW.txt",
+            }
+        ]
+    }
+
+    generate_restriction_ahc_constraints(study, flowbased_data, 3, used_files)
+
+    kwargs = study.create_binding_constraint.call_args.kwargs
+    assert kwargs["name"] == "restriction_ahc"
+    assert kwargs["properties"].enabled is True
+    assert kwargs["properties"].time_step == BindingConstraintFrequency.HOURLY
+    assert kwargs["properties"].operator == BindingConstraintOperator.LESS
+    assert kwargs["properties"].group == "flowbased-restriction_ahc"
+    assert [(term.data.area1, term.data.area2, term.weight) for term in kwargs["terms"]] == [
+        ("CH", "FR", 1.0),
+        ("FR", "ITN", -1.0),
+        ("FR", "zz_flowbased", 1.0),
+    ]
+    rhs = kwargs["less_term_matrix"]
+    assert rhs.shape == (BINDING_CONSTRAINT_HOURLY_ROWS, 1)
+    assert (rhs.iloc[:EXPECTED_HOURS, 0] == 10000).all()
+    assert (rhs.iloc[EXPECTED_HOURS:, 0] == 0).all()
+    scenario_group = study.get_scenario_builder.return_value.binding_constraint.get_group.return_value
+    scenario_group.set_new_scenario.assert_called_once_with([1, 1, 1])
+    assert series_path in used_files
+
+
+@patch("antares.datamanager.generator.generate_flowbased.settings")
+@pytest.mark.parametrize("weight", [-2.5, 0, 3])
+def test_generate_restriction_ahc_constraints_accepts_links_without_fr(mock_settings, tmp_path: Path, weight):
+    mock_settings.flowbased_directory = tmp_path
+    series_path = tmp_path / "rhs.txt"
+    series_path.write_text("10000\n" * EXPECTED_HOURS)
+    flowbased_data = {
+        "restriction_ahc_constraints": [
+            {
+                "name": "restriction_ahc",
+                "enabled": True,
+                "type": "hourly",
+                "operator": "less",
+                "links": [{"name": "de-nl", "weight": weight}],
+                "series": "rhs.txt",
+            }
+        ]
+    }
+    study = MagicMock()
+    study.get_areas.return_value = {"de": MagicMock(), "nl": MagicMock()}
+    study.get_areas.return_value["de"].name = "DE"
+    study.get_areas.return_value["nl"].name = "NL"
+
+    generate_restriction_ahc_constraints(study, flowbased_data, 1, set())
+
+    term = study.create_binding_constraint.call_args.kwargs["terms"][0]
+    assert (term.data.area1, term.data.area2, term.weight) == ("DE", "NL", weight)
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "ch-fr",
+        {"name": "ch-fr"},
+        {"weight": 1},
+        {"name": "ch-fr", "weight": None},
+        {"name": "ch-fr", "weight": True},
+        {"name": "ch-fr", "weight": "1"},
+        {"name": "ch-fr", "weight": float("nan")},
+        {"name": "ch-fr", "weight": float("inf")},
+        {"name": None, "weight": 1},
+        {"name": "ch", "weight": 1},
+    ],
+)
+def test_generate_restriction_ahc_constraints_rejects_invalid_link_weights(link):
+    study = MagicMock()
+    study.get_areas.return_value = {}
+    flowbased_data = {
+        "restriction_ahc_constraints": [
+            {
+                "name": "restriction_ahc",
+                "enabled": True,
+                "type": "hourly",
+                "operator": "less",
+                "links": [link],
+                "series": "rhs.txt",
+            }
+        ]
+    }
+
+    with pytest.raises(FlowbasedGenerationError):
+        generate_restriction_ahc_constraints(study, flowbased_data, 1, set())
+    study.create_binding_constraint.assert_not_called()
+
+
+@patch("antares.datamanager.generator.generate_flowbased.settings")
+def test_generate_restriction_ahc_constraints_updates_scenario_builder_once(mock_settings, tmp_path: Path):
+    mock_settings.flowbased_directory = tmp_path
+    series_path = tmp_path / "restriction_ahc" / "ts" / "ts10GW.txt"
+    series_path.parent.mkdir(parents=True)
+    series_path.write_text("10000\n" * EXPECTED_HOURS)
+    study = MagicMock()
+    study.get_areas.return_value = {"fr": MagicMock(name="FR"), "ch": MagicMock(name="CH")}
+    study.get_areas.return_value["fr"].name = "FR"
+    study.get_areas.return_value["ch"].name = "CH"
+    entry_template = {
+        "enabled": True,
+        "type": "hourly",
+        "operator": "less",
+        "links": [{"name": "fr-ch", "weight": 1}],
+        "series": "restriction_ahc/ts/ts10GW.txt",
+    }
+    flowbased_data = {
+        "restriction_ahc_constraints": [
+            {**entry_template, "name": "restriction_ahc"},
+            {**entry_template, "name": "restriction_ahc_winter"},
+        ]
+    }
+
+    generate_restriction_ahc_constraints(study, flowbased_data, 2, set())
+
+    scenario_builder = study.get_scenario_builder.return_value
+    study.get_scenario_builder.assert_called_once_with()
+    study.set_scenario_builder.assert_called_once_with(scenario_builder)
+    assert scenario_builder.binding_constraint.get_group.call_count == 2
+    for group_name in ("flowbased-restriction_ahc", "flowbased-restriction_ahc_winter"):
+        scenario_builder.binding_constraint.get_group.assert_any_call(group_name)
+    for group_call in scenario_builder.binding_constraint.get_group.return_value.set_new_scenario.call_args_list:
+        assert group_call.args == ([1, 1],)
 
 
 @patch("antares.datamanager.generator.generate_flowbased.settings")
@@ -585,6 +868,72 @@ def test_create_flowbased_areas_and_links_deletes_hub_pairs_and_skips_the_rest()
     study.delete_link.assert_called_once_with(fr_be_link)
 
 
+@pytest.mark.parametrize("country1,country2", [("de", "nos"), ("nos", "de")])
+def test_create_flowbased_areas_and_links_copies_hvdc_pair_capacity_to_virtual_connector(country1, country2):
+    direct_capacity = pd.DataFrame({"year1": [100.0], "year2": [90.0]})
+    indirect_capacity = pd.DataFrame({"year1": [80.0], "year2": [70.0]})
+    source_link = _fake_link("de / nos")
+    source_link.area_from_id = "de"
+    source_link.area_to_id = "nos"
+    source_link.get_capacity_direct.return_value = direct_capacity
+    source_link.get_capacity_indirect.return_value = indirect_capacity
+    connector = MagicMock()
+    study = MagicMock()
+    study.get_links.return_value = {"de / nos": source_link}
+    study.create_link.return_value = connector
+    flowbased_data = {
+        "virtual_nodes": [f"z_{country1}_{country2}"],
+        "links": [{"name": f"{country1} - z_{country1}_{country2}", "transmission_capacities": "INFINITE"}],
+    }
+    create_flowbased_areas_and_links(study, flowbased_data, Month.JANUARY)
+
+    created_properties = study.create_link.call_args.kwargs["properties"]
+    assert created_properties.transmission_capacities == TransmissionCapacities.ENABLED
+    connector.set_capacity_direct.assert_called_once()
+    connector.set_capacity_indirect.assert_called_once()
+    copied_direct = connector.set_capacity_direct.call_args.args[0]
+    copied_indirect = connector.set_capacity_indirect.call_args.args[0]
+    expected_direct, expected_indirect = (
+        (direct_capacity, indirect_capacity) if country1 == "de" else (indirect_capacity, direct_capacity)
+    )
+    pd.testing.assert_frame_equal(copied_direct, expected_direct)
+    pd.testing.assert_frame_equal(copied_indirect, expected_indirect)
+    assert copied_direct is not expected_direct
+    assert copied_indirect is not expected_indirect
+    study.delete_link.assert_called_once_with(source_link)
+
+
+def test_create_flowbased_areas_and_links_requires_generated_source_link_for_virtual_connector():
+    study = MagicMock()
+    study.get_links.return_value = {}
+    flowbased_data = {
+        "virtual_nodes": ["z_nos_de"],
+        "links": [{"name": "nos - z_nos_de", "transmission_capacities": "INFINITE"}],
+    }
+
+    with pytest.raises(FlowbasedGenerationError, match="Generated source link nos/de.*was not found"):
+        create_flowbased_areas_and_links(study, flowbased_data, Month.JANUARY)
+
+
+@pytest.mark.parametrize("missing_mode", ["direct", "indirect"])
+def test_create_flowbased_areas_and_links_requires_generated_capacity_matrices(missing_mode):
+    study = MagicMock()
+    source_link = _fake_link("de / nos")
+    source_link.get_capacity_direct.return_value = pd.DataFrame({0: [100.0]})
+    source_link.get_capacity_indirect.return_value = pd.DataFrame({0: [90.0]})
+    getattr(source_link, f"get_capacity_{missing_mode}").return_value = pd.DataFrame()
+    study.get_links.return_value = {"de / nos": source_link}
+    flowbased_data = {
+        "virtual_nodes": ["z_nos_de"],
+        "links": [{"name": "nos - z_nos_de", "transmission_capacities": "INFINITE"}],
+    }
+
+    with pytest.raises(FlowbasedGenerationError, match=f"no generated {missing_mode} capacity matrix"):
+        create_flowbased_areas_and_links(study, flowbased_data, Month.JANUARY)
+    study.create_link.assert_not_called()
+    study.delete_link.assert_not_called()
+
+
 def test_delete_direct_links_wraps_referenced_object_error():
     fr_be_link = _fake_link("be / fr")
     study = MagicMock()
@@ -595,103 +944,15 @@ def test_delete_direct_links_wraps_referenced_object_error():
         _delete_direct_links(study, ("be", "fr"))
 
 
-# --- Restriction AHC ---
+# --- Restriction AHC is not part of flowbased generation ---
 
 
-def test_create_restriction_ahc_creates_thermal_cluster_and_binding_constraint():
-    study = MagicMock()
-    model_description_fb_area = MagicMock()
-    study.get_areas.return_value = {"model_description_fb": model_description_fb_area}
-
-    create_restriction_ahc(study)
-
-    # 1. Vérification de la création du cluster thermique
-    model_description_fb_area.create_thermal_cluster.assert_called_once()
-    cluster_kwargs = model_description_fb_area.create_thermal_cluster.call_args.kwargs
-    assert cluster_kwargs["thermal_name"] == "restriction_ahc"
-    cluster_props = cluster_kwargs["properties"]
-    assert cluster_props.nominal_capacity == 10000.0
-    assert cluster_props.unit_count == 1
-    assert cluster_props.enabled is True
-
-    # 2. Vérification de la création de la contrainte couplante
-    study.create_binding_constraint.assert_called_once()
-    constraint_kwargs = study.create_binding_constraint.call_args.kwargs
-    assert constraint_kwargs["name"] == "restriction_ahc"
-
-    properties = constraint_kwargs["properties"]
-    assert properties.enabled is True
-    assert properties.time_step == BindingConstraintFrequency.HOURLY
-    assert properties.operator == BindingConstraintOperator.LESS
-
-    terms = constraint_kwargs["terms"]
-    assert len(terms) == 4
-
-    # 1 * (ch%fr)
-    term_ch_fr = next(
-        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "ch" and t.data.area2 == "fr"
-    )
-    assert term_ch_fr.weight == 1.0
-
-    # -1 * (fr%itn)
-    term_fr_itn = next(
-        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "fr" and t.data.area2 == "itn"
-    )
-    assert term_fr_itn.weight == -1.0
-
-    # -1 * (fr%zz_flowbased)
-    term_fr_zz = next(
-        t for t in terms if isinstance(t.data, LinkData) and t.data.area1 == "fr" and t.data.area2 == "zz_flowbased"
-    )
-    assert term_fr_zz.weight == -1.0
-
-    # -1 * (model_description_fb.restriction_ahc)
-    term_cluster = next(t for t in terms if isinstance(t.data, ClusterData))
-    assert term_cluster.data.area == "model_description_fb"
-    assert term_cluster.data.cluster == "restriction_ahc"
-    assert term_cluster.weight == -1.0
-
-    # 3. Matrice second membre (RHS) : 0 sur 8760 heures
-    less_term_matrix = constraint_kwargs["less_term_matrix"]
-    assert isinstance(less_term_matrix, pd.DataFrame)
-    assert less_term_matrix.shape == (8784, 1)
-    assert (less_term_matrix == 1000).all().all()
-
-
-def test_create_restriction_ahc_with_custom_limitation_mw():
-    study = MagicMock()
-    model_description_fb_area = MagicMock()
-    study.get_areas.return_value = {"model_description_fb": model_description_fb_area}
-
-    create_restriction_ahc(study, limitation_mw=5000.0)
-
-    model_description_fb_area.create_thermal_cluster.assert_called_once()
-    cluster_kwargs = model_description_fb_area.create_thermal_cluster.call_args.kwargs
-    assert cluster_kwargs["properties"].nominal_capacity == 5000.0
-
-
-def test_create_flowbased_areas_and_links_creates_restriction_ahc_when_model_description_fb_present():
+def test_create_flowbased_areas_and_links_does_not_create_restriction_ahc():
     study = MagicMock()
     model_description_fb_area = MagicMock()
     study.get_areas.return_value = {"model_description_fb": model_description_fb_area}
     flowbased_data = _structural_flowbased_data()
     assert "model_description_fb" in flowbased_data["virtual_nodes"]
-
-    create_flowbased_areas_and_links(study, flowbased_data, Month.JANUARY)
-
-    model_description_fb_area.create_thermal_cluster.assert_called_once()
-    assert model_description_fb_area.create_thermal_cluster.call_args.kwargs["thermal_name"] == "restriction_ahc"
-    binding_constraint_names = [call.kwargs["name"] for call in study.create_binding_constraint.call_args_list]
-    assert "restriction_ahc" in binding_constraint_names
-
-
-def test_create_flowbased_areas_and_links_does_not_create_restriction_ahc_when_model_description_fb_absent():
-    study = MagicMock()
-    model_description_fb_area = MagicMock()
-    study.get_areas.return_value = {"model_description_fb": model_description_fb_area}
-    flowbased_data = _structural_flowbased_data()
-    flowbased_data["virtual_nodes"] = ["alegro1", "alegro2", "alegro3", "zz_flowbased"]
-
     create_flowbased_areas_and_links(study, flowbased_data, Month.JANUARY)
 
     model_description_fb_area.create_thermal_cluster.assert_not_called()
