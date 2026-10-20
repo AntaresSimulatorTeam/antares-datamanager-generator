@@ -105,8 +105,10 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         if (
             study_data.area_thermals or study_data.area_dsr or study_data.p2g or _has_thermals_me(study_data)
         ) and study_data.enable_random_ts:
-            logger.info(f"Generating timeseries for {study.get_settings().general_parameters.nb_years} years")
-            study.generate_thermal_timeseries(study.get_settings().general_parameters.nb_years)
+            logger.info(
+                f"Generating timeseries for {study.get_settings().general_parameters.nb_timeseries_thermal} years"
+            )
+            study.generate_thermal_timeseries(study.get_settings().general_parameters.nb_timeseries_thermal)
 
         generate_scenario_builder(study, study_data, used_files)
 
