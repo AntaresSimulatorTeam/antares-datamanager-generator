@@ -196,6 +196,34 @@ def test_generate_link_capacity_df_hvdc() -> None:
     assert (df_indirect_hybrid.values == 2500).all()
 
 
+@pytest.mark.parametrize("mode", ["direct", "indirect"])
+@pytest.mark.parametrize("hvdc_direct,hvdc_indirect", [(1000, 800), (800, 1000)])
+def test_generate_link_capacity_df_hybrid_uses_minimum_hvdc_capacity(
+    mode: str, hvdc_direct: int, hvdc_indirect: int
+) -> None:
+    link_data = {
+        f"{season}{period}{direction}Mw": capacity
+        for direction in ("Direct", "Indirect")
+        for season, period, capacity in (
+            ("winter", "Hc", 1500),
+            ("winter", "Hp", 1600),
+            ("summer", "Hc", 1700),
+            ("summer", "Hp", 1800),
+        )
+    }
+    expected = generate_link_capacity_df(
+        link_data, mode, seed_tsgen_link=1234, link_name="area1-area2", first_month=Month.JANUARY
+    )
+    link_data.update({"hvdcMwDirect": hvdc_direct, "hvdcMwIndirect": hvdc_indirect})
+
+    actual = generate_link_capacity_df(
+        link_data, mode, seed_tsgen_link=1234, link_name="area1-area2", first_month=Month.JANUARY
+    )
+
+    assert actual.shape == (8760, 60)
+    assert actual.eq(expected[0], axis=0).all().all()
+
+
 def test_generate_link_capacity_df_case_insensitivity() -> None:
     """
     Test that keys in link_data can be provided in any case.
