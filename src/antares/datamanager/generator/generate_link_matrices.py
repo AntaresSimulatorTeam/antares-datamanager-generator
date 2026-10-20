@@ -24,16 +24,20 @@ from antares.tsgen.random_generator import MersenneTwisterRNG
 from antares.tsgen.ts_generator import LinkCapacity, OutageGenerationParameters, TimeseriesGenerator
 
 
+def _get_hvdc_capacity(link_data_lower: dict[str, Any], mode: str) -> float | None:
+    hvdc_mw_direct: float | None = link_data_lower.get("hvdcmwdirect")
+    hvdc_mw_indirect: float | None = link_data_lower.get("hvdcmwindirect")
+    if hvdc_mw_direct is not None and hvdc_mw_indirect is not None:
+        return min(hvdc_mw_direct, hvdc_mw_indirect)
+    return hvdc_mw_direct if mode.lower() == "direct" else hvdc_mw_indirect
+
+
 def _generate_hvdc_ts(link_data_lower: dict[str, Any], mode: str, seed_tsgen_link: int, link_name: str) -> pd.DataFrame:
     """
     Generate random time series for 100% HVDC links.
     """
     prefix = mode.lower()
-    hvdc_mw_direct = link_data_lower.get("hvdcmwdirect")
-    hvdc_mw_indirect = link_data_lower.get("hvdcmwindirect")
-    hvdc_mw = link_data_lower.get(f"hvdcmw{prefix}")
-    if hvdc_mw_direct is not None and hvdc_mw_indirect is not None:
-        hvdc_mw = np.minimum(hvdc_mw_direct, hvdc_mw_indirect)
+    hvdc_mw = _get_hvdc_capacity(link_data_lower, mode)
     if hvdc_mw is None:
         hvdc_mw = 0.0
     hvdc_nb = np.minimum(link_data_lower.get("hvdcnbdirect", 1), link_data_lower.get("hvdcnbindirect", 1))
@@ -149,10 +153,10 @@ def generate_link_capacity_df(
     link_data_lower = {k.lower(): v for k, v in link_data.items()}
 
     if mode.lower() == "direct":
-        winter_hc_value = link_data_lower["winterhcdirectmw"]
-        winter_hp_value = link_data_lower["winterhpdirectmw"]
-        summer_hc_value = link_data_lower["summerhcdirectmw"]
-        summer_hp_value = link_data_lower["summerhpdirectmw"]
+        winter_hc_value: float = link_data_lower["winterhcdirectmw"]
+        winter_hp_value: float = link_data_lower["winterhpdirectmw"]
+        summer_hc_value: float = link_data_lower["summerhcdirectmw"]
+        summer_hp_value: float = link_data_lower["summerhpdirectmw"]
         hvdc_mw = link_data_lower.get("hvdcmwdirect")
     elif mode.lower() == "indirect":
         winter_hc_value = link_data_lower["winterhcindirectmw"]
@@ -174,10 +178,12 @@ def generate_link_capacity_df(
             return _generate_hvdc_ts(link_data_lower, mode, seed_tsgen_link, link_name)
         else:
             hvdc_ts = _generate_hvdc_ts(link_data_lower, mode, seed_tsgen_link, link_name)
-            winter_hc_value -= hvdc_mw
-            winter_hp_value -= hvdc_mw
-            summer_hc_value -= hvdc_mw
-            summer_hp_value -= hvdc_mw
+            hvdc_capacity = _get_hvdc_capacity(link_data_lower, mode)
+            assert hvdc_capacity is not None
+            winter_hc_value -= hvdc_capacity
+            winter_hp_value -= hvdc_capacity
+            summer_hc_value -= hvdc_capacity
+            summer_hp_value -= hvdc_capacity
 
     capacity = np.empty(total_hours, dtype=int)
     winter_hc_mask = (seasons == "winter") & (periods == "HC")

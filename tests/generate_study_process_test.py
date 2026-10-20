@@ -544,7 +544,7 @@ def test_generate_study_calls_p2g_when_present(
     mock_study = MagicMock()
     mock_study.service.study_id = "dummy_id"
     mock_study.path = ""
-    mock_study.get_settings.return_value.general_parameters.nb_years = 5
+    mock_study.get_settings.return_value.general_parameters.nb_timeseries_thermal = 5
     mock_factory = MagicMock()
     mock_factory.create_study.return_value = mock_study
 
@@ -653,7 +653,7 @@ def test_generate_study_calls_thermal_timeseries_when_me_thermals_present(
     mock_study = MagicMock()
     mock_study.service.study_id = "dummy_id"
     mock_study.path = ""
-    mock_study.get_settings.return_value.general_parameters.nb_years = 3
+    mock_study.get_settings.return_value.general_parameters.nb_timeseries_thermal = 3
     mock_factory = MagicMock()
     mock_factory.create_study.return_value = mock_study
 
