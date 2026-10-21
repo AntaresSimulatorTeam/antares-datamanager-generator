@@ -102,11 +102,10 @@ def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") ->
 
 def _build_dsr_constraint_names(area_name: str, cluster_name: str) -> tuple[str, str]:
     # bc_term_name is expected to be {area_name}_{cluster_name} : BE_DSR_1
-    # bc_name is expected to be {cluster_name}_{area_name}_stock : DSR1_BE_stock
+    # bc_name is expected to be {cluster_name}_{area_name}_stock : DSR_tertiaire_BE_stock
     cluster_name_raw = cluster_name.split("_", 1)[1]
     bc_term_name = f"{area_name}_{cluster_name_raw}"
-    cluster_name_bc = cluster_name_raw.replace("_", "")
-    bc_name = f"{cluster_name_bc}_{area_name}_stock"
+    bc_name = f"{cluster_name_raw}_{area_name}_stock"
     return bc_name, bc_term_name
 
 

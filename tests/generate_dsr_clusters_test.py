@@ -188,8 +188,8 @@ def test_generate_dsr_clusters_logs_warning_when_file_not_found(
 @pytest.mark.parametrize(
     "area_name, cluster_name, expected_bc_name, expected_bc_term_name",
     [
-        ("be", "area_dsr_1", "dsr1_be_stock", "be_dsr_1"),
-        ("fr", "dsr_DSR_peak", "DSRpeak_fr_stock", "fr_DSR_peak"),
+        ("be", "area_dsr_1", "dsr_1_be_stock", "be_dsr_1"),
+        ("fr", "dsr_DSR_peak", "DSR_peak_fr_stock", "fr_DSR_peak"),
         ("de", "zone_dsr", "dsr_de_stock", "de_dsr"),
     ],
 )
@@ -214,7 +214,7 @@ def test_create_dsr_binding_constraints_creates_constraint():
     study.create_binding_constraint.assert_called_once()
     call_kwargs = study.create_binding_constraint.call_args.kwargs
 
-    assert call_kwargs["name"] == "dsr1_be_stock"
+    assert call_kwargs["name"] == "dsr_1_be_stock"
     assert call_kwargs["properties"].enabled is True
     assert call_kwargs["properties"].time_step == BindingConstraintFrequency.DAILY
     assert call_kwargs["properties"].operator == BindingConstraintOperator.LESS
