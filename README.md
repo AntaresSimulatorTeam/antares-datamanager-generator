@@ -41,10 +41,6 @@ The generator requires the following environment variables:
 
 - `NAS_PATH`: Path to the NAS storage
 - `PEGASE_LOAD_OUTPUT_DIRECTORY`: Directory containing load data files
-- `PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY`: Required for Flow-Based
-  recalculation; export root (absolute, or relative to `NAS_PATH`). Each study's
-  `clusters.tsv`, `id_day_types.tsv` and `metadata.json` are stored in a
-  subdirectory named after the study, replacing its previous results.
 
 ## Usage
 

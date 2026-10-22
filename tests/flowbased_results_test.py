@@ -40,7 +40,7 @@ def allocation():
 @pytest.fixture
 def export_root(tmp_path, monkeypatch):
     root = tmp_path / "results"
-    monkeypatch.setenv("PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY", str(root))
+    monkeypatch.setenv("PEGASE_FLOWBASED_RECALCULATE", str(root))
     return root
 
 
@@ -52,7 +52,7 @@ def publish(allocation, name="study"):
 
 @pytest.mark.parametrize("configured", ["/absolute/results", "relative/results"])
 def test_output_setting_resolves_paths(configured, monkeypatch, tmp_path):
-    monkeypatch.setenv("PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY", configured)
+    monkeypatch.setenv("PEGASE_FLOWBASED_RECALCULATE", configured)
     monkeypatch.setenv("NAS_PATH", str(tmp_path))
     expected = Path(configured) if Path(configured).is_absolute() else tmp_path / configured
     assert Settings().flowbased_recalculate_output_directory == expected
@@ -61,9 +61,9 @@ def test_output_setting_resolves_paths(configured, monkeypatch, tmp_path):
 @pytest.mark.parametrize("configured", [None, "", "   "])
 def test_export_requires_nonempty_configuration(configured, monkeypatch, allocation):
     if configured is None:
-        monkeypatch.delenv("PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY", raising=False)
+        monkeypatch.delenv("PEGASE_FLOWBASED_RECALCULATE", raising=False)
     else:
-        monkeypatch.setenv("PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY", configured)
+        monkeypatch.setenv("PEGASE_FLOWBASED_RECALCULATE", configured)
     with pytest.raises(FlowbasedGenerationError, match="configuration"):
         with publish(allocation):
             pytest.fail("Invalid configuration must not publish")
@@ -181,7 +181,7 @@ def test_generate_study_publishes_only_recalculated_results(
 ):
     monkeypatch.setenv("GENERATION_MODE", mode.value)
     if not recalculate:
-        monkeypatch.delenv("PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY")
+        monkeypatch.delenv("PEGASE_FLOWBASED_RECALCULATE", raising=False)
     study_data = StudyData(name="study", flowbased={"recalculate_ts": recalculate, "ts_path": "model", "type_days": []})
     study = MagicMock()
     local_study = export_root.parent / "temporary-study"

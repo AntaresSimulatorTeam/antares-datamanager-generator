@@ -119,9 +119,9 @@ class Settings:
 
     @property
     def flowbased_recalculate_output_directory(self) -> Path:
-        if not self._get_required("PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY").strip():
-            raise ValueError("Empty environment variable: 'PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY'")
-        return self._resolve_env_path("PEGASE_FLOWBASED_RECALCULATE_OUTPUT_DIRECTORY")
+        if not self._get_required("PEGASE_FLOWBASED_RECALCULATE").strip():
+            raise ValueError("Empty environment variable: 'PEGASE_FLOWBASED_RECALCULATE'")
+        return self._resolve_env_path("PEGASE_FLOWBASED_RECALCULATE")
 
     @property
     def thermal_me_modulation_output_directory(self) -> Path:
