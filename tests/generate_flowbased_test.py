@@ -44,6 +44,7 @@ from antares.datamanager.generator.generate_flowbased import (
     _read_combined_res_series,
     _zscore_pooled,
     build_rhs_matrix,
+    compute_flowbased_allocation,
     compute_id_day_types,
     create_flowbased_areas_and_links,
     generate_flowbased_binding_constraints,
@@ -232,13 +233,20 @@ def test_generate_flowbased_binding_constraints_builds_expected_rhs(mock_setting
     study = flowbased_fixture["study"]
     used_files: set[Path] = set()
 
-    generate_flowbased_binding_constraints(
+    allocation = generate_flowbased_binding_constraints(
         study,
         flowbased_fixture["flowbased_data"],
         Month.JULY,
         1,
         used_files,
     )
+
+    assert allocation is not None
+    assert allocation.clusters.shape == (EXPECTED_HOURS, 2)
+    assert allocation.clusters.iloc[0].tolist() == ["summer1", "summer2"]
+    assert allocation.clusters.iloc[3000].tolist() == ["winter1", "winter2"]
+    assert allocation.id_day_types.iloc[0].tolist() == [3, 4]
+    assert allocation.id_day_types.iloc[3000].tolist() == [1, 2]
 
     study.create_binding_constraint.assert_not_called()
     study.create_multiple_binding_constraints.assert_called_once()
@@ -705,9 +713,13 @@ def test_compute_id_day_types_predicts_independently_per_hour(tmp_path):
     ]
 
     id_day_types = compute_id_day_types(model, model, hub_features, type_days, Month.JANUARY)
+    allocation = compute_flowbased_allocation(model, model, hub_features, type_days, Month.JANUARY)
 
     assert id_day_types.iloc[0, 0] != id_day_types.iloc[12, 0]
     assert id_day_types.shape == (EXPECTED_HOURS, 1)
+    pd.testing.assert_frame_equal(allocation.id_day_types, id_day_types)
+    assert allocation.clusters.iloc[0, 0] == "low"
+    assert allocation.clusters.iloc[12, 0] == "high"
 
 
 def test_pad_to_binding_constraint_hourly_rows_appends_zeros():
@@ -721,6 +733,34 @@ def test_pad_to_binding_constraint_hourly_rows_appends_zeros():
     assert (padded.iloc[0:EXPECTED_HOURS, 1] == 2.0).all()
     # Extra rows (the "366th day") are zero
     assert (padded.iloc[EXPECTED_HOURS:BINDING_CONSTRAINT_HOURLY_ROWS] == 0.0).all(axis=None)
+
+
+def test_allocation_keeps_distinct_labels_sharing_an_id():
+    features = {
+        area: {variable: _two_column_series(1.0, 2.0) for variable in ("load", "wind", "solar", "h_ror")}
+        for area in HUB_AREAS
+    }
+    labels = ["low", "high"] * (EXPECTED_HOURS // 2)
+    mapping = [{"clustering": label, "id_type_day": 7} for label in ("low", "high")]
+    with patch(
+        "antares.datamanager.generator.generate_flowbased._predict_column_clusters", return_value=labels
+    ) as predict:
+        allocation = compute_flowbased_allocation(None, None, features, mapping, Month.JANUARY)
+
+    assert predict.call_count == 2
+    assert allocation.clusters.iloc[:2, 0].tolist() == ["low", "high"]
+    assert (allocation.id_day_types == 7).all(axis=None)
+    pd.testing.assert_index_equal(allocation.clusters.index, allocation.id_day_types.index)
+    pd.testing.assert_index_equal(allocation.clusters.columns, allocation.id_day_types.columns)
+
+
+def test_allocation_rejects_unmapped_cluster():
+    features = {"at": {"load": _two_column_series(1.0, 2.0)}}
+    with (
+        patch("antares.datamanager.generator.generate_flowbased._predict_column_clusters", return_value=["unknown"]),
+        pytest.raises(FlowbasedGenerationError, match="no entry"),
+    ):
+        compute_flowbased_allocation(None, None, features, [], Month.JANUARY)
 
 
 def test_pad_to_binding_constraint_hourly_rows_raises_on_unexpected_row_count():

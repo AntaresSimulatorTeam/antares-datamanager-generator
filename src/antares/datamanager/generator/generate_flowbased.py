@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 
 from collections import Counter
+from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Optional, Set, cast
@@ -91,6 +92,12 @@ _REQUIRED_LINK_CAPACITY_KEYS = (
     "summer_HP_indirect_MW",
 )
 _REQUIRED_RESTRICTION_CONSTRAINT_KEYS = ("name", "enabled", "type", "operator", "links", "series")
+
+
+@dataclass(frozen=True)
+class FlowbasedAllocation:
+    clusters: pd.DataFrame
+    id_day_types: pd.DataFrame
 
 
 class FlowbasedFileReader:
@@ -209,7 +216,7 @@ class FlowbasedFileReader:
 
 def generate_flowbased_binding_constraints(
     study: Study, flowbased_data: dict[str, Any], first_month: Month, nb_years: Any, used_files: Set[Path]
-) -> None:
+) -> FlowbasedAllocation | None:
     """Create the 100 FBxxx flowbased binding constraints (Possibilite 2 / recalculate).
 
     Assumes the flowbased hub links (ex: `fr%zz_flowbased`) already exist in `study`
@@ -217,8 +224,13 @@ def generate_flowbased_binding_constraints(
 
     Args:
         study: The Antares study being generated.
-        study_data: The full parsed study data.
+        flowbased_data: The parsed flowbased configuration.
+        first_month: First month of the study calendar.
+        nb_years: Number of Monte-Carlo years.
         used_files: Set of `.arrow`/raw files opened, tracked for post generation cleanup.
+
+    Returns:
+        The RF allocation in recalculate mode, otherwise None.
 
     Raises:
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
@@ -229,6 +241,7 @@ def generate_flowbased_binding_constraints(
     second_member_df = _read_second_member_file(trajectory_directory, used_files)
     vect_b_lookup = build_vect_b_lookup_table(second_member_df)
 
+    allocation = None
     if flowbased_data.get("recalculate_ts"):
         type_days = flowbased_data.get("type_days") or []
         if not type_days:
@@ -236,7 +249,8 @@ def generate_flowbased_binding_constraints(
 
         summer_model, winter_model = _load_models(trajectory_directory, used_files)
         hub_features = _build_hub_features(study)
-        id_day_types = compute_id_day_types(summer_model, winter_model, hub_features, type_days, first_month)
+        allocation = compute_flowbased_allocation(summer_model, winter_model, hub_features, type_days, first_month)
+        id_day_types = allocation.id_day_types
     else:
         id_day_types = _read_ts_file(trajectory_directory, used_files)
 
@@ -277,6 +291,7 @@ def generate_flowbased_binding_constraints(
 
     _wire_scenario_builder(study, group_name, n_columns, nb_years)
     generate_restriction_ahc_constraints(study, flowbased_data, nb_years, used_files)
+    return allocation
 
 
 def generate_restriction_ahc_constraints(
@@ -785,6 +800,17 @@ def compute_id_day_types(
 
     Returns shape (8760, n_columns), columns 0..n_columns-1.
     """
+    return compute_flowbased_allocation(summer_model, winter_model, hub_features, type_days, first_month).id_day_types
+
+
+def compute_flowbased_allocation(
+    summer_model: Any,
+    winter_model: Any,
+    hub_features: dict[str, dict[str, pd.DataFrame]],
+    type_days: list[dict[str, Any]],
+    first_month: Month,
+) -> FlowbasedAllocation:
+    """Keep RF labels and the mapped IDs used by the constraints from the same predictions."""
     is_winter = _hourly_season_mask(first_month)
     cluster_to_id_day_type = {str(entry["clustering"]): int(entry["id_type_day"]) for entry in type_days}
     # Every series shares the same column count. The load series
@@ -797,14 +823,16 @@ def compute_id_day_types(
     }
 
     id_day_type_columns = {}
+    cluster_columns = {}
     for column_index in range(n_columns):
         column_features = _build_feature_frame(normalized_features, column_index)
         clusters = _predict_column_clusters(summer_model, winter_model, column_features, is_winter)
+        cluster_columns[column_index] = clusters
         id_day_type_columns[column_index] = [
             _map_cluster_to_id_day_type(cluster, cluster_to_id_day_type) for cluster in clusters
         ]
 
-    return pd.DataFrame(id_day_type_columns)
+    return FlowbasedAllocation(pd.DataFrame(cluster_columns), pd.DataFrame(id_day_type_columns))
 
 
 # idDayType -> RHS
