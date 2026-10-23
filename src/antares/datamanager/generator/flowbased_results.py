@@ -11,16 +11,14 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
-import json
+import csv
 import shutil
 import tempfile
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
-from antares.craft import Month
 from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import FlowbasedGenerationError
 from antares.datamanager.generator.generate_flowbased import EXPECTED_HOURS, FlowbasedAllocation
@@ -45,9 +43,6 @@ def _staging_directory(root: Path, study_name: str) -> Iterator[Path]:
 def publish_flowbased_results(
     allocation: FlowbasedAllocation,
     study_name: str,
-    study_id: str,
-    flowbased_data: dict[str, Any],
-    first_month: Month,
 ) -> Iterator[Path]:
     """Publish an aligned export, restoring the previous export if generation fails."""
     if not study_name or study_name in {".", ".."} or any(char in study_name for char in ("/", "\\", "\0")):
@@ -86,22 +81,13 @@ def publish_flowbased_results(
                 prepared = staging / "new"
                 backup = staging / "previous"
                 prepared.mkdir()
-                columns = [f"scenario_{i + 1}" for i in range(ids.shape[1])]
-                clusters.to_csv(prepared / "clusters.tsv", sep="\t", index=False, header=columns)
-                ids.to_csv(prepared / "id_day_types.tsv", sep="\t", index=False, header=columns)
-                metadata = {
-                    "study_id": study_id,
-                    "study_name": study_name,
-                    "first_month": first_month.value,
-                    "hours": EXPECTED_HOURS,
-                    "hour_numbering": "1-based, in study calendar order",
-                    "scenarios": columns,
-                    "antares_series_indices": list(range(1, ids.shape[1] + 1)),
-                    "monte_carlo_series_rule": "(zero_based_MC_year % N) + 1",
-                    "ts_path": flowbased_data["ts_path"],
-                    "type_days": flowbased_data["type_days"],
-                }
-                (prepared / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+                ids.set_axis(range(1, EXPECTED_HOURS + 1), axis=0).to_csv(
+                    prepared / "ts.txt",
+                    sep=" ",
+                    index_label="Date",
+                    header=[str(i + 1) for i in range(ids.shape[1])],
+                    quoting=csv.QUOTE_NONNUMERIC,
+                )
                 if destination.exists():
                     destination.rename(backup)
                 published = False

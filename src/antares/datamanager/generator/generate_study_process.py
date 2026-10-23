@@ -118,13 +118,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         generate_scenario_builder(study, study_data, used_files)
 
         export = (
-            publish_flowbased_results(
-                allocation,
-                study_data.name,
-                study_id,
-                study_data.flowbased,
-                study.get_settings().general_parameters.first_month_in_year,
-            )
+            publish_flowbased_results(allocation, study_data.name)
             if allocation is not None and study_data.flowbased is not None
             else nullcontext(None)
         )
