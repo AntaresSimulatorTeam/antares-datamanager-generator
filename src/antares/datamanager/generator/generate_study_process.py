@@ -14,6 +14,7 @@ import json
 import os
 import shutil
 
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Set
 
@@ -33,6 +34,7 @@ from antares.datamanager.exceptions.exceptions import (
     MiscGenerationError,
 )
 from antares.datamanager.generator.build_study_settings import build_study_settings
+from antares.datamanager.generator.flowbased_results import publish_flowbased_results
 from antares.datamanager.generator.generate_dsr_clusters import generate_dsr_clusters
 from antares.datamanager.generator.generate_flowbased import (
     create_flowbased_areas_and_links,
@@ -70,6 +72,7 @@ PSP_VIRTUAL_AREA_PREFIX = "w_hydro_open_"
 def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     used_files: Set[Path] = set()
     study = None
+    allocation = None
     try:
         study_data = read_study_data_from_json(study_id)
         study = factory.create_study(study_data.name)
@@ -96,7 +99,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
                 study_data.flowbased,
                 study.get_settings().general_parameters.first_month_in_year,
             )
-            generate_flowbased_binding_constraints(
+            allocation = generate_flowbased_binding_constraints(
                 study,
                 study_data.flowbased,
                 study.get_settings().general_parameters.first_month_in_year,
@@ -114,14 +117,23 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
 
         generate_scenario_builder(study, study_data, used_files)
 
-        if settings.generation_mode == GenerationMode.LOCAL:
-            _package_and_upload_local_study(study_data.name)
+        export = (
+            publish_flowbased_results(allocation, study_data.name)
+            if allocation is not None and study_data.flowbased is not None
+            else nullcontext(None)
+        )
+        with export as results_path:
+            if settings.generation_mode == GenerationMode.LOCAL:
+                _package_and_upload_local_study(study_data.name)
 
-        return {
-            "message": f"Study {study_data.name} successfully generated",
-            "study_id": study_id,
-            "study_path": str(study.path) if study.path else "",
-        }
+            result = {
+                "message": f"Study {study_data.name} successfully generated",
+                "study_id": study_id,
+                "study_path": str(study.path) if study.path else "",
+            }
+            if results_path is not None:
+                result["flowbased_results_path"] = str(results_path)
+            return result
     except Exception:
         if study:
             try:

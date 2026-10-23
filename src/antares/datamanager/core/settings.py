@@ -118,6 +118,13 @@ class Settings:
         return self._resolve_env_path("PEGASE_TRAJECTORY_FILE_PATH") / self._get_required("PEGASE_FLOWBASED_DIRECTORY")
 
     @property
+    def flowbased_recalculate_output_directory(self) -> Path:
+        recalculate_directory = self._get_required("PEGASE_FLOWBASED_RECALCULATE").strip()
+        if not recalculate_directory:
+            raise ValueError("Empty environment variable: 'PEGASE_FLOWBASED_RECALCULATE'")
+        return self.flowbased_directory / recalculate_directory
+
+    @property
     def thermal_me_modulation_output_directory(self) -> Path:
         return self._resolve_env_path("PEGASE_THERMAL_ME_MODULATION_OUTPUT_DIRECTORY")
 
