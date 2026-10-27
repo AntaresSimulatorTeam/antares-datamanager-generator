@@ -204,14 +204,22 @@ def _create_nuclear_modulation_constraint(
     series_path = base_dir / constraint["series"]
     if used_files is not None:
         used_files.add(series_path)
-    less_term_matrix = pd.read_feather(series_path)
+    term_matrix = pd.read_feather(series_path)
 
-    study.create_binding_constraint(
-        name=name,
-        properties=properties,
-        terms=terms,
-        less_term_matrix=less_term_matrix,
-    )
+    if operator == BindingConstraintOperator.GREATER:
+        study.create_binding_constraint(
+            name=name,
+            properties=properties,
+            terms=terms,
+            greater_term_matrix=term_matrix,
+        )
+    else:
+        study.create_binding_constraint(
+            name=name,
+            properties=properties,
+            terms=terms,
+            less_term_matrix=term_matrix,
+        )
     logger.info(f"Created nuclear modulation binding constraint {name}")
 
 
