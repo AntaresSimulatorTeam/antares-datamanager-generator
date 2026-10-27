@@ -179,11 +179,14 @@ def _create_nuclear_modulation_constraint(
     name = constraint["name"]
     coeff = constraint["coeff"]
     includes_peak = constraint["includesPeak"]
+    constraint_type = constraint["type"]
+
+    operator = BindingConstraintOperator.GREATER if constraint_type == "max_weekly" else BindingConstraintOperator.LESS
 
     properties = BindingConstraintProperties(
         enabled=True,
-        time_step=_TIME_STEP_BY_TYPE[constraint["type"]],
-        operator=BindingConstraintOperator.LESS,
+        time_step=_TIME_STEP_BY_TYPE[constraint_type],
+        operator=operator,
         group=group,
         filter_year_by_year=set(_ALL_FILTERS),
         filter_synthesis=set(_ALL_FILTERS),
