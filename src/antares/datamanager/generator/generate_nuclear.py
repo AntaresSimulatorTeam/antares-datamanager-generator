@@ -179,11 +179,14 @@ def _create_nuclear_modulation_constraint(
     name = constraint["name"]
     coeff = constraint["coeff"]
     includes_peak = constraint["includesPeak"]
+    constraint_type = constraint["type"]
+
+    operator = BindingConstraintOperator.GREATER if constraint_type == "max_weekly" else BindingConstraintOperator.LESS
 
     properties = BindingConstraintProperties(
         enabled=True,
-        time_step=_TIME_STEP_BY_TYPE[constraint["type"]],
-        operator=BindingConstraintOperator.LESS,
+        time_step=_TIME_STEP_BY_TYPE[constraint_type],
+        operator=operator,
         group=group,
         filter_year_by_year=set(_ALL_FILTERS),
         filter_synthesis=set(_ALL_FILTERS),
@@ -201,14 +204,22 @@ def _create_nuclear_modulation_constraint(
     series_path = base_dir / constraint["series"]
     if used_files is not None:
         used_files.add(series_path)
-    less_term_matrix = pd.read_feather(series_path)
+    term_matrix = pd.read_feather(series_path)
 
-    study.create_binding_constraint(
-        name=name,
-        properties=properties,
-        terms=terms,
-        less_term_matrix=less_term_matrix,
-    )
+    if operator == BindingConstraintOperator.GREATER:
+        study.create_binding_constraint(
+            name=name,
+            properties=properties,
+            terms=terms,
+            greater_term_matrix=term_matrix,
+        )
+    else:
+        study.create_binding_constraint(
+            name=name,
+            properties=properties,
+            terms=terms,
+            less_term_matrix=term_matrix,
+        )
     logger.info(f"Created nuclear modulation binding constraint {name}")
 
 
