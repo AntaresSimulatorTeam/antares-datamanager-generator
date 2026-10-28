@@ -41,7 +41,10 @@ from antares.datamanager.generator.generate_flowbased import (
     generate_flowbased_binding_constraints,
 )
 from antares.datamanager.generator.generate_hydro import generate_hydro
-from antares.datamanager.generator.generate_link_matrices import generate_link_capacity_df, generate_link_parameters_df
+from antares.datamanager.generator.generate_link_matrices import (
+    generate_link_capacity_df,
+    generate_link_parameters_df,
+)
 from antares.datamanager.generator.generate_me import generate_me
 from antares.datamanager.generator.generate_misc_timeseries import generate_misc_timeseries
 from antares.datamanager.generator.generate_nuclear import (
@@ -52,6 +55,7 @@ from antares.datamanager.generator.generate_nuclear import (
     generate_y_nuc_modulation_misc,
 )
 from antares.datamanager.generator.generate_p2g import generate_p2g
+from antares.datamanager.generator.generate_psp_link import create_psp_link
 from antares.datamanager.generator.generate_res_clusters import generate_res_clusters
 from antares.datamanager.generator.generate_scenario_builder import generate_scenario_builder
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
@@ -321,6 +325,9 @@ def _generate_area_hydro(
     virtual_area_name = _psp_virtual_area_name(area_name)
     virtual_area_obj = study.create_area(area_name=virtual_area_name)
     generate_hydro(virtual_area_obj, psp_data, used_files, area_name=area_name, is_psp=True)
+
+    # Create link between real area and virtual PSP area with maxpower capacities and hurdle costs
+    create_psp_link(study, area_name, virtual_area_name, used_files)
 
 
 def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path]) -> None:
