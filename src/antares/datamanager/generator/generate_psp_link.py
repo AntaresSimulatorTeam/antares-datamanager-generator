@@ -18,10 +18,12 @@ PSP areas with capacities loaded from PSP maxpower data files.
 """
 
 import logging
+
 from pathlib import Path
 from typing import Set
 
 import pandas as pd
+
 from antares.craft import LinkPropertiesUpdate
 from antares.craft.model.study import Study
 from antares.datamanager.exceptions.exceptions import APIGenerationError, LinkGenerationError
@@ -56,8 +58,7 @@ def get_maxpower_data(area_name: str, used_files: Set[Path]) -> tuple[float, flo
 
     if maxpower_file is None or not maxpower_file.exists():
         logger.warning(
-            f"PSP maxpower file not found in used files for area {area_name}, "
-            "using zero capacities for PSP link"
+            f"PSP maxpower file not found in used files for area {area_name}, using zero capacities for PSP link"
         )
         return 0.0, 0.0
 
@@ -81,9 +82,7 @@ def get_maxpower_data(area_name: str, used_files: Set[Path]) -> tuple[float, flo
         if generating_col in columns_lower:
             max_generating = float(df[columns_lower[generating_col]].max())
 
-        logger.info(
-            f"Loaded PSP maxpower data for {area_name}: pumping={max_pumping}, generating={max_generating}"
-        )
+        logger.info(f"Loaded PSP maxpower data for {area_name}: pumping={max_pumping}, generating={max_generating}")
         return max_pumping, max_generating
 
     except Exception as e:
@@ -91,9 +90,7 @@ def get_maxpower_data(area_name: str, used_files: Set[Path]) -> tuple[float, flo
         return 0.0, 0.0
 
 
-def create_psp_link(
-    study: Study, real_area_name: str, virtual_area_name: str, used_files: Set[Path]
-) -> None:
+def create_psp_link(study: Study, real_area_name: str, virtual_area_name: str, used_files: Set[Path]) -> None:
     """
     Create a link between a real area and its virtual PSP area with capacities from MaxPower data.
 
@@ -127,9 +124,7 @@ def create_psp_link(
         # c) Create and set indirect capacity matrix (generating)
         df_capacity_indirect = generate_constant_link_capacity_df(max_generating)
         link.set_capacity_indirect(df_capacity_indirect)
-        logger.info(
-            f"Set indirect capacity ({max_generating} MW) for PSP link {area_from}->{area_to}"
-        )
+        logger.info(f"Set indirect capacity ({max_generating} MW) for PSP link {area_from}->{area_to}")
 
         # d) Set hurdle costs to 0.01
         df_parameters = generate_link_parameters_df(0.01)
@@ -138,6 +133,4 @@ def create_psp_link(
         logger.info(f"Set hurdle costs (0.01) for PSP link {area_from}->{area_to}")
 
     except APIGenerationError as e:
-        raise LinkGenerationError(
-            area_from, area_to, f"Failed to create PSP link from {area_from} to {area_to}"
-        ) from e
+        raise LinkGenerationError(area_from, area_to, f"Failed to create PSP link from {area_from} to {area_to}") from e

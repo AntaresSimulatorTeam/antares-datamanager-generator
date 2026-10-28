@@ -11,14 +11,15 @@
 # This file is part of the Antares project.
 
 import pytest
-import pandas as pd
-import numpy as np
+
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
+
+import pandas as pd
 
 from antares.datamanager.generator.generate_psp_link import (
-    get_maxpower_data,
     create_psp_link,
+    get_maxpower_data,
 )
 
 
@@ -26,12 +27,14 @@ def test_get_maxpower_data_success(tmp_path):
     """Test loading maxpower data from arrow file."""
 
     # Create a test arrow file with maxpower data (all columns must have same length)
-    df = pd.DataFrame({
-        "at_pumping": [100.0, 150.0, 120.0],
-        "at_generating": [200.0, 250.0, 180.0],
-        "fr_pumping": [300.0, 350.0, 310.0],
-        "fr_generating": [400.0, 450.0, 420.0],
-    })
+    df = pd.DataFrame(
+        {
+            "at_pumping": [100.0, 150.0, 120.0],
+            "at_generating": [200.0, 250.0, 180.0],
+            "fr_pumping": [300.0, 350.0, 310.0],
+            "fr_generating": [400.0, 450.0, 420.0],
+        }
+    )
     maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
     df.to_feather(maxpower_file)
     other_area_file = tmp_path / "FR_maxpower.53a7cc20-dbc4-4a2d-b511-e7254969da23.arrow"
@@ -61,10 +64,12 @@ def test_get_maxpower_data_missing_columns(tmp_path):
     """Test handling of missing columns in maxpower file."""
 
     # Create arrow file with only fr data, no at data
-    df = pd.DataFrame({
-        "fr_pumping": [300.0, 350.0],
-        "fr_generating": [400.0, 450.0],
-    })
+    df = pd.DataFrame(
+        {
+            "fr_pumping": [300.0, 350.0],
+            "fr_generating": [400.0, 450.0],
+        }
+    )
     maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
     df.to_feather(maxpower_file)
 
@@ -80,10 +85,12 @@ def test_get_maxpower_data_case_insensitive(tmp_path):
 
     # Create arrow file with mixed case column names
     # Note: The file name uses the area name as-is, but columns are matched case-insensitively
-    df = pd.DataFrame({
-        "AT_PUMPING": [100.0, 150.0, 120.0],
-        "At_Generating": [200.0, 250.0, 180.0],
-    })
+    df = pd.DataFrame(
+        {
+            "AT_PUMPING": [100.0, 150.0, 120.0],
+            "At_Generating": [200.0, 250.0, 180.0],
+        }
+    )
     maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
     df.to_feather(maxpower_file)
 
@@ -137,7 +144,7 @@ def test_create_psp_link_success(mock_get_maxpower, mock_link_capacity_df, mock_
 @patch("antares.datamanager.generator.generate_psp_link.get_maxpower_data")
 def test_create_psp_link_handles_error(mock_get_maxpower, mock_link_capacity_df):
     """Test error handling in PSP link creation."""
-    from antares.datamanager.exceptions.exceptions import LinkGenerationError, APIGenerationError
+    from antares.datamanager.exceptions.exceptions import APIGenerationError, LinkGenerationError
 
     mock_get_maxpower.return_value = (100.0, 200.0)
     # Make the mock raise an APIGenerationError to trigger LinkGenerationError
@@ -158,7 +165,6 @@ def test_create_psp_link_handles_error(mock_get_maxpower, mock_link_capacity_df)
 def test_psp_link_created_during_area_hydro_generation(mock_generate_hydro, mock_load_dir, mock_create_psp_link):
     """Test that PSP link is created when PSP hydro is present."""
     from antares.datamanager.generator.generate_study_process import _generate_area_hydro
-    from antares.datamanager.models.study_data_json_model import StudyData
 
     mock_load_dir.return_value = Path("/mock/load/dir")
     mock_study = MagicMock()

@@ -18,7 +18,6 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Set
 
-import numpy as np
 import pandas as pd
 
 from antares.craft import (
