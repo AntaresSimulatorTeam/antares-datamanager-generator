@@ -22,10 +22,8 @@ from antares.datamanager.generator.generate_psp_link import (
 )
 
 
-@patch("antares.datamanager.generator.generate_psp_link.settings")
-def test_get_maxpower_data_success(mock_settings, tmp_path):
+def test_get_maxpower_data_success(tmp_path):
     """Test loading maxpower data from arrow file."""
-    mock_settings.hydro_ts_directory = tmp_path
 
     # Create a test arrow file with maxpower data (all columns must have same length)
     df = pd.DataFrame({
@@ -34,20 +32,23 @@ def test_get_maxpower_data_success(mock_settings, tmp_path):
         "fr_pumping": [300.0, 350.0, 310.0],
         "fr_generating": [400.0, 450.0, 420.0],
     })
-    df.to_feather(tmp_path / "AT_psp_maxpower.arrow")
+    maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
+    df.to_feather(maxpower_file)
+    other_area_file = tmp_path / "FR_maxpower.53a7cc20-dbc4-4a2d-b511-e7254969da23.arrow"
+    pd.DataFrame({"fr_pumping": [900.0], "fr_generating": [1000.0]}).to_feather(other_area_file)
 
-    used_files = set()
+    used_files = {maxpower_file, other_area_file}
     max_pumping, max_generating = get_maxpower_data("AT", used_files)
 
     assert max_pumping == 150.0
     assert max_generating == 250.0
-    assert tmp_path / "AT_psp_maxpower.arrow" in used_files
+    assert maxpower_file in used_files
 
 
-@patch("antares.datamanager.generator.generate_psp_link.settings")
-def test_get_maxpower_data_file_not_found(mock_settings, tmp_path):
-    """Test handling of missing maxpower file."""
-    mock_settings.hydro_ts_directory = tmp_path
+def test_get_maxpower_data_file_not_found(tmp_path):
+    """Test handling of a maxpower file not registered in used_files."""
+    df = pd.DataFrame({"at_pumping": [100.0], "at_generating": [200.0]})
+    df.to_feather(tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow")
 
     used_files = set()
     max_pumping, max_generating = get_maxpower_data("AT", used_files)
@@ -56,29 +57,26 @@ def test_get_maxpower_data_file_not_found(mock_settings, tmp_path):
     assert max_generating == 0.0
 
 
-@patch("antares.datamanager.generator.generate_psp_link.settings")
-def test_get_maxpower_data_missing_columns(mock_settings, tmp_path):
+def test_get_maxpower_data_missing_columns(tmp_path):
     """Test handling of missing columns in maxpower file."""
-    mock_settings.hydro_ts_directory = tmp_path
 
     # Create arrow file with only fr data, no at data
     df = pd.DataFrame({
         "fr_pumping": [300.0, 350.0],
         "fr_generating": [400.0, 450.0],
     })
-    df.to_feather(tmp_path / "AT_psp_maxpower.arrow")
+    maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
+    df.to_feather(maxpower_file)
 
-    used_files = set()
+    used_files = {maxpower_file}
     max_pumping, max_generating = get_maxpower_data("AT", used_files)
 
     assert max_pumping == 0.0
     assert max_generating == 0.0
 
 
-@patch("antares.datamanager.generator.generate_psp_link.settings")
-def test_get_maxpower_data_case_insensitive(mock_settings, tmp_path):
+def test_get_maxpower_data_case_insensitive(tmp_path):
     """Test case-insensitive column name matching."""
-    mock_settings.hydro_ts_directory = tmp_path
 
     # Create arrow file with mixed case column names
     # Note: The file name uses the area name as-is, but columns are matched case-insensitively
@@ -86,9 +84,10 @@ def test_get_maxpower_data_case_insensitive(mock_settings, tmp_path):
         "AT_PUMPING": [100.0, 150.0, 120.0],
         "At_Generating": [200.0, 250.0, 180.0],
     })
-    df.to_feather(tmp_path / "AT_psp_maxpower.arrow")
+    maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
+    df.to_feather(maxpower_file)
 
-    used_files = set()
+    used_files = {maxpower_file}
     # Call with "AT" to match the file name
     max_pumping, max_generating = get_maxpower_data("AT", used_files)
 

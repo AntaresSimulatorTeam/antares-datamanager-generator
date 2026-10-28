@@ -24,7 +24,6 @@ from typing import Set
 import pandas as pd
 from antares.craft import LinkPropertiesUpdate
 from antares.craft.model.study import Study
-from antares.datamanager.core.settings import settings
 from antares.datamanager.exceptions.exceptions import APIGenerationError, LinkGenerationError
 from antares.datamanager.generator.generate_link_matrices import (
     generate_constant_link_capacity_df,
@@ -45,11 +44,20 @@ def get_maxpower_data(area_name: str, used_files: Set[Path]) -> tuple[float, flo
     Returns:
         tuple[float, float]: (max_pumping, max_generating) values
     """
-    maxpower_file = settings.hydro_ts_directory / f"{area_name}_psp_maxpower.arrow"
+    expected_prefix = f"{area_name}_maxpower.".lower()
+    maxpower_file = next(
+        (
+            path
+            for path in used_files
+            if path.name.lower().startswith(expected_prefix) and path.suffix.lower() == ".arrow"
+        ),
+        None,
+    )
 
-    if not maxpower_file.exists():
+    if maxpower_file is None or not maxpower_file.exists():
         logger.warning(
-            f"PSP maxpower file not found at {maxpower_file}, using zero capacities for PSP link"
+            f"PSP maxpower file not found in used files for area {area_name}, "
+            "using zero capacities for PSP link"
         )
         return 0.0, 0.0
 
