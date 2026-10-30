@@ -35,9 +35,9 @@ def test_get_maxpower_data_success(tmp_path):
             "fr_generating": [400.0, 450.0, 420.0],
         }
     )
-    maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
+    maxpower_file = tmp_path / "AT_psp_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
     df.to_feather(maxpower_file)
-    other_area_file = tmp_path / "FR_maxpower.53a7cc20-dbc4-4a2d-b511-e7254969da23.arrow"
+    other_area_file = tmp_path / "FR_psp_maxpower.53a7cc20-dbc4-4a2d-b511-e7254969da23.arrow"
     pd.DataFrame({"fr_pumping": [900.0], "fr_generating": [1000.0]}).to_feather(other_area_file)
 
     used_files = {maxpower_file, other_area_file}
@@ -51,7 +51,7 @@ def test_get_maxpower_data_success(tmp_path):
 def test_get_maxpower_data_file_not_found(tmp_path):
     """Test handling of a maxpower file not registered in used_files."""
     df = pd.DataFrame({"at_pumping": [100.0], "at_generating": [200.0]})
-    df.to_feather(tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow")
+    df.to_feather(tmp_path / "AT_psp_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow")
 
     used_files = set()
     max_pumping, max_generating = get_maxpower_data("AT", used_files)
@@ -70,7 +70,7 @@ def test_get_maxpower_data_missing_columns(tmp_path):
             "fr_generating": [400.0, 450.0],
         }
     )
-    maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
+    maxpower_file = tmp_path / "AT_psp_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
     df.to_feather(maxpower_file)
 
     used_files = {maxpower_file}
@@ -91,7 +91,7 @@ def test_get_maxpower_data_case_insensitive(tmp_path):
             "At_Generating": [200.0, 250.0, 180.0],
         }
     )
-    maxpower_file = tmp_path / "AT_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
+    maxpower_file = tmp_path / "AT_psp_maxpower.b97589c6-a023-4b5a-bfdb-0991272d52bb.arrow"
     df.to_feather(maxpower_file)
 
     used_files = {maxpower_file}
