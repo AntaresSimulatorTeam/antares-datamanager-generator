@@ -46,7 +46,7 @@ def get_maxpower_data(area_name: str, used_files: Set[Path]) -> tuple[float, flo
     Returns:
         tuple[float, float]: (max_pumping, max_generating) values
     """
-    expected_prefix = f"{area_name}_maxpower.".lower()
+    expected_prefix = f"{area_name}_psp_maxpower.".lower()
     maxpower_file = next(
         (
             path
@@ -57,9 +57,7 @@ def get_maxpower_data(area_name: str, used_files: Set[Path]) -> tuple[float, flo
     )
 
     if maxpower_file is None or not maxpower_file.exists():
-        logger.warning(
-            f"PSP maxpower file not found in used files for area {area_name}, using zero capacities for PSP link"
-        )
+        logger.warning( f"PSP maxpower file not found in used files for area {area_name}, using zero capacities for PSP link")
         return 0.0, 0.0
 
     try:
