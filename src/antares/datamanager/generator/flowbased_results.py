@@ -34,7 +34,7 @@ def _staging_directory(root: Path, study_name: str) -> Iterator[Path]:
         yield staging
     finally:
         if (staging / "previous").exists():
-            logger.error(f"Previous Flow-Based results retained for recovery at {staging / 'previous'}")
+            logger.error(f"Previous Flow-Based results retained for recovery at {staging / 'previous'}", extra={"methodName": "_staging_directory"})
         else:
             shutil.rmtree(staging)
 
@@ -94,7 +94,7 @@ def publish_flowbased_results(
                 try:
                     prepared.rename(destination)
                     published = True
-                    logger.info(f"Published Flow-Based results: {destination}")
+                    logger.info(f"Published Flow-Based results: {destination}", extra={"methodName": "publish_flowbased_results"})
                     yield destination
                 except BaseException:
                     if published:

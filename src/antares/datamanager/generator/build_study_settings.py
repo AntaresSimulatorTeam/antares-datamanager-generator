@@ -79,7 +79,7 @@ def build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) -
         StudySettingsUpdate object with all parameter categories set.
     """
     start_time = time.time()
-    logger.info("Processing study settings...")
+    logger.info("Processing study settings...", extra={"methodName": "build_study_settings"})
     
     general_params: GeneralParametersUpdate | None = None
     optimization_params: OptimizationParametersUpdate | None = None

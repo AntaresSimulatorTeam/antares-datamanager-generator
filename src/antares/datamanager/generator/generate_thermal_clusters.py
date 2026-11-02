@@ -50,7 +50,7 @@ def calculate_min_stable_power(
             used_files.add(cm_path)
         df_cm = pd.read_feather(cm_path)
         cm_values = df_cm.iloc[:, 0]
-        logger.info(f"CM file '{cm_file}' size: {len(cm_values)}")
+        logger.info(f"CM file '{cm_file}' size: {len(cm_values)}", extra={"methodName": "calculate_min_stable_power"})
         min_cm_value = cm_values.min()
         return round(min_stable_power * min_cm_value, 2)
     return round(min_stable_power, 2)
@@ -63,11 +63,11 @@ def generate_thermal_clusters(
     used_files: set[Path] | None = None,
 ) -> None:
     start_time = time.time()
-    logger.info(f"Generating thermal clusters for area: {area_obj.name}")
+    logger.info(f"Generating thermal clusters for area: {area_obj.name}", extra={"methodName": "generate_thermal_clusters"})
     
     # Thermals
     for cluster_name, values in thermals.items():
-        logger.info(f"Creating thermal cluster: {cluster_name}")
+        logger.info(f"Creating thermal cluster: {cluster_name}", extra={"methodName": "generate_thermal_clusters"})
 
         cluster_modulation = values.get("modulation", {})
         modulation_matrix = create_modulation_matrix(cluster_modulation, used_files=used_files)
@@ -173,7 +173,7 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int, first_month
     po_monthly_rate = data.get("po_monthly_rate", [])
 
     if not fo_monthly_rate or not po_monthly_rate:
-        logger.info("fo_monthly_rate or po_monthly_rate area empty skipping modulation matrix generation.")
+        logger.info("fo_monthly_rate or po_monthly_rate area empty skipping modulation matrix generation.", extra={"methodName": "create_prepro_data_matrix"})
         return pd.DataFrame()  # empty DF
 
     if len(fo_monthly_rate) != 12 or len(po_monthly_rate) != 12:
@@ -240,7 +240,7 @@ def create_modulation_matrix(
         returns 8760 rows of [1, 1, 1, 0]
     """
     if not cluster_modulation:
-        logger.info("cluster_modulation is empty, skipping thermal modulation matrix generation.")
+        logger.info("cluster_modulation is empty, skipping thermal modulation matrix generation.", extra={"methodName": "create_modulation_matrix"})
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -253,7 +253,7 @@ def create_modulation_matrix(
 
     # If both are missing, reuse existing fallback behavior
     if cm_file is None and mr_file is None:
-        logger.info("No CM or MR file found, using default modulation matrix.")
+        logger.info("No CM or MR file found, using default modulation matrix.", extra={"methodName": "create_modulation_matrix"})
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -267,7 +267,7 @@ def create_modulation_matrix(
             used_files.add(cm_path)
         df_cm = pd.read_feather(cm_path)
         cm_values = df_cm.iloc[:, 0]
-        logger.info(f"CM file '{cm_file}' size: {len(cm_values)}")
+        logger.info(f"CM file '{cm_file}' size: {len(cm_values)}", extra={"methodName": "create_modulation_matrix"})
 
     # Read MR if present
     if mr_file is not None:
@@ -276,7 +276,7 @@ def create_modulation_matrix(
             used_files.add(mr_path)
         df_mr = pd.read_feather(mr_path)
         mr_values = df_mr.iloc[:, 0]
-        logger.info(f"MR file '{mr_file}' size: {len(mr_values)}")
+        logger.info(f"MR file '{mr_file}' size: {len(mr_values)}", extra={"methodName": "create_modulation_matrix"})
 
     # If both exist, row counts must match
     if cm_values is not None and mr_values is not None:
@@ -296,7 +296,7 @@ def create_modulation_matrix(
         assert cm_values is not None
         df = pd.DataFrame([[1, 1, cm, 0] for cm in cm_values])
 
-    logger.info(f"Final DataFrame shape: {df.shape}")
+    logger.info(f"Final DataFrame shape: {df.shape}", extra={"methodName": "create_modulation_matrix"})
     return df
 
 
@@ -350,7 +350,7 @@ def create_modulation_me_matrix(
     cluster_modulation = cluster_values.get("modulation", {})
 
     if cluster_modulation is None:
-        logger.info("cluster_modulation is empty, skipping thermal modulation matrix generation.")
+        logger.info("cluster_modulation is empty, skipping thermal modulation matrix generation.", extra={"methodName": "create_modulation_me_matrix"})
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -376,7 +376,7 @@ def create_modulation_me_matrix(
                 raise ValueError(f"Colonne '{column_name}' introuvable dans '{file_path}'")
 
             val = df[column_name]
-            logger.info(f"{val_key} file '{file_path}' size: {len(val)}")
+            logger.info(f"{val_key} file '{file_path}' size: {len(val)}", extra={"methodName": "create_modulation_me_matrix"})
 
         resolved_values.append(val)
 
@@ -419,7 +419,7 @@ def create_modulation_me_matrix(
     # 3. Création du DataFrame final (matrice num_rows x 4)
     df = pd.DataFrame(np.column_stack(cols))
 
-    logger.info(f"Final DataFrame shape: {df.shape}")
+    logger.info(f"Final DataFrame shape: {df.shape}", extra={"methodName": "create_modulation_me_matrix"})
     return df
 
 
@@ -430,7 +430,7 @@ def generate_thermal_me_clusters(
 ) -> None:
     # Thermals
     for cluster_name, values in thermals.items():
-        logger.info(f"Creating thermal ME cluster: {cluster_name}")
+        logger.info(f"Creating thermal ME cluster: {cluster_name}", extra={"methodName": "generate_thermal_me_clusters"})
 
         modulation_matrix = create_modulation_me_matrix(cluster_name, values, used_files=used_files)
 

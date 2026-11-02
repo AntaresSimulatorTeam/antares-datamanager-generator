@@ -154,7 +154,7 @@ def generate_nuclear_modulation_binding_constraints(
     the FR nuclear clusters to their y_nuc_modulation.
     """
     start_time = time.time()
-    logger.info("Processing nuclear modulation binding constraints...")
+    logger.info("Processing nuclear modulation binding constraints...", extra={"methodName": "generate_nuclear_modulation_binding_constraints"})
     
     _require_keys(nuclear_modulation_binding_constraints, _REQUIRED_MODULATION_KEYS, "nuclear_modulation")
 
@@ -237,7 +237,7 @@ def _create_nuclear_modulation_constraint(
             terms=terms,
             less_term_matrix=term_matrix,
         )
-    logger.info(f"Created nuclear modulation binding constraint {name}")
+    logger.info(f"Created nuclear modulation binding constraint {name}", extra={"methodName": "_create_nuclear_modulation_constraint"})
 
 
 def generate_nuclear_talon_binding_constraint(
@@ -250,7 +250,7 @@ def generate_nuclear_talon_binding_constraint(
     FR physical nuclear production (standard clusters only, no peak, no virtual).
     """
     start_time = time.time()
-    logger.info("Processing nuclear talon binding constraint...")
+    logger.info("Processing nuclear talon binding constraint...", extra={"methodName": "generate_nuclear_talon_binding_constraint"})
     
     _require_keys(nuclear_talon_binding_constraint, _REQUIRED_TALON_KEYS, "nuclear_talon")
 
@@ -283,7 +283,7 @@ def generate_nuclear_talon_binding_constraint(
         terms=terms,
         greater_term_matrix=greater_term_matrix,
     )
-    logger.info(f"Created nuclear talon binding constraint {NUCLEAR_TALON_CONSTRAINT_NAME}")
+    logger.info(f"Created nuclear talon binding constraint {NUCLEAR_TALON_CONSTRAINT_NAME}", extra={"methodName": "generate_nuclear_talon_binding_constraint"})
     logger.info("Processing nuclear talon binding constraint completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_nuclear_talon_binding_constraint"})
 
 
@@ -339,7 +339,7 @@ def generate_nuclear_availability(
             ThermalClusterPropertiesUpdate(gen_ts=LocalTSGenerationBehavior.FORCE_NO_GENERATION)
         )
         thermal_cluster.set_series(final_series)
-        logger.info(f"Applied nuclear availability series to cluster {cluster_name}")
+        logger.info(f"Applied nuclear availability series to cluster {cluster_name}", extra={"methodName": "generate_nuclear_availability"})
 
 
 def _mix_smr_series(pool: pd.DataFrame, smr_mixage: dict[str, Any], cluster_name: str) -> pd.DataFrame:

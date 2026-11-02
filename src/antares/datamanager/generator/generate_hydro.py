@@ -45,7 +45,7 @@ def generate_hydro(
         return
 
     resolved_area_name = area_name or area_obj.name
-    logger.info(f"Generating hydro for area: {resolved_area_name}")
+    logger.info(f"Generating hydro for area: {resolved_area_name}", extra={"methodName": "generate_hydro"})
 
     # "properties"/"series" might be null if only psp is linked
     properties = hydro.get("properties") or {}

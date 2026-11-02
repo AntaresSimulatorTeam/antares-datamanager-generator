@@ -214,11 +214,11 @@ def _create_sts_additional_constraints(
 
 def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optional[Set[Path]] = None) -> None:
     start_time = time.time()
-    logger.info("Processing sts_clusters...")
+    logger.info("Processing sts_clusters...", extra={"methodName": "generate_sts_clusters"})
     
     # Short-term storage clusters
     for cluster_name, values in sts.items():
-        logger.info("Creating sts cluster : ", cluster_name)
+        logger.info("Creating sts cluster : ", cluster_name, extra={"methodName": "generate_sts_clusters"})
         properties = values.get("properties", {})
         st_storage_properties = STStorageProperties(**properties)
 

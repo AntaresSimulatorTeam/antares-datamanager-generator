@@ -225,7 +225,7 @@ def generate_res_clusters(
     }
     """
     start_time = time.time()
-    logger.info(f"Processing {area_name}...")
+    logger.info(f"Processing {area_name}...", extra={"methodName": "generate_res_clusters"})
     
     base_ts_directory = _resolve_res_base_directory()
 
@@ -248,7 +248,7 @@ def generate_res_clusters(
             used_files=used_files,
         )
 
-        logger.info("Prepared RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload)
+        logger.info("Prepared RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload, extra={"methodName": "generate_res_clusters"})
         _register_res_outputs(
             area_obj=area_obj, cluster_name=cluster_name, payload=payload, validated_series=validated_series
         )

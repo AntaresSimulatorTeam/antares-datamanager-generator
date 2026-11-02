@@ -177,7 +177,7 @@ def add_me_areas_to_study(study: Study, area_me: dict[str, Any], used_files: Set
             if thermals_me:
                 add_me_thermals_to_study(area_obj, thermals_me, used_files)
             area_objs[area_name] = area_obj
-            logger.info(f"Created ME area {area_name}")
+            logger.info(f"Created ME area {area_name}", extra={"methodName": "add_me_areas_to_study"})
         except Exception as e:
             raise MEGenerationError(f"Could not create ME area {area_name}: {e}") from e
     return area_objs
@@ -227,7 +227,7 @@ def add_me_links_to_study(study: Study, links_me: dict[str, Any]) -> None:
             link.set_parameters(
                 _constant_hurdle_cost_df(link_def.get("hurdleCostDirect"), link_def.get("hurdleCostIndirect"))
             )
-            logger.info(f"Created ME link {area_from}/{area_to}")
+            logger.info(f"Created ME link {area_from}/{area_to}", extra={"methodName": "add_me_links_to_study"})
         except MEGenerationError:
             raise
         except Exception as e:
@@ -246,7 +246,7 @@ def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], use
 
         try:
             generate_sts_clusters(area_obj, sts_me, used_files)
-            logger.info(f"Created ME short-term storage clusters for area {area_name}")
+            logger.info(f"Created ME short-term storage clusters for area {area_name}", extra={"methodName": "add_me_sts_to_study"})
         except Exception as e:
             raise MEGenerationError(f"Could not create ME short-term storage for area {area_name}: {e}") from e
 
@@ -254,7 +254,7 @@ def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], use
 def add_me_thermals_to_study(area_obj: Area, thermals_me: dict[str, Any], used_files: Set[Path]) -> None:
     try:
         generate_thermal_me_clusters(area_obj, thermals_me, used_files)
-        logger.info(f"Created ME Thermal clusters for area {area_obj.name}")
+        logger.info(f"Created ME Thermal clusters for area {area_obj.name}", extra={"methodName": "add_me_thermals_to_study"})
     except Exception as e:
         raise MEGenerationError(f"Could not create ME Thermal for area {area_obj.name}: {e}") from e
 
@@ -410,7 +410,7 @@ def add_me_p2g_binding_constraints(study: Study, links_me: dict[str, Any], const
         try:
             terms = _build_p2g_terms(node, other_sides, efficiency_by_node)
             study.create_binding_constraint(name=f"efficiency_{node}", properties=properties, terms=terms)
-            logger.info(f"Created ME P2G binding constraint efficiency_{node}")
+            logger.info(f"Created ME P2G binding constraint efficiency_{node}", extra={"methodName": "add_me_p2g_binding_constraints"})
         except MEGenerationError:
             raise
         except Exception as e:
@@ -458,7 +458,7 @@ def add_me_g2p_binding_constraints(study: Study, constraints_g2p: list[Any]) -> 
             )
             terms = _build_g2p_terms(constraint)
             study.create_binding_constraint(name=str(constraint_name), properties=properties, terms=terms)
-            logger.info(f"Created ME G2P binding constraint {constraint_name}")
+            logger.info(f"Created ME G2P binding constraint {constraint_name}", extra={"methodName": "add_me_g2p_binding_constraints"})
         except (KeyError, TypeError, ValueError) as e:
             raise MEGenerationError(f"Invalid G2P binding constraint {constraint_name or '<unnamed>'}: {e}") from e
         except Exception as e:
@@ -467,7 +467,7 @@ def add_me_g2p_binding_constraints(study: Study, constraints_g2p: list[Any]) -> 
 
 def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) -> None:
     start_time = time.time()
-    logger.info("Processing me...")
+    logger.info("Processing me...", extra={"methodName": "generate_me"})
     
     area_me = me_data.get("area_me") or {}
     links_me = me_data.get("links_me") or {}
