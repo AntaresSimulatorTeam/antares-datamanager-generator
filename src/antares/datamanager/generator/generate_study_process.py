@@ -177,14 +177,14 @@ def _cleanup_arrow_files(used_files: Set[Path]) -> None:
     """
     Remove used .arrow files from the output directories after the study generation process.
     """
+    logger.info(f"Cleaning up {len(used_files)} used .arrow files", extra={"methodName": "_cleanup_arrow_files"})
     for file in used_files:
         if file.exists() and file.name.endswith(".arrow"):
-            logger.info(f"Removing arrow file: {file}", extra={"methodName": "_cleanup_arrow_files"})
             try:
                 file.unlink()
             except Exception as e:
                 logger.error(f"Failed to remove arrow file {file}: {e}", extra={"methodName": "_cleanup_arrow_files"})
-
+    logger.info("Cleanup of used .arrow files completed", extra={"methodName": "_cleanup_arrow_files"})
 
 def read_study_data_from_json(study_id: str) -> StudyData:
     start_time = time.time()
