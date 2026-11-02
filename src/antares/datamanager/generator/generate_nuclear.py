@@ -9,8 +9,20 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+# Copyright (c) 2024, RTE (https://www.rte-france.com)
+#
+# See AUTHORS.txt
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# SPDX-License-Identifier: MPL-2.0
+#
+# This file is part of the Antares project.
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Optional, Set
 
@@ -141,6 +153,9 @@ def generate_nuclear_modulation_binding_constraints(
     Creates the nuclear modulation binding constraints (hourly/daily/weekly) with
     the FR nuclear clusters to their y_nuc_modulation.
     """
+    start_time = time.time()
+    logger.info("Processing nuclear modulation binding constraints...")
+    
     _require_keys(nuclear_modulation_binding_constraints, _REQUIRED_MODULATION_KEYS, "nuclear_modulation")
 
     group = nuclear_modulation_binding_constraints["group"]
@@ -162,6 +177,8 @@ def generate_nuclear_modulation_binding_constraints(
             base_dir=base_dir,
             used_files=used_files,
         )
+    
+    logger.info("Processing nuclear modulation binding constraints completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_nuclear_modulation_binding_constraints"})
 
 
 def _create_nuclear_modulation_constraint(
@@ -232,6 +249,9 @@ def generate_nuclear_talon_binding_constraint(
     Creates the nuclear talon binding constraint
     FR physical nuclear production (standard clusters only, no peak, no virtual).
     """
+    start_time = time.time()
+    logger.info("Processing nuclear talon binding constraint...")
+    
     _require_keys(nuclear_talon_binding_constraint, _REQUIRED_TALON_KEYS, "nuclear_talon")
 
     group = nuclear_talon_binding_constraint["group"]
@@ -264,6 +284,7 @@ def generate_nuclear_talon_binding_constraint(
         greater_term_matrix=greater_term_matrix,
     )
     logger.info(f"Created nuclear talon binding constraint {NUCLEAR_TALON_CONSTRAINT_NAME}")
+    logger.info("Processing nuclear talon binding constraint completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_nuclear_talon_binding_constraint"})
 
 
 _REQUIRED_SMR_MIXAGE_KEYS = ("unit_count", "seed")

@@ -18,6 +18,7 @@ PSP areas with capacities loaded from PSP maxpower data files.
 """
 
 import logging
+import time
 
 from pathlib import Path
 from typing import Set
@@ -106,6 +107,9 @@ def create_psp_link(study: Study, real_area_name: str, virtual_area_name: str, u
         virtual_area_name: Name of the virtual PSP area
         used_files: Set to track used files
     """
+    start_time = time.time()
+    logger.info(f"Processing {real_area_name}...")
+    
     area_from = real_area_name.lower()
     area_to = virtual_area_name.lower()
 
@@ -131,6 +135,8 @@ def create_psp_link(study: Study, real_area_name: str, virtual_area_name: str, u
         link.update_properties(LinkPropertiesUpdate(hurdles_cost=True))
         link.set_parameters(df_parameters)
         logger.info(f"Set hurdle costs (0.01) for PSP link {area_from}->{area_to}")
+        
+        logger.info(f"Processing {real_area_name} completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "create_psp_link"})
 
     except APIGenerationError as e:
         raise LinkGenerationError(area_from, area_to, f"Failed to create PSP link from {area_from} to {area_to}") from e

@@ -13,6 +13,7 @@
 import json
 import os
 import shutil
+import time
 
 from contextlib import nullcontext
 from pathlib import Path
@@ -61,7 +62,7 @@ from antares.datamanager.generator.generate_scenario_builder import generate_sce
 from antares.datamanager.generator.generate_sts_clusters import generate_sts_clusters
 from antares.datamanager.generator.generate_thermal_clusters import generate_thermal_clusters
 from antares.datamanager.generator.study_adapters import StudyFactory
-from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger
+from antares.datamanager.logs.logging_setup import configure_ecs_logger, get_logger, log_execution_time
 from antares.datamanager.models.study_data_json_model import StudyData
 from antares.datamanager.utils.area_ui_utils import generate_random_color, generate_random_coordinate
 
@@ -77,13 +78,14 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
     used_files: Set[Path] = set()
     study = None
     allocation = None
+    start_time = time.time()
     try:
         study_data = read_study_data_from_json(study_id)
         study = factory.create_study(study_data.name)
         study_settings = build_study_settings(study_data.settings, study_data)
         study.update_settings(study_settings)
 
-        add_areas_to_study(study, study_data, used_files)
+        add_areas_to_study(study, study_data, used_files, study_id)
         if study_data.p2g:
             generate_p2g(study, study_data.p2g, used_files)
         if study_data.nuclear_modulation_binding_constraints:
@@ -92,7 +94,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
             )
         if study_data.nuclear_talon_binding_constraint:
             generate_nuclear_talon_binding_constraint(study, study_data.nuclear_talon_binding_constraint, used_files)
-        add_links_to_study(study, study_data.links, study_data.seed_tsgen_link)
+        add_links_to_study(study, study_data.links, study_data.seed_tsgen_link, study_id)
 
         if study_data.me:
             generate_me(study, study_data.me, used_files)
@@ -115,7 +117,8 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
             study_data.area_thermals or study_data.area_dsr or study_data.p2g or _has_thermals_me(study_data)
         ) and study_data.enable_random_ts:
             logger.info(
-                f"Generating timeseries for {study.get_settings().general_parameters.nb_timeseries_thermal} years"
+                f"Generating timeseries for {study.get_settings().general_parameters.nb_timeseries_thermal} years",
+                extra={"studyId": study_id},
             )
             study.generate_thermal_timeseries(study.get_settings().general_parameters.nb_timeseries_thermal)
 
@@ -130,6 +133,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
             if settings.generation_mode == GenerationMode.LOCAL:
                 _package_and_upload_local_study(study_data.name)
 
+            execution_time_s = time.time() - start_time
             result = {
                 "message": f"Study {study_data.name} successfully generated",
                 "study_id": study_id,
@@ -137,20 +141,24 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
             }
             if results_path is not None:
                 result["flowbased_results_path"] = str(results_path)
+            logger.info(
+                f"Study {study_data.name} generation completed successfully",
+                extra={"studyId": study_id, "executionTime": round(execution_time_s, 3)},
+            )
             return result
     except Exception:
         if study:
             try:
                 if settings.generation_mode == GenerationMode.LOCAL and study.path and Path(study.path).exists():
-                    logger.info(f"Removing failed local study: {study.path}")
+                    logger.info(f"Removing failed local study: {study.path}", extra={"studyId": study_id})
                     shutil.rmtree(study.path)
                 elif settings.generation_mode == GenerationMode.API:
                     # In API mode, we should delete the study from the API
                     # The craft Study object has a delete method
-                    logger.info(f"Removing failed API study: {study_data.name}")
+                    logger.info(f"Removing failed API study: {study_data.name}", extra={"studyId": study_id})
                     study.delete()
             except Exception as e:
-                logger.error(f"Failed to cleanup failed study: {e}")
+                logger.error(f"Failed to cleanup failed study: {e}", extra={"studyId": study_id})
         raise
     finally:
         _cleanup_arrow_files(used_files)
@@ -179,15 +187,17 @@ def _cleanup_arrow_files(used_files: Set[Path]) -> None:
 
 
 def read_study_data_from_json(study_id: str) -> StudyData:
+    start_time = time.time()
     json_dir = settings.study_json_directory
     joined_path = json_dir / f"{study_id}.json"
 
-    logger.info(f"Path to JSON with data for generation : {joined_path}")
+    logger.info(f"Path to JSON with data for generation : {joined_path}", extra={"studyId": study_id})
 
     try:
         with open(joined_path, "r", encoding="utf-8") as file:
             data = json.load(file)
     except FileNotFoundError as e:
+        logger.error(f"File does not exist: {joined_path}", extra={"studyId": study_id})
         raise FileNotFoundError(f"File does not exist: {joined_path}") from e
 
     study_name = list(data.keys())[0]
@@ -261,6 +271,7 @@ def read_study_data_from_json(study_id: str) -> StudyData:
         if hydro:
             study_data.area_hydro[area] = hydro
 
+    logger.info(f"Study data loaded successfully for {study_name}", extra={"studyId": study_id, "executionTime": round(time.time() - start_time, 3)})
     return study_data
 
 
@@ -330,9 +341,10 @@ def _generate_area_hydro(
     create_psp_link(study, area_name, virtual_area_name, used_files)
 
 
-def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path]) -> None:
+def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path], study_id: str | None = None) -> None:
+    start_time = time.time()
     path_to_load_directory = generator_load_directory()
-    logger.info(list(study_data.areas.keys()))
+    logger.info(f"Adding areas to study: {list(study_data.areas.keys())}", extra={"studyId": study_id})
     for area_name, area_def in study_data.areas.items():
         area_ui = _build_area_ui(area_def)
         area_properties = _build_area_properties(area_def)
@@ -382,12 +394,20 @@ def add_areas_to_study(study: Study, study_data: StudyData, used_files: Set[Path
 
             _generate_area_hydro(study, area_obj, area_name, hydro, used_files)
 
-            logger.info(f"Successfully created area for {area_name}")
+            logger.info(f"Successfully created area for {area_name}", extra={"studyId": study_id})
         except (APIGenerationError, MiscGenerationError) as e:
             raise AreaGenerationError(area_name, e.message) from e
+    
+    execution_time_s = time.time() - start_time
+    logger.info(
+        f"All areas added to study",
+        extra={"studyId": study_id, "executionTime": round(execution_time_s, 3), "methodName": "add_areas_to_study"}
+    )
 
 
-def add_links_to_study(study: Study, links: dict[str, dict[str, int]], global_seed: int = 0) -> None:
+def add_links_to_study(study: Study, links: dict[str, dict[str, int]], global_seed: int = 0, study_id: str | None = None) -> None:
+    start_time = time.time()
+    logger.info(f"Adding links to study", extra={"studyId": study_id})
     for key, link_data in links.items():
         area_from, area_to = key.lower().split("/")
 
@@ -419,9 +439,15 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]], global_se
                 df_parameters = generate_link_parameters_df(hurdle_cost)
                 link.update_properties(LinkPropertiesUpdate(hurdles_cost=True))
                 link.set_parameters(df_parameters)
-            logger.info(f"Called create_link for: {area_from} and {area_to}")
+            logger.info(f"Called create_link for: {area_from} and {area_to}", extra={"studyId": study_id})
         except APIGenerationError as e:
             raise LinkGenerationError(area_from, area_to, f"Link from {area_from} to {area_to} not created") from e
+    
+    execution_time_s = time.time() - start_time
+    logger.info(
+        "All links added to study",
+        extra={"studyId": study_id, "executionTime": round(execution_time_s, 3), "methodName": "add_links_to_study"}
+    )
 
 
 def _package_and_upload_local_study(study_id_name: str) -> None:

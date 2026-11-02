@@ -11,6 +11,7 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Dict
 
@@ -61,6 +62,9 @@ def generate_thermal_clusters(
     first_month: Month,
     used_files: set[Path] | None = None,
 ) -> None:
+    start_time = time.time()
+    logger.info(f"Generating thermal clusters for area: {area_obj.name}")
+    
     # Thermals
     for cluster_name, values in thermals.items():
         logger.info(f"Creating thermal cluster: {cluster_name}")
@@ -77,6 +81,10 @@ def generate_thermal_clusters(
             first_month,
             used_files=used_files,
         )
+    
+    execution_time_s = time.time() - start_time
+    logger.info(f"Thermal clusters generation completed for area {area_obj.name}",
+                extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_thermal_clusters"})
 
 
 def create_thermal_cluster_with_prepro(

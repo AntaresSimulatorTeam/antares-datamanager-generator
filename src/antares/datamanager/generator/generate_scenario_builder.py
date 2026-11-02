@@ -10,6 +10,7 @@
 #
 # This file is part of the Antares project.
 
+import time
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Set
@@ -123,6 +124,9 @@ def generate_scenario_builder(study: Study, study_data: StudyData, used_files: S
     Introduces scenario building configuration for the study.
     Executed as the last step of study generation.
     """
+    start_time = time.time()
+    logger.info("Processing generate_scenario_builder...")
+    
     climatic_data_raw = _get_config_list(study_data.scenario_builder_config, ("climatic data", "Climatic data"))
     climatic_data = [
         str(item).replace("@", "").replace("*", "").strip() for item in climatic_data_raw if item is not None
@@ -168,6 +172,7 @@ def generate_scenario_builder(study: Study, study_data: StudyData, used_files: S
     # Save modification in study
     study.set_scenario_builder(sb)
     logger.info("Scenario builder configuration applied to the study.")
+    logger.info("Processing generate_scenario_builder completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_scenario_builder"})
 
 
 def _normalize_res_group(group: str) -> str:

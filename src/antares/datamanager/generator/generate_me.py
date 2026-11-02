@@ -11,6 +11,7 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Set
 
@@ -465,6 +466,9 @@ def add_me_g2p_binding_constraints(study: Study, constraints_g2p: list[Any]) -> 
 
 
 def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) -> None:
+    start_time = time.time()
+    logger.info("Processing me...")
+    
     area_me = me_data.get("area_me") or {}
     links_me = me_data.get("links_me") or {}
     area_objs = add_me_areas_to_study(study, area_me, used_files)
@@ -479,3 +483,5 @@ def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) ->
     constraints_g2p = binding_constraints_me.get("constraints_G2P")
     if constraints_g2p:
         add_me_g2p_binding_constraints(study, constraints_g2p)
+    
+    logger.info("Processing me completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_me"})

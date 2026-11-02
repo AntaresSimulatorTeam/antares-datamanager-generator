@@ -11,6 +11,7 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
@@ -46,6 +47,8 @@ def generate_dsr_clusters(
     """
     Generates thermal clusters for DSR (Demand Side Response) based on provided area and DSR data.
     """
+    start_time = time.time()
+    logger.info(f"Generating DSR clusters for area: {area_obj.name}")
 
     # DSR as Thermals
     base_dir = generator_dsr_modulation_directory()
@@ -80,6 +83,10 @@ def generate_dsr_clusters(
         create_dsr_cluster(area_obj, cluster_name, values, modulation_matrix, first_month)
         # 3. Generate coupling constraints
         generate_dsr_binding_constraints(study, area_obj.name, cluster_name, dsr, cluster_series_data)
+    
+    execution_time_s = time.time() - start_time
+    logger.info(f"DSR clusters generation completed for area {area_obj.name}", 
+                extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_dsr_clusters"})
 
 
 def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") -> pd.DataFrame:

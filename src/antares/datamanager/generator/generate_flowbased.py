@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 from collections import Counter
 from dataclasses import dataclass
@@ -235,6 +236,9 @@ def generate_flowbased_binding_constraints(
     Raises:
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
     """
+    start_time = time.time()
+    logger.info("Processing flowbased binding constraints...")
+    
     trajectory_directory = _resolve_trajectory_directory(flowbased_data)
 
     weight_df = _read_weight_file(trajectory_directory, used_files)
@@ -291,6 +295,7 @@ def generate_flowbased_binding_constraints(
 
     _wire_scenario_builder(study, group_name, n_columns, nb_years)
     generate_restriction_ahc_constraints(study, flowbased_data, nb_years, used_files)
+    logger.info("Processing flowbased binding constraints completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_flowbased_binding_constraints"})
     return allocation
 
 
@@ -452,6 +457,9 @@ def create_flowbased_areas_and_links(
         :param flowbased_data:
         :param first_month:
     """
+    start_time = time.time()
+    logger.info("Processing flowbased areas and links...")
+    
     for area_name in flowbased_data.get("virtual_nodes") or []:
         study.create_area(area_name=area_name)
         logger.info(f"Created flowbased virtual area {area_name}")
@@ -485,6 +493,7 @@ def create_flowbased_areas_and_links(
 
     source_links = [source_link for _, _, source_link in interconnectors.values()]
     _delete_links(study, [*source_links, *_get_direct_links(study, HUB_AREAS)])
+    logger.info("Processing flowbased areas and links completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "create_flowbased_areas_and_links"})
 
 
 def _get_interconnector_sources(

@@ -12,6 +12,7 @@
 
 from pathlib import Path
 from typing import Any, Optional, Set
+import time
 
 import pandas as pd
 
@@ -38,10 +39,13 @@ def generate_hydro(
     `area_name` is used to parse the columns since they are named after the real area
     and not virtual even for psp
     """
+    start_time = time.time()
+    
     if not hydro:
         return
 
     resolved_area_name = area_name or area_obj.name
+    logger.info(f"Generating hydro for area: {resolved_area_name}")
 
     # "properties"/"series" might be null if only psp is linked
     properties = hydro.get("properties") or {}
@@ -106,6 +110,10 @@ def generate_hydro(
             maxpower_df["2"] = pumping
             maxpower_df["3"] = DEFAULT_MAXPOWER_VALUE
             area_obj.hydro.set_maxpower(maxpower_df)
+    
+    execution_time_s = time.time() - start_time
+    logger.info(f"Hydro generation completed for area {resolved_area_name}",
+                extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_hydro"})
 
 
 def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bool) -> tuple[pd.Series, pd.Series]:

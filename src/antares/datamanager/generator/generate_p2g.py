@@ -9,8 +9,16 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+"""
+PSP (Pumped Storage Plant) Virtual Area Link Generation.
+
+This module handles the automatic creation of links between real areas and their virtual
+PSP areas with capacities loaded from PSP maxpower data files.
+"""
+
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -382,6 +390,9 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], used_files: set[Path] |
       }
     }}
     """
+    start_time = time.time()
+    logger.info("Processing p2g...")
+    
     modulation_file_name = data_p2g.get("market_modulation")
 
     for p2g_type in P2G_TYPES:
@@ -438,6 +449,8 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], used_files: set[Path] |
             )
             cluster_thermal.set_prepro_modulation(modulation_df)
         logger.info(f"Created P2G virtual area {virtual_area}")
+    
+    logger.info("Processing p2g completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_p2g"})
 
 
 def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: dict[str, Any]) -> None:
