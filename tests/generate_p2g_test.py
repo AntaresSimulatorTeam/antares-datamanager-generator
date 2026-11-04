@@ -526,6 +526,30 @@ def test_create_p2g_links_base():
     assert mock_link.set_parameters.call_count == 2
 
 
+def test_create_p2g_links_base_zero_and_missing_fatal_band():
+    study = MagicMock(spec=Study)
+    study.create_link.return_value = MagicMock()
+
+    type_data = {
+        "links": {
+            "AT": {"capacity": 16.68, "fatal_band": 6},
+            "BE": {"capacity": 8.5},
+            "DEKF": {"capacity": 10, "fatal_band": 0},
+            "ES": {"capacity": 12, "fatal_band": None},
+        }
+    }
+
+    create_p2g_links(study, f"{AREA_PREFIX}base", "base", type_data)
+
+    constraint_calls = study.create_binding_constraint.call_args_list
+    assert [call.kwargs["name"] for call in constraint_calls] == [
+        f"{P2G_FATAL_BAND_PREFIX}AT",
+        f"{P2G_FATAL_BAND_PREFIX}DEKF",
+    ]
+    assert np.all(constraint_calls[0].kwargs["greater_term_matrix"].to_numpy() == 6)
+    assert np.all(constraint_calls[1].kwargs["greater_term_matrix"].to_numpy() == 0)
+
+
 def test_create_p2g_links_non_base():
     study = MagicMock(spec=Study)
     mock_link = MagicMock()

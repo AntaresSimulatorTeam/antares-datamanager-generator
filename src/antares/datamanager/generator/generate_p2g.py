@@ -456,8 +456,9 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         capacity = round(area_link.get("capacity", 0.0), 0)
         link_time_series = pd.DataFrame(np.full((EXPECTED_HOURS, 1), capacity, dtype=np.float64))
 
-        if p2g_type == "base":
-            build_binding_constraint(study, area_name, round(area_link.get("fatal_band", 0.0), 0))
+        fatal_band = area_link.get("fatal_band")
+        if p2g_type == "base" and fatal_band is not None:
+            build_binding_constraint(study, area_name, round(fatal_band, 0))
         link.set_capacity_direct(link_time_series)
         df_link = _generate_link_series()
         link.set_parameters(df_link)
