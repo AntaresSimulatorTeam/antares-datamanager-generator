@@ -391,13 +391,18 @@ def generate_restriction_ahc_constraints(
             ) from exc
         if rhs.isna().any(axis=None):
             raise FlowbasedGenerationError(f"RHS series for restriction constraint {name!r} contains missing values")
-        if len(rhs) == EXPECTED_HOURS:
-            rhs = _pad_to_binding_constraint_hourly_rows(rhs)
-        elif len(rhs) != BINDING_CONSTRAINT_HOURLY_ROWS:
+        expected_rows = (
+            (EXPECTED_HOURS, BINDING_CONSTRAINT_HOURLY_ROWS)
+            if time_step == BindingConstraintFrequency.HOURLY
+            else (BINDING_CONSTRAINT_DAILY_ROWS,)
+        )
+        if len(rhs) not in expected_rows:
             raise FlowbasedGenerationError(
-                f"Expected {EXPECTED_HOURS} or {BINDING_CONSTRAINT_HOURLY_ROWS} RHS rows "
-                f"for restriction constraint {name!r}, got {len(rhs)}"
+                f"Expected {' or '.join(map(str, expected_rows))} RHS rows "
+                f"for {time_step.value} restriction constraint {name!r}, got {len(rhs)}"
             )
+        if time_step == BindingConstraintFrequency.HOURLY and len(rhs) == EXPECTED_HOURS:
+            rhs = _pad_to_binding_constraint_hourly_rows(rhs)
 
         group_name = f"flowbased-{name}"
         properties = BindingConstraintProperties(
@@ -900,6 +905,7 @@ def _build_rhs_matrix_from_codes(
 
 # Extra rows must be zero padded before being handed to create_binding_constraint
 BINDING_CONSTRAINT_HOURLY_ROWS = 8784
+BINDING_CONSTRAINT_DAILY_ROWS = 366
 
 
 def _pad_to_binding_constraint_hourly_rows(matrix: pd.DataFrame) -> pd.DataFrame:

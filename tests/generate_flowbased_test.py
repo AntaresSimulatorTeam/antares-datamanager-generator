@@ -546,6 +546,135 @@ def test_generate_restriction_ahc_constraints_accepts_links_without_fr(mock_sett
     assert (term.data.area1, term.data.area2, term.weight) == ("DE", "NL", weight)
 
 
+@pytest.mark.parametrize("operator", list(BindingConstraintOperator))
+@pytest.mark.parametrize(
+    ("frequency", "rows", "output_rows"),
+    [
+        ("hourly", 8760, 8784),
+        ("hourly", 8784, 8784),
+        ("daily", 366, 366),
+        ("weekly", 366, 366),
+    ],
+)
+@patch("antares.datamanager.generator.generate_flowbased.settings")
+def test_generate_restriction_ahc_constraints_respects_frequency(
+    mock_settings, tmp_path: Path, frequency, rows, output_rows, operator
+):
+    mock_settings.flowbased_directory = tmp_path
+    series_path = tmp_path / "rhs.txt"
+    expected = pd.DataFrame({0: range(1, rows + 1)})
+    expected.to_csv(series_path, header=False, index=False)
+    study = MagicMock()
+    study.get_areas.return_value = {"fr": MagicMock(), "ch": MagicMock()}
+    study.get_areas.return_value["fr"].name = "FR"
+    study.get_areas.return_value["ch"].name = "CH"
+    used_files: set[Path] = set()
+    flowbased_data = {
+        "restriction_ahc_constraints": [
+            {
+                "name": "restriction_ahc",
+                "enabled": True,
+                "type": frequency,
+                "operator": operator.value,
+                "links": [{"name": "fr-ch", "weight": -1}],
+                "series": "rhs.txt",
+            }
+        ]
+    }
+
+    generate_restriction_ahc_constraints(study, flowbased_data, 2, used_files)
+
+    study.create_binding_constraint.assert_called_once()
+    kwargs = study.create_binding_constraint.call_args.kwargs
+    assert kwargs["properties"].time_step == BindingConstraintFrequency(frequency)
+    assert kwargs["properties"].operator == operator
+    matrix_keys = {
+        BindingConstraintOperator.LESS: {"less_term_matrix"},
+        BindingConstraintOperator.GREATER: {"greater_term_matrix"},
+        BindingConstraintOperator.EQUAL: {"equal_term_matrix"},
+        BindingConstraintOperator.BOTH: {"less_term_matrix", "greater_term_matrix"},
+    }[operator]
+    assert {key for key in kwargs if key.endswith("_matrix")} == matrix_keys
+    for key in matrix_keys:
+        rhs = kwargs[key]
+        assert rhs.shape == (output_rows, 1)
+        pd.testing.assert_frame_equal(rhs.iloc[:rows], expected, check_dtype=False)
+        assert (rhs.iloc[rows:] == 0).all(axis=None)
+    assert used_files == {series_path}
+    scenario_group = study.get_scenario_builder.return_value.binding_constraint.get_group.return_value
+    scenario_group.set_new_scenario.assert_called_once_with([1, 1])
+
+
+@pytest.mark.parametrize(
+    ("frequency", "rows", "expected_rows"),
+    [("hourly", 366, "8760 or 8784")]
+    + [(frequency, rows, "366") for frequency in ("daily", "weekly") for rows in (365, 367, 8760, 8784)],
+)
+@patch("antares.datamanager.generator.generate_flowbased.settings")
+def test_generate_restriction_ahc_constraints_rejects_invalid_rhs_rows(
+    mock_settings, tmp_path: Path, frequency, rows, expected_rows
+):
+    mock_settings.flowbased_directory = tmp_path
+    (tmp_path / "rhs.txt").write_text("10000\n" * rows)
+    study = MagicMock()
+    study.get_areas.return_value = {"fr": MagicMock(), "ch": MagicMock()}
+    study.get_areas.return_value["fr"].name = "FR"
+    study.get_areas.return_value["ch"].name = "CH"
+    flowbased_data = {
+        "restriction_ahc_constraints": [
+            {
+                "name": "restriction_ahc",
+                "enabled": True,
+                "type": frequency,
+                "operator": "equal",
+                "links": [{"name": "fr-ch", "weight": 1}],
+                "series": "rhs.txt",
+            }
+        ]
+    }
+
+    with pytest.raises(
+        FlowbasedGenerationError,
+        match=f"Expected {expected_rows} RHS rows for {frequency} restriction constraint 'restriction_ahc', got {rows}",
+    ):
+        generate_restriction_ahc_constraints(study, flowbased_data, 1, set())
+
+    study.create_binding_constraint.assert_not_called()
+    study.set_scenario_builder.assert_not_called()
+
+
+@patch("antares.datamanager.generator.generate_flowbased.settings")
+def test_generate_restriction_ahc_constraints_daily_equal_roundtrip(mock_settings, tmp_path: Path):
+    mock_settings.flowbased_directory = tmp_path
+    expected = pd.DataFrame({0: [float(value) for value in range(1, 367)]})
+    expected.to_csv(tmp_path / "ts10Gdaily.txt", header=False, index=False)
+    study = create_study_local("daily-restriction", "9.2", tmp_path)
+    for name in ("fr", "ch"):
+        study.create_area(area_name=name)
+    study.create_link(area_from="fr", area_to="ch")
+    flowbased_data = {
+        "restriction_ahc_constraints": [
+            {
+                "name": "restriction_ahc",
+                "enabled": True,
+                "type": "daily",
+                "operator": "equal",
+                "links": [{"name": "fr-ch", "weight": 1}],
+                "series": "ts10Gdaily.txt",
+            }
+        ]
+    }
+
+    generate_restriction_ahc_constraints(study, flowbased_data, 1, set())
+
+    reloaded = read_study_local(tmp_path / "daily-restriction")
+    constraint = next(iter(reloaded.get_binding_constraints().values()))
+    assert constraint.name == "restriction_ahc"
+    assert constraint.properties.time_step == BindingConstraintFrequency.DAILY
+    assert constraint.properties.operator == BindingConstraintOperator.EQUAL
+    pd.testing.assert_frame_equal(constraint.get_equal_term_matrix(), expected)
+
+
 @pytest.mark.parametrize(
     "link",
     [
