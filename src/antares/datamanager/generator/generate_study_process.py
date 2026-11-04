@@ -131,7 +131,7 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         )
         with export as results_path:
             if settings.generation_mode == GenerationMode.LOCAL:
-                _package_and_upload_local_study(study_data.name)
+                _package_and_upload_local_study(study_data.name, study_id)
 
             execution_time_s = time.time() - start_time
             result = {
@@ -450,7 +450,8 @@ def add_links_to_study(study: Study, links: dict[str, dict[str, int]], global_se
     )
 
 
-def _package_and_upload_local_study(study_id_name: str) -> None:
+def _package_and_upload_local_study(study_id_name: str, study_id: str) -> None:
+    start_time = time.time()
     study_path = settings.nas_path / study_id_name
     if not study_path.exists():
         logger.info(f"Study directory not found at {study_path}", extra={"methodName": "_package_and_upload_local_study"})
@@ -463,13 +464,15 @@ def _package_and_upload_local_study(study_id_name: str) -> None:
 
         zip_base_name = str(study_path)
         archive_path = shutil.make_archive(zip_base_name, "zip", root_dir=study_path)
-        logger.info(f"Study compressed to: {archive_path}", extra={"methodName": "_package_and_upload_local_study"})
+        execution_compression_time_s = time.time() - start_time
+        logger.info(f"Study compressed to: {archive_path}", extra={"studyId": study_id, "executionTime": round(execution_compression_time_s, 3), "methodName": "_package_and_upload_local_study"})
 
         # upload
         api_conf = APIconf(api_host=settings.api_host, token=settings.api_token, verify=settings.verify_ssl)
 
         import_study_api(api_conf, Path(archive_path))
-        logger.info("Study uploaded to Antares Web.", extra={"methodName": "_package_and_upload_local_study"})
+        execution_upload_time_s = time.time() - start_time
+        logger.info("Study uploaded to Antares Web.", extra={"studyId": study_id, "executionTime": round(execution_upload_time_s, 3), "methodName": "_package_and_upload_local_study"})
 
     except Exception as e:
         raise APIGenerationError(f"Failed to archive or upload local study {study_id_name}: {str(e)}") from e
