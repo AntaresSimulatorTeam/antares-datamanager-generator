@@ -213,7 +213,7 @@ def test_generate_study_publishes_only_recalculated_results(
         with publish(FlowbasedAllocation(allocation.clusters, allocation.id_day_types * 10)):
             pass
 
-    def package_and_clean(name):
+    def package_and_clean(name, study_id):
         if recalculate:
             assert (export_root / name / "ts.txt").exists()
         shutil.rmtree(local_study)
