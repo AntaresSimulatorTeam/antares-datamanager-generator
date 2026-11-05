@@ -120,7 +120,7 @@ def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bo
     if not is_psp:
         # We assume the input df has only 1 column. If it has more, we only use the first one.
         # show content of df for debugging
-        logger.debug(f"Extracting generating and pumping for area {area_name}. DataFrame shape: {df.shape}, columns: {df.columns.tolist()}")
+        logger.info(f"Extracting generating and pumping for area {area_name}. DataFrame shape: {df.shape}, columns: {df.columns.tolist()}")
         return df.iloc[:, 0], pd.Series(0, index=df.index)
 
     generating_col = f"{area_name.lower()}_generating"
