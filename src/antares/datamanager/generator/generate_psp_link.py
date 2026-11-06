@@ -59,8 +59,9 @@ def get_maxpower_data(area_name: str, used_files: Set[Path]) -> tuple[float, flo
 
     if maxpower_file is None or not maxpower_file.exists():
         logger.warning(
-            f"PSP maxpower file not found in used files for area {area_name}, using zero capacities for PSP link"
-        , extra={"methodName": "get_maxpower_data"})
+            f"PSP maxpower file not found in used files for area {area_name}, using zero capacities for PSP link",
+            extra={"methodName": "get_maxpower_data"},
+        )
         return 0.0, 0.0
 
     try:
@@ -83,7 +84,10 @@ def get_maxpower_data(area_name: str, used_files: Set[Path]) -> tuple[float, flo
         if generating_col in columns_lower:
             max_generating = float(df[columns_lower[generating_col]].max())
 
-        logger.info(f"Loaded PSP maxpower data for {area_name}: pumping={max_pumping}, generating={max_generating}", extra={"methodName": "get_maxpower_data"})
+        logger.info(
+            f"Loaded PSP maxpower data for {area_name}: pumping={max_pumping}, generating={max_generating}",
+            extra={"methodName": "get_maxpower_data"},
+        )
         return max_pumping, max_generating
 
     except Exception as e:
@@ -109,7 +113,7 @@ def create_psp_link(study: Study, real_area_name: str, virtual_area_name: str, u
     """
     start_time = time.time()
     logger.info(f"Processing {real_area_name}...", extra={"methodName": "create_psp_link"})
-    
+
     area_from = real_area_name.lower()
     area_to = virtual_area_name.lower()
 
@@ -123,20 +127,31 @@ def create_psp_link(study: Study, real_area_name: str, virtual_area_name: str, u
         # b) Create and set direct capacity matrix (pumping)
         df_capacity_direct = generate_constant_link_capacity_df(max_pumping)
         link.set_capacity_direct(df_capacity_direct)
-        logger.info(f"Set direct capacity ({max_pumping} MW) for PSP link {area_from}->{area_to}", extra={"methodName": "create_psp_link"})
+        logger.info(
+            f"Set direct capacity ({max_pumping} MW) for PSP link {area_from}->{area_to}",
+            extra={"methodName": "create_psp_link"},
+        )
 
         # c) Create and set indirect capacity matrix (generating)
         df_capacity_indirect = generate_constant_link_capacity_df(max_generating)
         link.set_capacity_indirect(df_capacity_indirect)
-        logger.info(f"Set indirect capacity ({max_generating} MW) for PSP link {area_from}->{area_to}", extra={"methodName": "create_psp_link"})
+        logger.info(
+            f"Set indirect capacity ({max_generating} MW) for PSP link {area_from}->{area_to}",
+            extra={"methodName": "create_psp_link"},
+        )
 
         # d) Set hurdle costs to 0.01
         df_parameters = generate_link_parameters_df(0.01)
         link.update_properties(LinkPropertiesUpdate(hurdles_cost=True))
         link.set_parameters(df_parameters)
-        logger.info(f"Set hurdle costs (0.01) for PSP link {area_from}->{area_to}", extra={"methodName": "create_psp_link"})
-        
-        logger.info(f"Processing {real_area_name} completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "create_psp_link"})
+        logger.info(
+            f"Set hurdle costs (0.01) for PSP link {area_from}->{area_to}", extra={"methodName": "create_psp_link"}
+        )
+
+        logger.info(
+            f"Processing {real_area_name} completed",
+            extra={"executionTime": round(time.time() - start_time, 3), "methodName": "create_psp_link"},
+        )
 
     except APIGenerationError as e:
         raise LinkGenerationError(area_from, area_to, f"Failed to create PSP link from {area_from} to {area_to}") from e

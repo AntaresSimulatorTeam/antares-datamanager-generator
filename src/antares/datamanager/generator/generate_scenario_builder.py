@@ -11,6 +11,7 @@
 # This file is part of the Antares project.
 
 import time
+
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Set
@@ -126,7 +127,7 @@ def generate_scenario_builder(study: Study, study_data: StudyData, used_files: S
     """
     start_time = time.time()
     logger.info("Processing generate_scenario_builder...", extra={"methodName": "generate_scenario_builder"})
-    
+
     climatic_data_raw = _get_config_list(study_data.scenario_builder_config, ("climatic data", "Climatic data"))
     climatic_data = [
         str(item).replace("@", "").replace("*", "").strip() for item in climatic_data_raw if item is not None
@@ -171,8 +172,13 @@ def generate_scenario_builder(study: Study, study_data: StudyData, used_files: S
 
     # Save modification in study
     study.set_scenario_builder(sb)
-    logger.info("Scenario builder configuration applied to the study.", extra={"methodName": "generate_scenario_builder"})
-    logger.info("Processing generate_scenario_builder completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_scenario_builder"})
+    logger.info(
+        "Scenario builder configuration applied to the study.", extra={"methodName": "generate_scenario_builder"}
+    )
+    logger.info(
+        "Processing generate_scenario_builder completed",
+        extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_scenario_builder"},
+    )
 
 
 def _normalize_res_group(group: str) -> str:
@@ -314,7 +320,10 @@ def _generate_scenarised_climatic_data_series(
     """
     areas = study.get_areas()
     if not areas:
-        logger.warning("No areas found in study to apply scenario.", extra={"methodName": "_generate_scenarised_climatic_data_series"})
+        logger.warning(
+            "No areas found in study to apply scenario.",
+            extra={"methodName": "_generate_scenarised_climatic_data_series"},
+        )
         return
 
     # area_id mapping to area objects
@@ -329,7 +338,10 @@ def _generate_scenarised_climatic_data_series(
     # Prioritize 'load' if it exists.
     expected_nb_ts = nb_ts_by_category.get("load", 0)
     if expected_nb_ts > 1:
-        logger.info(f"Reference nb_ts determined from load: {expected_nb_ts}", extra={"methodName": "_generate_scenarised_climatic_data_series"})
+        logger.info(
+            f"Reference nb_ts determined from load: {expected_nb_ts}",
+            extra={"methodName": "_generate_scenarised_climatic_data_series"},
+        )
     else:
         for m in scenarised_modulos:
             if m == "load":
@@ -337,11 +349,17 @@ def _generate_scenarised_climatic_data_series(
             nb_ts = nb_ts_by_category.get(m, 0)
             if nb_ts > 1:
                 expected_nb_ts = nb_ts
-                logger.info(f"Reference nb_ts determined from {m}: {expected_nb_ts}", extra={"methodName": "_generate_scenarised_climatic_data_series"})
+                logger.info(
+                    f"Reference nb_ts determined from {m}: {expected_nb_ts}",
+                    extra={"methodName": "_generate_scenarised_climatic_data_series"},
+                )
                 break
 
     if expected_nb_ts == 0:
-        logger.warning("Could not determine number of TS for any modulo. Using default value 1.", extra={"methodName": "_generate_scenarised_climatic_data_series"})
+        logger.warning(
+            "Could not determine number of TS for any modulo. Using default value 1.",
+            extra={"methodName": "_generate_scenarised_climatic_data_series"},
+        )
         expected_nb_ts = 1
 
     # 2. Validate all other requested modulos
@@ -360,7 +378,10 @@ def _generate_scenarised_climatic_data_series(
     # modulo calculation (1 to nb_ts repeated for nb_years)
     scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, expected_nb_ts)
 
-    logger.info(f"Applying scenario series of length {len(scenario_series)} (nb_ts={expected_nb_ts}) to all areas.", extra={"methodName": "_generate_scenarised_climatic_data_series"})
+    logger.info(
+        f"Applying scenario series of length {len(scenario_series)} (nb_ts={expected_nb_ts}) to all areas.",
+        extra={"methodName": "_generate_scenarised_climatic_data_series"},
+    )
 
     # Apply to all zones (excluding specific zones for load and hydro)
     for area_id, area_obj in area_mapping.items():
@@ -384,7 +405,10 @@ def _generate_scenarised_climatic_data_series(
                 try:
                     load_nb_ts = _get_area_load_nb_ts(area_obj)
                 except Exception as e:
-                    logger.error(f"Failed to get load matrix for area '{area_id}': {e}", extra={"methodName": "_generate_scenarised_climatic_data_series"})
+                    logger.error(
+                        f"Failed to get load matrix for area '{area_id}': {e}",
+                        extra={"methodName": "_generate_scenarised_climatic_data_series"},
+                    )
                 else:
                     if load_nb_ts > 1:
                         sb.load.get_area(area_id).set_new_scenario(scenario_series)
@@ -393,7 +417,10 @@ def _generate_scenarised_climatic_data_series(
                 try:
                     hydro_nb_ts = _get_area_hydro_nb_ts(area_obj)
                 except Exception as e:
-                    logger.error(f"Failed to get hydro matrix for area '{area_id}': {e}", extra={"methodName": "_generate_scenarised_climatic_data_series"})
+                    logger.error(
+                        f"Failed to get hydro matrix for area '{area_id}': {e}",
+                        extra={"methodName": "_generate_scenarised_climatic_data_series"},
+                    )
                 else:
                     if hydro_nb_ts > 1:
                         sb.hydro.get_area(area_id).set_new_scenario(scenario_series)
@@ -414,7 +441,7 @@ def _generate_scenarised_climatic_data_series(
                         except Exception as e:
                             logger.error(
                                 f"Failed to get {res_m} matrix for cluster '{cluster_id}' in area '{area_id}': {e}",
-                                extra={"methodName": "_generate_scenarised_renewable_scenario"}
+                                extra={"methodName": "_generate_scenarised_renewable_scenario"},
                             )
                             break
                         if cluster_nb_ts > 1:
@@ -497,7 +524,10 @@ def _generate_nuclear_modulation_binding_constraints_scenario(
         if str(constraint.name).lower() in target_constraint_names
     ]
     if not constraints:
-        logger.info("No nuclear modulation binding constraints found in the study. Skipping scenarisation.", extra={"methodName": "_generate_nuclear_modulation_binding_constraints_scenario"})
+        logger.info(
+            "No nuclear modulation binding constraints found in the study. Skipping scenarisation.",
+            extra={"methodName": "_generate_nuclear_modulation_binding_constraints_scenario"},
+        )
         return
 
     expected_nb_ts = 0
@@ -518,19 +548,25 @@ def _generate_nuclear_modulation_binding_constraints_scenario(
             groups.add(str(group))
 
     if expected_nb_ts <= 1:
-        logger.info("Nuclear modulation constraints have no multi-column timeseries. Skipping scenarisation.", extra={"methodName": "_generate_nuclear_modulation_binding_constraints_scenario"})
+        logger.info(
+            "Nuclear modulation constraints have no multi-column timeseries. Skipping scenarisation.",
+            extra={"methodName": "_generate_nuclear_modulation_binding_constraints_scenario"},
+        )
         return
 
     scenario_series = _build_scenario_series(nb_years, expected_nb_ts)
     if not groups:
-        logger.warning("No group defined on nuclear modulation binding constraints.", extra={"methodName": "_generate_nuclear_modulation_binding_constraints_scenario"})
+        logger.warning(
+            "No group defined on nuclear modulation binding constraints.",
+            extra={"methodName": "_generate_nuclear_modulation_binding_constraints_scenario"},
+        )
         return
 
     for group_str in sorted(groups):
         logger.info(
             f"Applying nuclear modulation scenario series of length {len(scenario_series)} "
             f"(nb_ts={expected_nb_ts}) to constraint group '{group_str}'.",
-            extra={"methodName": "_generate_scenarised_nuclear_scenario"}
+            extra={"methodName": "_generate_scenarised_nuclear_scenario"},
         )
         sb.binding_constraint.get_group(group_str).set_new_scenario(scenario_series)
 
@@ -555,7 +591,10 @@ def _generate_area_thermal_clusters_scenario(
     group_label = f"{target_group} " if target_group else ""
     areas = study.get_areas()
     if not areas:
-        logger.warning(f"No areas found in study to apply {group_label}{area_name} scenario.", extra={"methodName": "_generate_area_thermal_clusters_scenario"})
+        logger.warning(
+            f"No areas found in study to apply {group_label}{area_name} scenario.",
+            extra={"methodName": "_generate_area_thermal_clusters_scenario"},
+        )
         return
 
     clean_target_name = transform_name_to_id(area_name)
@@ -575,7 +614,10 @@ def _generate_area_thermal_clusters_scenario(
             break
 
     if not target_area or not target_area_id:
-        logger.warning(f"{area_name} area not found in study to apply {group_label}{area_name} scenario.", extra={"methodName": "_generate_area_thermal_clusters_scenario"})
+        logger.warning(
+            f"{area_name} area not found in study to apply {group_label}{area_name} scenario.",
+            extra={"methodName": "_generate_area_thermal_clusters_scenario"},
+        )
         return
 
     if not hasattr(target_area, "get_thermals"):
@@ -629,7 +671,10 @@ def _generate_area_thermal_clusters_scenario(
                         df = pd.read_feather(file_path)
                         nb_ts = df.shape[1]
                     except Exception as e:
-                        logger.error(f"Failed to read file {file_path} for thermal cluster {cluster_id}: {e}", extra={"methodName": "_generate_area_thermal_clusters_scenario"})
+                        logger.error(
+                            f"Failed to read file {file_path} for thermal cluster {cluster_id}: {e}",
+                            extra={"methodName": "_generate_area_thermal_clusters_scenario"},
+                        )
 
         # 2. Fallback to get_series_matrix from cluster_obj if available
         if nb_ts == 0 and hasattr(cluster_obj, "get_series_matrix"):
@@ -638,10 +683,16 @@ def _generate_area_thermal_clusters_scenario(
                 if matrix is not None and hasattr(matrix, "shape") and len(matrix.shape) > 1 and matrix.shape[1] > 0:
                     nb_ts = matrix.shape[1]
             except Exception as e:
-                logger.debug(f"Could not get series matrix from cluster {cluster_id}: {e}", extra={"methodName": "_generate_area_thermal_clusters_scenario"})
+                logger.debug(
+                    f"Could not get series matrix from cluster {cluster_id}: {e}",
+                    extra={"methodName": "_generate_area_thermal_clusters_scenario"},
+                )
 
         if nb_ts <= 1:
-            logger.info(f"Thermal cluster '{cluster_id}' has no multi-column timeseries. Skipping scenarisation.", extra={"methodName": "_generate_area_thermal_clusters_scenario"})
+            logger.info(
+                f"Thermal cluster '{cluster_id}' has no multi-column timeseries. Skipping scenarisation.",
+                extra={"methodName": "_generate_area_thermal_clusters_scenario"},
+            )
             continue
 
         scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
@@ -649,7 +700,7 @@ def _generate_area_thermal_clusters_scenario(
         logger.info(
             f"Applying {group_label}thermal scenario series of length {len(scenario_series)} "
             f"(nb_ts={nb_ts}) to {area_name} cluster '{cluster_id}'.",
-            extra={"methodName": "_generate_scenarised_thermal_scenario"}
+            extra={"methodName": "_generate_scenarised_thermal_scenario"},
         )
         sb.thermal.get_cluster(target_area_id, cluster_id).set_new_scenario(scenario_series)
 
@@ -728,7 +779,10 @@ def _generate_scenarised_links_series(
                 if df is not None and hasattr(df, "shape") and len(df.shape) > 1 and df.shape[1] > 0:
                     nb_ts = df.shape[1]
             except Exception as e:
-                logger.debug(f"Could not get capacity direct from study link {link_id}: {e}", extra={"methodName": "_generate_scenarised_links_series"})
+                logger.debug(
+                    f"Could not get capacity direct from study link {link_id}: {e}",
+                    extra={"methodName": "_generate_scenarised_links_series"},
+                )
 
         # 2. If not found, look up in study_data.links and generate capacity DataFrame
         if nb_ts == 0 and study_data.links:
@@ -754,17 +808,23 @@ def _generate_scenarised_links_series(
                     ):
                         nb_ts = df_cap.shape[1]
                 except Exception as e:
-                    logger.error(f"Failed to generate link capacity for link {link_id}: {e}", extra={"methodName": "_generate_scenarised_links_series"})
+                    logger.error(
+                        f"Failed to generate link capacity for link {link_id}: {e}",
+                        extra={"methodName": "_generate_scenarised_links_series"},
+                    )
 
         if nb_ts <= 1:
-            logger.info(f"Link '{link_id}' has no multi-column timeseries. Skipping scenarisation.", extra={"methodName": "_generate_scenarised_links_series"})
+            logger.info(
+                f"Link '{link_id}' has no multi-column timeseries. Skipping scenarisation.",
+                extra={"methodName": "_generate_scenarised_links_series"},
+            )
             continue
 
         scenario_series = _build_scenario_series(study.get_settings().general_parameters.nb_years, nb_ts)
 
         logger.info(
             f"Applying link scenario series of length {len(scenario_series)} (nb_ts={nb_ts}) to link '{link_id}'.",
-            extra={"methodName": "_generate_scenarised_link_scenario"}
+            extra={"methodName": "_generate_scenarised_link_scenario"},
         )
         sb.link.get_link(link_id).set_new_scenario(scenario_series)
 
@@ -888,12 +948,18 @@ def _generate_scenarised_sts_inflows_series(
     """
     storage_inflows = getattr(sb, "storage_inflows", None)
     if storage_inflows is None:
-        logger.warning("ScenarioBuilder does not support storage_inflows (study version may be < 9.3).", extra={"methodName": "_generate_scenarised_sts_inflows_series"})
+        logger.warning(
+            "ScenarioBuilder does not support storage_inflows (study version may be < 9.3).",
+            extra={"methodName": "_generate_scenarised_sts_inflows_series"},
+        )
         return
 
     areas = study.get_areas()
     if not areas:
-        logger.warning("No areas found in study to apply STS inflows scenario.", extra={"methodName": "_generate_scenarised_sts_inflows_series"})
+        logger.warning(
+            "No areas found in study to apply STS inflows scenario.",
+            extra={"methodName": "_generate_scenarised_sts_inflows_series"},
+        )
         return
 
     # Parse inflow patterns
@@ -999,7 +1065,7 @@ def _generate_scenarised_sts_inflows_series(
                     except Exception as e:
                         logger.debug(
                             f"Could not get storage inflows from cluster {storage_id_str} via {method_name}: {e}",
-                            extra={"methodName": "_generate_scenarised_sts_inflows_series"}
+                            extra={"methodName": "_generate_scenarised_sts_inflows_series"},
                         )
 
             # 2. Fallback: try to get nb_ts from series file in study_data
@@ -1028,13 +1094,16 @@ def _generate_scenarised_sts_inflows_series(
                             df = pd.read_feather(file_path)
                             nb_ts = df.shape[1]
                         except Exception as e:
-                            logger.error(f"Failed to read file {file_path} for STS cluster {storage_id_str}: {e}", extra={"methodName": "_generate_scenarised_sts_inflows_series"})
+                            logger.error(
+                                f"Failed to read file {file_path} for STS cluster {storage_id_str}: {e}",
+                                extra={"methodName": "_generate_scenarised_sts_inflows_series"},
+                            )
 
             if nb_ts <= 1:
                 logger.info(
                     f"STS cluster '{storage_id_str}' in area '{area_id_str}' has no multi-column inflows "
                     "timeseries. Skipping scenarisation.",
-                    extra={"methodName": "_generate_scenarised_sts_inflows_series"}
+                    extra={"methodName": "_generate_scenarised_sts_inflows_series"},
                 )
                 configured_clusters.add((area_id_str, storage_id_str))
                 continue
@@ -1044,7 +1113,7 @@ def _generate_scenarised_sts_inflows_series(
             logger.info(
                 f"Applying STS inflows scenario series of length {len(scenario_series)} "
                 f"(nb_ts={nb_ts}) to area '{area_id_str}' STS cluster '{storage_id_str}'.",
-                extra={"methodName": "_generate_scenarised_sts_inflows_series"}
+                extra={"methodName": "_generate_scenarised_sts_inflows_series"},
             )
             storage_inflows.get_storage(area_id_str, storage_id_str).set_new_scenario(scenario_series)
             configured_clusters.add((area_id_str, storage_id_str))
@@ -1059,12 +1128,18 @@ def _generate_scenarised_sts_constraints_series(
     """
     storage_constraints = getattr(sb, "storage_constraints", None)
     if storage_constraints is None:
-        logger.warning("ScenarioBuilder does not support storage_constraints (study version may be < 9.3).", extra={"methodName": "_generate_scenarised_sts_constraints_series"})
+        logger.warning(
+            "ScenarioBuilder does not support storage_constraints (study version may be < 9.3).",
+            extra={"methodName": "_generate_scenarised_sts_constraints_series"},
+        )
         return
 
     areas = study.get_areas()
     if not areas:
-        logger.warning("No areas found in study to apply STS constraints scenario.", extra={"methodName": "_generate_scenarised_sts_constraints_series"})
+        logger.warning(
+            "No areas found in study to apply STS constraints scenario.",
+            extra={"methodName": "_generate_scenarised_sts_constraints_series"},
+        )
         return
 
     base_dir = settings.sts_ts_directory
@@ -1206,7 +1281,7 @@ def _generate_scenarised_sts_constraints_series(
                                 except Exception as e:
                                     logger.error(
                                         f"Failed to read file {file_path} for STS constraint '{c_id_str}' in cluster '{storage_id_str}': {e}",
-                                        extra={"methodName": "_generate_scenarised_sts_constraints_series"}
+                                        extra={"methodName": "_generate_scenarised_sts_constraints_series"},
                                     )
 
                     # Try to get nb_ts from existing matrix on storage if available
@@ -1228,13 +1303,16 @@ def _generate_scenarised_sts_constraints_series(
                             ):
                                 nb_ts = 1
                         except Exception as e:
-                            logger.debug(f"Could not get constraint term from storage {storage_id_str}: {e}", extra={"methodName": "_generate_scenarised_sts_constraints_series"})
+                            logger.debug(
+                                f"Could not get constraint term from storage {storage_id_str}: {e}",
+                                extra={"methodName": "_generate_scenarised_sts_constraints_series"},
+                            )
 
                     if nb_ts <= 1:
                         logger.info(
                             f"STS constraint '{c_id_str}' in cluster '{storage_id_str}' "
                             f"(area '{area_id_str}') has no multi-column timeseries. Skipping scenarisation.",
-                            extra={"methodName": "_generate_scenarised_sts_constraints_series"}
+                            extra={"methodName": "_generate_scenarised_sts_constraints_series"},
                         )
                         continue
 
@@ -1243,7 +1321,7 @@ def _generate_scenarised_sts_constraints_series(
                     logger.info(
                         f"Applying STS constraints scenario series of length {len(scenario_series)} "
                         f"(nb_ts={nb_ts}) to area '{area_id_str}' STS cluster '{storage_id_str}' constraint '{c_id_str}'.",
-                        extra={"methodName": "_generate_scenarised_sts_constraints_series"}
+                        extra={"methodName": "_generate_scenarised_sts_constraints_series"},
                     )
                     storage_constraints.get_constraint(area_id_str, storage_id_str, c_id_str).set_new_scenario(
                         scenario_series

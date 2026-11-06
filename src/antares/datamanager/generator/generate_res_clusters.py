@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import time
+
 from pathlib import Path
 from typing import Any, Mapping, Optional, Set, cast
 
@@ -226,11 +227,14 @@ def generate_res_clusters(
     """
     start_time = time.time()
     logger.info(f"Processing {area_name}...", extra={"methodName": "generate_res_clusters"})
-    
+
     base_ts_directory = _resolve_res_base_directory()
 
     if not res:
-        logger.info(f"Processing {area_name} completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_res_clusters"})
+        logger.info(
+            f"Processing {area_name} completed",
+            extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_res_clusters"},
+        )
         return
 
     if not isinstance(res, Mapping):
@@ -248,12 +252,21 @@ def generate_res_clusters(
             used_files=used_files,
         )
 
-        logger.info("Prepared RES cluster payload area=%s cluster=%s payload=%s", area_name, cluster_name, payload, extra={"methodName": "generate_res_clusters"})
+        logger.info(
+            "Prepared RES cluster payload area=%s cluster=%s payload=%s",
+            area_name,
+            cluster_name,
+            payload,
+            extra={"methodName": "generate_res_clusters"},
+        )
         _register_res_outputs(
             area_obj=area_obj, cluster_name=cluster_name, payload=payload, validated_series=validated_series
         )
-    
-    logger.info(f"Processing {area_name} completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_res_clusters"})
+
+    logger.info(
+        f"Processing {area_name} completed",
+        extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_res_clusters"},
+    )
 
 
 def _resolve_res_base_directory() -> Path:

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import time
+
 from pathlib import Path
 from typing import Any, Set
 
@@ -246,7 +247,10 @@ def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], use
 
         try:
             generate_sts_clusters(area_obj, sts_me, used_files)
-            logger.info(f"Created ME short-term storage clusters for area {area_name}", extra={"methodName": "add_me_sts_to_study"})
+            logger.info(
+                f"Created ME short-term storage clusters for area {area_name}",
+                extra={"methodName": "add_me_sts_to_study"},
+            )
         except Exception as e:
             raise MEGenerationError(f"Could not create ME short-term storage for area {area_name}: {e}") from e
 
@@ -254,7 +258,9 @@ def add_me_sts_to_study(area_objs: dict[str, Area], area_me: dict[str, Any], use
 def add_me_thermals_to_study(area_obj: Area, thermals_me: dict[str, Any], used_files: Set[Path]) -> None:
     try:
         generate_thermal_me_clusters(area_obj, thermals_me, used_files)
-        logger.info(f"Created ME Thermal clusters for area {area_obj.name}", extra={"methodName": "add_me_thermals_to_study"})
+        logger.info(
+            f"Created ME Thermal clusters for area {area_obj.name}", extra={"methodName": "add_me_thermals_to_study"}
+        )
     except Exception as e:
         raise MEGenerationError(f"Could not create ME Thermal for area {area_obj.name}: {e}") from e
 
@@ -410,7 +416,10 @@ def add_me_p2g_binding_constraints(study: Study, links_me: dict[str, Any], const
         try:
             terms = _build_p2g_terms(node, other_sides, efficiency_by_node)
             study.create_binding_constraint(name=f"efficiency_{node}", properties=properties, terms=terms)
-            logger.info(f"Created ME P2G binding constraint efficiency_{node}", extra={"methodName": "add_me_p2g_binding_constraints"})
+            logger.info(
+                f"Created ME P2G binding constraint efficiency_{node}",
+                extra={"methodName": "add_me_p2g_binding_constraints"},
+            )
         except MEGenerationError:
             raise
         except Exception as e:
@@ -458,7 +467,10 @@ def add_me_g2p_binding_constraints(study: Study, constraints_g2p: list[Any]) -> 
             )
             terms = _build_g2p_terms(constraint)
             study.create_binding_constraint(name=str(constraint_name), properties=properties, terms=terms)
-            logger.info(f"Created ME G2P binding constraint {constraint_name}", extra={"methodName": "add_me_g2p_binding_constraints"})
+            logger.info(
+                f"Created ME G2P binding constraint {constraint_name}",
+                extra={"methodName": "add_me_g2p_binding_constraints"},
+            )
         except (KeyError, TypeError, ValueError) as e:
             raise MEGenerationError(f"Invalid G2P binding constraint {constraint_name or '<unnamed>'}: {e}") from e
         except Exception as e:
@@ -468,7 +480,7 @@ def add_me_g2p_binding_constraints(study: Study, constraints_g2p: list[Any]) -> 
 def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) -> None:
     start_time = time.time()
     logger.info("Processing me...", extra={"methodName": "generate_me"})
-    
+
     area_me = me_data.get("area_me") or {}
     links_me = me_data.get("links_me") or {}
     area_objs = add_me_areas_to_study(study, area_me, used_files)
@@ -483,5 +495,8 @@ def generate_me(study: Study, me_data: dict[str, Any], used_files: Set[Path]) ->
     constraints_g2p = binding_constraints_me.get("constraints_G2P")
     if constraints_g2p:
         add_me_g2p_binding_constraints(study, constraints_g2p)
-    
-    logger.info("Processing me completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_me"})
+
+    logger.info(
+        "Processing me completed",
+        extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_me"},
+    )

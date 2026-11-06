@@ -28,7 +28,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 class ECSJSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[explicit-override]
         msg = record.getMessage()
-        payload = {
+        payload: dict[str, Any] = {
             "@timestamp": datetime.utcnow().isoformat() + "Z",
             "ecs.version": ECS_VERSION,
             "log.level": record.levelname,
@@ -113,10 +113,11 @@ def log_execution_time(study_id: str | None = None) -> Callable[[F], F]:
     """
     Decorator to measure and log the execution time of a function.
     Logs the execution time in seconds.
-    
+
     Args:
         study_id: Optional study ID to include in logs
     """
+
     def decorator(func: F) -> F:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -135,5 +136,7 @@ def log_execution_time(study_id: str | None = None) -> Callable[[F], F]:
                 if study_id:
                     extra["studyId"] = study_id
                 logger.info(f"Function {func.__name__} executed", extra=extra)
+
         return wrapper  # type: ignore
+
     return decorator

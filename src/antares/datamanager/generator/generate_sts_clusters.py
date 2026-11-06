@@ -9,10 +9,11 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+import time
+
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
-import time
 import pandas as pd
 
 from antares.craft import (
@@ -215,7 +216,7 @@ def _create_sts_additional_constraints(
 def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optional[Set[Path]] = None) -> None:
     start_time = time.time()
     logger.info("Processing sts_clusters...", extra={"methodName": "generate_sts_clusters"})
-    
+
     # Short-term storage clusters
     for cluster_name, values in sts.items():
         logger.info("Creating sts cluster : ", cluster_name, extra={"methodName": "generate_sts_clusters"})
@@ -250,5 +251,8 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optio
             setter(matrix)
 
         _create_sts_additional_constraints(storage, values, base_dir, cluster_name, used_files=used_files)
-    
-    logger.info("Processing sts_clusters completed", extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_sts_clusters"})
+
+    logger.info(
+        "Processing sts_clusters completed",
+        extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_sts_clusters"},
+    )

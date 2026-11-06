@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import time
+
 from pathlib import Path
 from typing import Any, Dict
 
@@ -63,8 +64,10 @@ def generate_thermal_clusters(
     used_files: set[Path] | None = None,
 ) -> None:
     start_time = time.time()
-    logger.info(f"Generating thermal clusters for area: {area_obj.name}", extra={"methodName": "generate_thermal_clusters"})
-    
+    logger.info(
+        f"Generating thermal clusters for area: {area_obj.name}", extra={"methodName": "generate_thermal_clusters"}
+    )
+
     # Thermals
     for cluster_name, values in thermals.items():
         logger.info(f"Creating thermal cluster: {cluster_name}", extra={"methodName": "generate_thermal_clusters"})
@@ -81,10 +84,12 @@ def generate_thermal_clusters(
             first_month,
             used_files=used_files,
         )
-    
+
     execution_time_s = time.time() - start_time
-    logger.info(f"Thermal clusters generation completed for area {area_obj.name}",
-                extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_thermal_clusters"})
+    logger.info(
+        f"Thermal clusters generation completed for area {area_obj.name}",
+        extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_thermal_clusters"},
+    )
 
 
 def create_thermal_cluster_with_prepro(
@@ -173,7 +178,10 @@ def create_prepro_data_matrix(data: Dict[str, Any], unit_count: int, first_month
     po_monthly_rate = data.get("po_monthly_rate", [])
 
     if not fo_monthly_rate or not po_monthly_rate:
-        logger.info("fo_monthly_rate or po_monthly_rate area empty skipping modulation matrix generation.", extra={"methodName": "create_prepro_data_matrix"})
+        logger.info(
+            "fo_monthly_rate or po_monthly_rate area empty skipping modulation matrix generation.",
+            extra={"methodName": "create_prepro_data_matrix"},
+        )
         return pd.DataFrame()  # empty DF
 
     if len(fo_monthly_rate) != 12 or len(po_monthly_rate) != 12:
@@ -240,7 +248,10 @@ def create_modulation_matrix(
         returns 8760 rows of [1, 1, 1, 0]
     """
     if not cluster_modulation:
-        logger.info("cluster_modulation is empty, skipping thermal modulation matrix generation.", extra={"methodName": "create_modulation_matrix"})
+        logger.info(
+            "cluster_modulation is empty, skipping thermal modulation matrix generation.",
+            extra={"methodName": "create_modulation_matrix"},
+        )
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -253,7 +264,9 @@ def create_modulation_matrix(
 
     # If both are missing, reuse existing fallback behavior
     if cm_file is None and mr_file is None:
-        logger.info("No CM or MR file found, using default modulation matrix.", extra={"methodName": "create_modulation_matrix"})
+        logger.info(
+            "No CM or MR file found, using default modulation matrix.", extra={"methodName": "create_modulation_matrix"}
+        )
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -350,7 +363,10 @@ def create_modulation_me_matrix(
     cluster_modulation = cluster_values.get("modulation", {})
 
     if cluster_modulation is None:
-        logger.info("cluster_modulation is empty, skipping thermal modulation matrix generation.", extra={"methodName": "create_modulation_me_matrix"})
+        logger.info(
+            "cluster_modulation is empty, skipping thermal modulation matrix generation.",
+            extra={"methodName": "create_modulation_me_matrix"},
+        )
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
@@ -376,7 +392,9 @@ def create_modulation_me_matrix(
                 raise ValueError(f"Colonne '{column_name}' introuvable dans '{file_path}'")
 
             val = df[column_name]
-            logger.info(f"{val_key} file '{file_path}' size: {len(val)}", extra={"methodName": "create_modulation_me_matrix"})
+            logger.info(
+                f"{val_key} file '{file_path}' size: {len(val)}", extra={"methodName": "create_modulation_me_matrix"}
+            )
 
         resolved_values.append(val)
 
@@ -430,7 +448,9 @@ def generate_thermal_me_clusters(
 ) -> None:
     # Thermals
     for cluster_name, values in thermals.items():
-        logger.info(f"Creating thermal ME cluster: {cluster_name}", extra={"methodName": "generate_thermal_me_clusters"})
+        logger.info(
+            f"Creating thermal ME cluster: {cluster_name}", extra={"methodName": "generate_thermal_me_clusters"}
+        )
 
         modulation_matrix = create_modulation_me_matrix(cluster_name, values, used_files=used_files)
 

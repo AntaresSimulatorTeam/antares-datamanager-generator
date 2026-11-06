@@ -10,9 +10,10 @@
 #
 # This file is part of the Antares project.
 
+import time
+
 from pathlib import Path
 from typing import Any, Optional, Set
-import time
 
 import pandas as pd
 
@@ -40,7 +41,7 @@ def generate_hydro(
     and not virtual even for psp
     """
     start_time = time.time()
-    
+
     if not hydro:
         return
 
@@ -110,18 +111,15 @@ def generate_hydro(
             maxpower_df["2"] = pumping
             maxpower_df["3"] = DEFAULT_MAXPOWER_VALUE
             area_obj.hydro.set_maxpower(maxpower_df)
-    
+
     execution_time_s = time.time() - start_time
-    logger.info(f"Hydro generation completed for area {resolved_area_name}",
-                extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_hydro"})
+    logger.info(
+        f"Hydro generation completed for area {resolved_area_name}",
+        extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_hydro"},
+    )
 
 
-def _extract_generating_and_pumping(
-        df: pd.DataFrame,
-        area_name: str,
-        is_psp: bool
-) -> tuple[pd.Series, pd.Series]:
-
+def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bool) -> tuple[pd.Series, pd.Series]:
     logger.info(
         f"Extracting generating and pumping for area {area_name}. "
         f"is_psp={is_psp}, shape={df.shape}, "
@@ -130,10 +128,7 @@ def _extract_generating_and_pumping(
 
     # Handle empty DataFrames
     if df.shape[1] == 0:
-        logger.warning(
-            f"No columns found for area {area_name}. "
-            f"Returning zero generating and pumping series."
-        )
+        logger.warning(f"No columns found for area {area_name}. Returning zero generating and pumping series.")
         zeros = pd.Series(0.0, index=df.index)
         return zeros, zeros.copy()
 
@@ -148,10 +143,7 @@ def _extract_generating_and_pumping(
     columns_lower = {str(col).lower(): col for col in df.columns}
 
     if generating_col in columns_lower and pumping_col in columns_lower:
-        return (
-            df[columns_lower[generating_col]],
-            df[columns_lower[pumping_col]]
-        )
+        return (df[columns_lower[generating_col]], df[columns_lower[pumping_col]])
 
     # Fallback if retrieval by name didn't work
     if df.shape[1] >= 2:
