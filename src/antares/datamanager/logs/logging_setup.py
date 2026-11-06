@@ -11,19 +11,24 @@
 # This file is part of the Antares project.
 
 # File: src/antares/datamanager/logging_setup.py
+import functools
 import json
 import logging
 import os
+import time
 
 from datetime import datetime
+from typing import Any, Callable, TypeVar
 
 ECS_VERSION = "1.6.0"
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 class ECSJSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:  # type: ignore[explicit-override]
         msg = record.getMessage()
-        payload = {
+        payload: dict[str, Any] = {
             "@timestamp": datetime.utcnow().isoformat() + "Z",
             "ecs.version": ECS_VERSION,
             "log.level": record.levelname,
@@ -66,6 +71,15 @@ class ECSJSONFormatter(logging.Formatter):
         if extras:
             payload.update(extras)
 
+        # Normalize execution_time_ms to executionTime (in seconds)
+        if "execution_time_ms" in payload:
+            execution_time_ms = payload.pop("execution_time_ms")
+            payload["executionTime"] = round(execution_time_ms / 1000, 3)
+
+        # Normalize study_id to studyId
+        if "study_id" in payload:
+            payload["studyId"] = payload.pop("study_id")
+
         # Si une exception est attachée, ajouter les champs d'erreur ECS
         if record.exc_info:
             try:
@@ -93,3 +107,36 @@ def configure_ecs_logger(level: int = logging.INFO) -> None:
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
+
+
+def log_execution_time(study_id: str | None = None) -> Callable[[F], F]:
+    """
+    Decorator to measure and log the execution time of a function.
+    Logs the execution time in seconds.
+
+    Args:
+        study_id: Optional study ID to include in logs
+    """
+
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            logger = get_logger(func.__module__)
+            start_time = time.perf_counter()
+            try:
+                result = func(*args, **kwargs)
+                return result
+            finally:
+                end_time = time.perf_counter()
+                execution_time_s = end_time - start_time
+                extra = {
+                    "executionTime": round(execution_time_s, 3),
+                    "function_name": func.__name__,
+                }
+                if study_id:
+                    extra["studyId"] = study_id
+                logger.info(f"Function {func.__name__} executed", extra=extra)
+
+        return wrapper  # type: ignore
+
+    return decorator

@@ -10,6 +10,8 @@
 #
 # This file is part of the Antares project.
 
+import time
+
 from pathlib import Path
 from typing import Any, Optional, Set
 
@@ -38,10 +40,13 @@ def generate_hydro(
     `area_name` is used to parse the columns since they are named after the real area
     and not virtual even for psp
     """
+    start_time = time.time()
+
     if not hydro:
         return
 
     resolved_area_name = area_name or area_obj.name
+    logger.info(f"Generating hydro for area: {resolved_area_name}", extra={"methodName": "generate_hydro"})
 
     # "properties"/"series" might be null if only psp is linked
     properties = hydro.get("properties") or {}
@@ -107,21 +112,54 @@ def generate_hydro(
             maxpower_df["3"] = DEFAULT_MAXPOWER_VALUE
             area_obj.hydro.set_maxpower(maxpower_df)
 
+    execution_time_s = time.time() - start_time
+    logger.info(
+        f"Hydro generation completed for area {resolved_area_name}",
+        extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_hydro"},
+    )
+
 
 def _extract_generating_and_pumping(df: pd.DataFrame, area_name: str, is_psp: bool) -> tuple[pd.Series, pd.Series]:
+    logger.info(
+        f"Extracting generating and pumping for area {area_name}. "
+        f"is_psp={is_psp}, shape={df.shape}, "
+        f"columns={df.columns.tolist()}"
+    )
+
+    # Handle empty DataFrames
+    if df.shape[1] == 0:
+        logger.warning(f"No columns found for area {area_name}. Returning zero generating and pumping series.")
+        zeros = pd.Series(0.0, index=df.index)
+        return zeros, zeros.copy()
+
     if not is_psp:
-        # We assume the input df has only 1 column. If it has more, we only use the first one.
+        # We assume the input df has only 1 column.
+        # If it has more, we only use the first one.
         return df.iloc[:, 0], pd.Series(0, index=df.index)
 
     generating_col = f"{area_name.lower()}_generating"
     pumping_col = f"{area_name.lower()}_pumping"
+
     columns_lower = {str(col).lower(): col for col in df.columns}
 
     if generating_col in columns_lower and pumping_col in columns_lower:
-        return df[columns_lower[generating_col]], df[columns_lower[pumping_col]]
+        return (df[columns_lower[generating_col]], df[columns_lower[pumping_col]])
 
-    # fallback if retrieval by name didn't work (we assume it has 2 cols)
-    return df.iloc[:, 0], df.iloc[:, 1]
+    # Fallback if retrieval by name didn't work
+    if df.shape[1] >= 2:
+        logger.warning(
+            f"Expected columns '{generating_col}' and '{pumping_col}' "
+            f"not found for area {area_name}. Using the first two columns."
+        )
+        return df.iloc[:, 0], df.iloc[:, 1]
+
+    # PSP DataFrame with only one column
+    logger.warning(
+        f"PSP data for area {area_name} contains only one column. "
+        f"Returning the first column as generating and zero as pumping."
+    )
+
+    return df.iloc[:, 0], pd.Series(0.0, index=df.index)
 
 
 def set_hydro_allocation(area_obj: Any, allocation_data: dict[str, float]) -> None:

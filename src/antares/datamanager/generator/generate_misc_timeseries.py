@@ -11,6 +11,8 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
+import time
+
 from pathlib import Path
 from typing import Any, Optional, Set
 
@@ -47,12 +49,19 @@ GROUP_TO_COLUMN = {
 def generate_misc_timeseries(
     area_obj: Area, area_name: str, misc: dict[str, Any], used_files: Optional[Set[Path]] = None
 ) -> None:
+    start_time = time.time()
+    logger.info(f"Processing {area_name}...", extra={"methodName": "generate_misc_timeseries"})
+
     matrix = build_misc_timeseries_matrix(area_name, misc, used_files=used_files)
     if matrix.shape[1] != len(MISC_COLUMNS):
         raise ValueError(
             f"Invalid MISC matrix width for area='{area_name}': expected {len(MISC_COLUMNS)}, got {matrix.shape[1]}"
         )
     area_obj.set_misc_gen(matrix)
+    logger.info(
+        f"Processing {area_name} completed",
+        extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_misc_timeseries"},
+    )
 
 
 def build_misc_timeseries_matrix(
@@ -95,6 +104,7 @@ def build_misc_timeseries_matrix(
             "Ignored MISC groups for area=%s groups=%s",
             area_name,
             sorted(unmapped_groups_found),
+            extra={"methodName": "build_misc_timeseries_matrix"},
         )
 
     return matrix

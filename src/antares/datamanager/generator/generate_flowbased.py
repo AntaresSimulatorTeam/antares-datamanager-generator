@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 from collections import Counter
 from dataclasses import dataclass
@@ -131,7 +132,10 @@ class FlowbasedFileReader:
         if "Name" not in weight_df.columns:
             raise FlowbasedGenerationError(f"Weight file {weight_path} is missing the expected 'Name' column")
 
-        logger.info("Loaded flowbased weight file", extra={"weight_path": str(weight_path), "rows": len(weight_df)})
+        logger.info(
+            "Loaded flowbased weight file",
+            extra={"weight_path": str(weight_path), "rows": len(weight_df), "methodName": "read_weight_file"},
+        )
         return weight_df.set_index("Name")
 
     @staticmethod
@@ -164,7 +168,11 @@ class FlowbasedFileReader:
 
         logger.info(
             "Loaded flowbased second member file",
-            extra={"second_member_path": str(second_member_path), "rows": len(second_member_df)},
+            extra={
+                "second_member_path": str(second_member_path),
+                "rows": len(second_member_df),
+                "methodName": "read_second_member_file",
+            },
         )
         return second_member_df
 
@@ -208,7 +216,12 @@ class FlowbasedFileReader:
 
         logger.info(
             "Loaded flowbased ts file",
-            extra={"ts_path": str(ts_path), "rows": len(result_df), "columns": result_df.shape[1]},
+            extra={
+                "ts_path": str(ts_path),
+                "rows": len(result_df),
+                "columns": result_df.shape[1],
+                "methodName": "read_ts_file",
+            },
         )
 
         return result_df
@@ -235,6 +248,11 @@ def generate_flowbased_binding_constraints(
     Raises:
         FlowbasedGenerationError: On any inconsistency in the flowbased input data.
     """
+    start_time = time.time()
+    logger.info(
+        "Processing flowbased binding constraints...", extra={"methodName": "generate_flowbased_binding_constraints"}
+    )
+
     trajectory_directory = _resolve_trajectory_directory(flowbased_data)
 
     weight_df = _read_weight_file(trajectory_directory, used_files)
@@ -287,10 +305,20 @@ def generate_flowbased_binding_constraints(
         )
         rhs = _pad_to_binding_constraint_hourly_rows(rhs)
         constraints_by_name[constraint_name].set_less_term(rhs)
-        logger.info(f"Created flowbased binding constraint {constraint_name}")
+        logger.info(
+            f"Created flowbased binding constraint {constraint_name}",
+            extra={"methodName": "generate_flowbased_binding_constraints"},
+        )
 
     _wire_scenario_builder(study, group_name, n_columns, nb_years)
     generate_restriction_ahc_constraints(study, flowbased_data, nb_years, used_files)
+    logger.info(
+        "Processing flowbased binding constraints completed",
+        extra={
+            "executionTime": round(time.time() - start_time, 3),
+            "methodName": "generate_flowbased_binding_constraints",
+        },
+    )
     return allocation
 
 
@@ -424,7 +452,10 @@ def generate_restriction_ahc_constraints(
             **matrix_parameter,
         )
         scenario_groups[group_name] = 1
-        logger.info(f"Created Flow-Based restriction constraint {name}")
+        logger.info(
+            f"Created Flow-Based restriction constraint {name}",
+            extra={"methodName": "generate_restriction_ahc_constraints"},
+        )
 
     if scenario_groups:
         _wire_scenario_builder_groups(study, scenario_groups, nb_years)
@@ -452,9 +483,14 @@ def create_flowbased_areas_and_links(
         :param flowbased_data:
         :param first_month:
     """
+    start_time = time.time()
+    logger.info("Processing flowbased areas and links...", extra={"methodName": "create_flowbased_areas_and_links"})
+
     for area_name in flowbased_data.get("virtual_nodes") or []:
         study.create_area(area_name=area_name)
-        logger.info(f"Created flowbased virtual area {area_name}")
+        logger.info(
+            f"Created flowbased virtual area {area_name}", extra={"methodName": "create_flowbased_areas_and_links"}
+        )
 
     interconnectors = _get_interconnector_sources(study, flowbased_data)
     created_interconnector_connectors: set[str] = set()
@@ -485,6 +521,10 @@ def create_flowbased_areas_and_links(
 
     source_links = [source_link for _, _, source_link in interconnectors.values()]
     _delete_links(study, [*source_links, *_get_direct_links(study, HUB_AREAS)])
+    logger.info(
+        "Processing flowbased areas and links completed",
+        extra={"executionTime": round(time.time() - start_time, 3), "methodName": "create_flowbased_areas_and_links"},
+    )
 
 
 def _get_interconnector_sources(
@@ -566,7 +606,9 @@ def _delete_links(study: Study, links: list[Any]) -> None:
             study.delete_link(link)
         except ReferencedObjectDeletionNotAllowed as exc:
             raise FlowbasedGenerationError(f"Could not delete direct link {link.id}: {exc}") from exc
-        logger.info(f"Deleted direct link {link.id} (replaced by Flow-Based path)")
+        logger.info(
+            f"Deleted direct link {link.id} (replaced by Flow-Based path)", extra={"methodName": "_delete_links"}
+        )
 
 
 def _parse_link_name(name: Any) -> tuple[str, str]:
@@ -599,7 +641,10 @@ def _create_flowbased_link(
     )
 
     if transmission_capacities != TransmissionCapacities.ENABLED:
-        logger.info(f"Created flowbased link {link_name} (transmission_capacities={transmission_capacities})")
+        logger.info(
+            f"Created flowbased link {link_name} (transmission_capacities={transmission_capacities})",
+            extra={"methodName": "_create_flowbased_link"},
+        )
         return
 
     if capacity_direct is not None and capacity_indirect is not None:
@@ -613,7 +658,7 @@ def _create_flowbased_link(
         link.set_capacity_indirect(
             generate_link_capacity_df(link_data, "indirect", 0, link_name=link_name, first_month=first_month)
         )
-    logger.info(f"Created flowbased link {link_name}")
+    logger.info(f"Created flowbased link {link_name}", extra={"methodName": "_create_flowbased_link"})
 
 
 def _parse_transmission_capacities(value: Any) -> TransmissionCapacities:
@@ -957,5 +1002,8 @@ def _wire_scenario_builder_groups(study: Study, groups: dict[str, int], nb_years
     for group_name, n_columns in groups.items():
         group_matrix = scenario_builder.binding_constraint.get_group(group_name)
         group_matrix.set_new_scenario([(year % n_columns) + 1 for year in range(nb_years)])
-        logger.info(f"Wired flowbased scenario builder group={group_name} nb_years={nb_years} n_columns={n_columns}")
+        logger.info(
+            f"Wired flowbased scenario builder group={group_name} nb_years={nb_years} n_columns={n_columns}",
+            extra={"methodName": "_wire_scenario_builder_groups"},
+        )
     study.set_scenario_builder(scenario_builder)

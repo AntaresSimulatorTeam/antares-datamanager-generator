@@ -441,8 +441,8 @@ def test_generate_study_calls_all_functions(mock_add_links, mock_add_areas, mock
     mock_read_study_data_from_json.assert_called_once_with("dummy_id")
     mock_factory.create_study.assert_called_once_with("study_name")
     args, _ = mock_study.update_settings.call_args
-    mock_add_areas.assert_called_once_with(mock_study, study_data, used_files)
-    mock_add_links.assert_called_once_with(mock_study, study_data.links, study_data.seed_tsgen_link)
+    mock_add_areas.assert_called_once_with(mock_study, study_data, used_files, "dummy_id")
+    mock_add_links.assert_called_once_with(mock_study, study_data.links, study_data.seed_tsgen_link, "dummy_id")
     assert result == {"message": "Study study_name successfully generated", "study_id": "dummy_id", "study_path": ""}
 
 
@@ -937,12 +937,13 @@ def test_package_and_upload_local_study_success(mock_settings, mock_os, mock_shu
     mock_settings.verify_ssl = False
 
     study_name = "test_study_123"
+    study_id = "request-id"
     expected_study_path = Path("/mock/nas") / study_name
     mock_shutil.make_archive.return_value = "/mock/nas/test_study_123.zip"
     mock_os.path.exists.return_value = True
 
     with patch("pathlib.Path.exists", return_value=True):
-        _package_and_upload_local_study(study_name)
+        _package_and_upload_local_study(study_name, study_id)
 
     # assert
     mock_shutil.make_archive.assert_called_once_with(str(expected_study_path), "zip", root_dir=expected_study_path)
@@ -970,6 +971,7 @@ def test_package_and_upload_local_study_failure_and_cleanup_errors(
     mock_settings.verify_ssl = False
 
     study_name = "test_study_123"
+    study_id = "request-id"
     mock_shutil.make_archive.return_value = "/mock/nas/test_study_123.zip"
     mock_import_api.side_effect = Exception("API Error")
 
@@ -979,7 +981,7 @@ def test_package_and_upload_local_study_failure_and_cleanup_errors(
 
     with pytest.raises(APIGenerationError):
         with patch("pathlib.Path.exists", return_value=True):
-            _package_and_upload_local_study(study_name)
+            _package_and_upload_local_study(study_name, study_id)
 
     mock_os.remove.assert_called_once_with("/mock/nas/test_study_123.zip")
     mock_shutil.rmtree.assert_called_once_with(Path("/mock/nas") / study_name)

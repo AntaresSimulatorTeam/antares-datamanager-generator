@@ -9,7 +9,16 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+"""
+PSP (Pumped Storage Plant) Virtual Area Link Generation.
+
+This module handles the automatic creation of links between real areas and their virtual
+PSP areas with capacities loaded from PSP maxpower data files.
+"""
+
 from __future__ import annotations
+
+import time
 
 from pathlib import Path
 from typing import Any
@@ -319,7 +328,9 @@ def build_binding_constraint(study: Study, area_name: str, capacity: float) -> N
     study.create_binding_constraint(
         name=str(constraint_name), properties=properties, terms=terms, greater_term_matrix=rhs
     )
-    logger.info(f"Created P2G base binding constraint {constraint_name}")
+    logger.info(
+        f"Created P2G base binding constraint {constraint_name}", extra={"methodName": "build_binding_constraint"}
+    )
 
 
 def generate_p2g(study: Study, data_p2g: dict[str, Any], used_files: set[Path] | None = None) -> None:
@@ -382,6 +393,9 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], used_files: set[Path] |
       }
     }}
     """
+    start_time = time.time()
+    logger.info("Processing p2g...", extra={"methodName": "generate_p2g"})
+
     modulation_file_name = data_p2g.get("market_modulation")
 
     for p2g_type in P2G_TYPES:
@@ -445,7 +459,12 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], used_files: set[Path] |
                 modulation_file_name=modulation_file_name, modulation_name=modulation_name, used_files=used_files
             )
             cluster_thermal.set_prepro_modulation(modulation_df)
-        logger.info(f"Created P2G virtual area {virtual_area}")
+        logger.info(f"Created P2G virtual area {virtual_area}", extra={"methodName": "generate_p2g"})
+
+    logger.info(
+        "Processing p2g completed",
+        extra={"executionTime": round(time.time() - start_time, 3), "methodName": "generate_p2g"},
+    )
 
 
 def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: dict[str, Any]) -> None:
@@ -470,7 +489,7 @@ def create_p2g_links(study: Study, virtual_area: str, p2g_type: str, type_data: 
         link.set_capacity_direct(link_time_series)
         df_link = _generate_link_series()
         link.set_parameters(df_link)
-        logger.info(f"Created P2G link {link_name}")
+        logger.info(f"Created P2G link {link_name}", extra={"methodName": "create_p2g_links"})
     return None
 
 
@@ -496,12 +515,14 @@ def _process_single_asservi_link(
 ) -> pd.DataFrame | None:
     area_data = area_list.get(area_name.lower())
     if area_data is None:
-        logger.warning(f"Area {area_name} not found in study")
+        logger.warning(f"Area {area_name} not found in study", extra={"methodName": "_process_single_asservi_link"})
         return None
 
     res_clusters = area_data.get_renewables()
     if not res_clusters:
-        logger.warning(f"No renewables found for area {area_name}")
+        logger.warning(
+            f"No renewables found for area {area_name}", extra={"methodName": "_process_single_asservi_link"}
+        )
         return None
 
     try:
@@ -511,7 +532,10 @@ def _process_single_asservi_link(
             parameters=parameters,
         )
     except P2GGenerationError as e:
-        logger.warning(f"Could not generate H2 profile for area {area_name}: {e}")
+        logger.warning(
+            f"Could not generate H2 profile for area {area_name}: {e}",
+            extra={"methodName": "_process_single_asservi_link"},
+        )
         return None
 
     if not isinstance(link_time_series, pd.DataFrame):
@@ -522,7 +546,7 @@ def _process_single_asservi_link(
     df_link = _generate_link_series()
     link.set_parameters(df_link)
     link_name = f"{area_name}-{virtual_area}"
-    logger.info(f"Created P2G link {link_name}")
+    logger.info(f"Created P2G link {link_name}", extra={"methodName": "_process_single_asservi_link"})
     return link_time_series
 
 

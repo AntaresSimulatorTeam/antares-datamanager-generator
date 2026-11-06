@@ -11,6 +11,8 @@
 # This file is part of the Antares project.
 from __future__ import annotations
 
+import time
+
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
@@ -46,6 +48,8 @@ def generate_dsr_clusters(
     """
     Generates thermal clusters for DSR (Demand Side Response) based on provided area and DSR data.
     """
+    start_time = time.time()
+    logger.info(f"Generating DSR clusters for area: {area_obj.name}", extra={"methodName": "generate_dsr_clusters"})
 
     # DSR as Thermals
     base_dir = generator_dsr_modulation_directory()
@@ -68,11 +72,13 @@ def generate_dsr_clusters(
                 series = df_cm.iloc[:, 0]
                 cluster_series[cluster_name] = series
             else:
-                logger.warning(f"DSR CM file '{cm_file}' not found at {cm_path}")
+                logger.warning(
+                    f"DSR CM file '{cm_file}' not found at {cm_path}", extra={"methodName": "generate_dsr_clusters"}
+                )
 
     # 2. Create clusters with normalized modulation
     for cluster_name, values in dsr.items():
-        logger.info(f"Creating dsr cluster: {cluster_name}")
+        logger.info(f"Creating dsr cluster: {cluster_name}", extra={"methodName": "generate_dsr_clusters"})
 
         cluster_series_data: Optional[pd.Series[Any]] = cluster_series.get(cluster_name)
         modulation_matrix = create_dsr_modulation_matrix_from_series(cluster_series_data)
@@ -80,6 +86,12 @@ def generate_dsr_clusters(
         create_dsr_cluster(area_obj, cluster_name, values, modulation_matrix, first_month)
         # 3. Generate coupling constraints
         generate_dsr_binding_constraints(study, area_obj.name, cluster_name, dsr, cluster_series_data)
+
+    execution_time_s = time.time() - start_time
+    logger.info(
+        f"DSR clusters generation completed for area {area_obj.name}",
+        extra={"executionTime": round(execution_time_s, 3), "methodName": "generate_dsr_clusters"},
+    )
 
 
 def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") -> pd.DataFrame:
@@ -91,12 +103,18 @@ def create_dsr_modulation_matrix_from_series(series: "pd.Series[Any] | None") ->
         returns 8760 rows of [1, 1, 1, 0]
     """
     if series is None:
-        logger.info("DSR modulation series is None, skipping dsr modulation matrix generation.")
+        logger.info(
+            "DSR modulation series is None, skipping dsr modulation matrix generation.",
+            extra={"methodName": "create_dsr_modulation_matrix_from_series"},
+        )
         data = np.tile([1, 1, 1, 0], (8760, 1))
         return pd.DataFrame(data)
 
     df = pd.DataFrame([[1, 1, cm, 0] for cm in series.round(3)])
-    logger.info(f"Final dsr modulation matrix shape: {df.shape}")
+    logger.info(
+        f"Final dsr modulation matrix shape: {df.shape}",
+        extra={"methodName": "create_dsr_modulation_matrix_from_series"},
+    )
     return df
 
 
@@ -115,7 +133,10 @@ def _create_dsr_binding_constraints(
     if less_term_matrix.empty:
         return
 
-    logger.info(f"DSR constraints generated for {area_name}: {cluster_name}")
+    logger.info(
+        f"DSR constraints generated for {area_name}: {cluster_name}",
+        extra={"methodName": "_create_dsr_binding_constraints"},
+    )
     bc_name, bc_term_name = _build_dsr_constraint_names(area_name, cluster_name)
 
     properties = BindingConstraintProperties(
@@ -132,7 +153,10 @@ def _create_dsr_binding_constraints(
     ]
 
     # The matrix should be a single column DataFrame for the binding constraint
-    logger.debug(f"Generated less term matrix for {bc_name}: {less_term_matrix.shape}")
+    logger.debug(
+        f"Generated less term matrix for {bc_name}: {less_term_matrix.shape}",
+        extra={"methodName": "_create_dsr_binding_constraints"},
+    )
 
     study.create_binding_constraint(
         name=bc_name,
@@ -141,7 +165,10 @@ def _create_dsr_binding_constraints(
         less_term_matrix=less_term_matrix,
     )
 
-    logger.info(f"Created binding constraint {bc_name} for area {area_name}")
+    logger.info(
+        f"Created binding constraint {bc_name} for area {area_name}",
+        extra={"methodName": "_create_dsr_binding_constraints"},
+    )
 
 
 def generate_dsr_binding_constraints(
@@ -184,7 +211,10 @@ def generate_dsr_binding_constraints(
             ignore_index=True,
         )
     _create_dsr_binding_constraints(study, area_name, cluster_name, less_term_matrix)
-    logger.info(f"Generated coupling constraints matrix with shape {less_term_matrix.shape}")
+    logger.info(
+        f"Generated coupling constraints matrix with shape {less_term_matrix.shape}",
+        extra={"methodName": "generate_dsr_binding_constraints"},
+    )
 
 
 def create_dsr_cluster(
@@ -255,7 +285,10 @@ def create_dsr_prepro_data_matrix(data: Dict[str, Any], first_month: Optional[Mo
     fo_monthly_rate = data.get("fo_monthly_rate", [])
 
     if not fo_monthly_rate:
-        logger.info("fo_monthly_rate area empty skipping modulation matrix generation.")
+        logger.info(
+            "fo_monthly_rate area empty skipping modulation matrix generation.",
+            extra={"methodName": "create_dsr_prepro_data_matrix"},
+        )
         return pd.DataFrame()
 
     if len(fo_monthly_rate) != 12:

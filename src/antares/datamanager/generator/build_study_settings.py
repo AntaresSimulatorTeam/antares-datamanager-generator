@@ -11,6 +11,7 @@
 # This file is part of the Antares project.
 
 import dataclasses
+import time
 
 from typing import Any
 
@@ -24,7 +25,10 @@ from antares.craft import (
     StudySettingsUpdate,
 )
 from antares.craft.model.settings.adequacy_patch import PriceTakingOrder
+from antares.datamanager.logs.logging_setup import get_logger
 from antares.datamanager.models.study_data_json_model import StudyData
+
+logger = get_logger(__name__)
 
 
 def normalize_enum_values(optimization_settings: dict[str, Any]) -> dict[str, Any]:
@@ -74,6 +78,9 @@ def build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) -
     Returns:
         StudySettingsUpdate object with all parameter categories set.
     """
+    start_time = time.time()
+    logger.info("Processing study settings...", extra={"methodName": "build_study_settings"})
+
     general_params: GeneralParametersUpdate | None = None
     optimization_params: OptimizationParametersUpdate | None = None
     advanced_params: AdvancedParametersUpdate | None = None
@@ -123,6 +130,10 @@ def build_study_settings(settings_dict: dict[str, Any], study_data: StudyData) -
             first_month_in_year=Month.JULY,
         )
 
+    logger.info(
+        "Processing study settings completed",
+        extra={"executionTime": round(time.time() - start_time, 3), "methodName": "build_study_settings"},
+    )
     return StudySettingsUpdate(
         general_parameters=general_params,
         optimization_parameters=optimization_params,
