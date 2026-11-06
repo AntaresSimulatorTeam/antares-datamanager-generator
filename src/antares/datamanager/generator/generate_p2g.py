@@ -389,6 +389,14 @@ def generate_p2g(study: Study, data_p2g: dict[str, Any], used_files: set[Path] |
         if not isinstance(type_data, dict):
             continue
 
+        if p2g_type == "base":
+            links_data = type_data.get("links")
+            if not isinstance(links_data, dict) or not any(
+                isinstance(link_info, dict) and link_info.get("capacity", 0.0) != 0 for link_info in links_data.values()
+            ):
+                logger.info("Skipping P2G base area: no nonzero link capacity configured")
+                continue
+
         virtual_area = f"{AREA_PREFIX}{p2g_type}"
         area_props = type_data.get("properties")
         if not isinstance(area_props, dict):

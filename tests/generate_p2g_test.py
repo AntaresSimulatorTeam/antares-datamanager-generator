@@ -691,8 +691,9 @@ def test_create_p2g_asservi_links_missing_area_or_renewables():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("base_capacity", [1500, 0])
 @patch("antares.datamanager.generator.generate_p2g.generate_modulation_matrix")
-def test_generate_p2g_complete(mock_gen_modulation):
+def test_generate_p2g_complete(mock_gen_modulation, base_capacity):
     mock_gen_modulation.return_value = pd.DataFrame(np.ones((EXPECTED_HOURS, 4)))
 
     study = MagicMock(spec=Study)
@@ -719,7 +720,7 @@ def test_generate_p2g_complete(mock_gen_modulation):
                 "cost": 78.0,
             },
             "modulation": "H2",
-            "links": {"FR": {"capacity": 1500, "fatal_band": 300}},
+            "links": {"FR": {"capacity": base_capacity, "fatal_band": 300}},
         },
         "marg": {
             "properties": {
@@ -757,26 +758,27 @@ def test_generate_p2g_complete(mock_gen_modulation):
     used_files = set()
     generate_p2g(study=study, data_p2g=data_p2g, used_files=used_files)
 
-    # 4 virtual areas should be created
-    assert study.create_area.call_count == len(P2G_TYPES)
+    expected_types = P2G_TYPES if base_capacity != 0 else P2G_TYPES - {"base"}
+    assert study.create_area.call_count == len(expected_types)
     # Verify properties passed to create_area
     created_area_names = [call.kwargs.get("area_name") for call in study.create_area.call_args_list]
-    for p2g_type in P2G_TYPES:
-        assert f"{AREA_PREFIX}{p2g_type}" in created_area_names
+    assert set(created_area_names) == {f"{AREA_PREFIX}{p2g_type}" for p2g_type in expected_types}
 
     # Check thermal clusters
-    assert mock_area.create_thermal_cluster.call_count == len(P2G_TYPES)
+    assert mock_area.create_thermal_cluster.call_count == len(expected_types)
     # Check set_load called for each virtual area
-    assert mock_area.set_load.call_count == len(P2G_TYPES)
-    # Modulation called for base, marg, asservi (3 times)
-    assert mock_gen_modulation.call_count == 3
+    assert mock_area.set_load.call_count == len(expected_types)
+    expected_modulations = 3 if base_capacity != 0 else 2
+    assert mock_gen_modulation.call_count == expected_modulations
     mock_gen_modulation.assert_any_call(
         modulation_file_name="modulation.arrow", modulation_name="H2", used_files=used_files
     )
     mock_gen_modulation.assert_any_call(
         modulation_file_name="modulation.arrow", modulation_name="Gas", used_files=used_files
     )
-    assert mock_thermal_cluster.set_prepro_modulation.call_count == 3
+    assert mock_thermal_cluster.set_prepro_modulation.call_count == expected_modulations
+    assert study.create_link.call_count == len(expected_types)
+    assert study.create_binding_constraint.call_count == (1 if base_capacity != 0 else 0)
 
 
 def test_generate_p2g_without_market_modulation():
@@ -811,3 +813,85 @@ def test_generate_p2g_without_market_modulation():
 
     assert study.create_area.call_count == 2
     mock_thermal_cluster.set_prepro_modulation.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "links",
+    [
+        None,
+        {},
+        {"AT": {"capacity": 0}, "BE": {"capacity": 0.0}},
+        {"AT": {}, "BE": {}},
+        {"AT": {"capacity": 0}, "BE": {}},
+        {"AT": {"fatal_band": 6}, "BE": {"capacity": 0, "fatal_band": 72}},
+    ],
+)
+@patch("antares.datamanager.generator.generate_p2g.generate_modulation_matrix")
+def test_generate_p2g_skips_base_without_nonzero_capacity(mock_gen_modulation, links):
+    study = MagicMock(spec=Study)
+    data_p2g = {
+        "market_modulation": "modulation.arrow",
+        "base": {
+            "properties": {"nominal_capacity": 4000, "cost": 78.0},
+            "modulation": "H2",
+        },
+    }
+    if links is not None:
+        data_p2g["base"]["links"] = links
+    used_files = set()
+
+    generate_p2g(study, data_p2g, used_files)
+
+    study.create_area.assert_not_called()
+    study.create_link.assert_not_called()
+    study.create_binding_constraint.assert_not_called()
+    study.create_area.return_value.set_load.assert_not_called()
+    study.create_area.return_value.create_thermal_cluster.assert_not_called()
+    mock_gen_modulation.assert_not_called()
+    assert used_files == set()
+
+
+@pytest.mark.parametrize("capacity", [16.68, 0.1])
+def test_generate_p2g_creates_base_with_mixed_link_capacities(capacity):
+    study = MagicMock(spec=Study)
+    data_p2g = {
+        "base": {
+            "properties": {"nominal_capacity": 4000, "cost": 78.0},
+            "links": {
+                "AT": {"capacity": capacity, "fatal_band": 6},
+                "BE": {"capacity": 0, "fatal_band": 0},
+                "ES": {},
+            },
+        },
+    }
+
+    generate_p2g(study, data_p2g)
+
+    study.create_area.assert_called_once()
+    assert study.create_area.call_args.kwargs["area_name"] == f"{AREA_PREFIX}base"
+    assert {call.kwargs["area_from"] for call in study.create_link.call_args_list} == {"AT", "BE", "ES"}
+    assert all(call.kwargs["area_to"] == f"{AREA_PREFIX}base" for call in study.create_link.call_args_list)
+    assert study.create_link.call_count == 3
+    assert study.create_binding_constraint.call_count == 2
+    area = study.create_area.return_value
+    area.create_thermal_cluster.assert_called_once()
+    assert area.create_thermal_cluster.call_args.kwargs["thermal_name"] == "z_p2g_base_base"
+    area.set_load.assert_called_once()
+    pd.testing.assert_frame_equal(
+        area.set_load.call_args.args[0],
+        pd.DataFrame(np.full((EXPECTED_HOURS, 1), round(capacity, 0), dtype=np.float64)),
+    )
+
+
+def test_generate_p2g_creates_base_with_nonzero_capacities_summing_to_zero():
+    study = MagicMock(spec=Study)
+    data_p2g = {"base": {"links": {"AT": {"capacity": 100}, "BE": {"capacity": -100}}}}
+
+    generate_p2g(study, data_p2g)
+
+    study.create_area.assert_called_once()
+    assert study.create_link.call_count == 2
+    pd.testing.assert_frame_equal(
+        study.create_area.return_value.set_load.call_args.args[0],
+        pd.DataFrame(np.zeros((EXPECTED_HOURS, 1), dtype=np.float64)),
+    )
