@@ -99,6 +99,8 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
         if study_data.me:
             generate_me(study, study_data.me, used_files)
 
+        generate_scenario_builder(study, study_data, used_files)
+
         if study_data.flowbased:
             create_flowbased_areas_and_links(
                 study,
@@ -121,8 +123,6 @@ def generate_study(study_id: str, factory: StudyFactory) -> dict[str, str]:
                 extra={"studyId": study_id, "methodName": "generate_study"},
             )
             study.generate_thermal_timeseries(study.get_settings().general_parameters.nb_timeseries_thermal)
-
-        generate_scenario_builder(study, study_data, used_files)
 
         export = (
             publish_flowbased_results(allocation, study_data.name)
