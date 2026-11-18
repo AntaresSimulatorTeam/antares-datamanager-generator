@@ -12,6 +12,10 @@
 
 import pytest
 
+from unittest.mock import patch
+
+import pandas as pd
+
 from antares.craft import Month
 from antares.datamanager.generator.generate_link_matrices import (
     create_constant_link_capacity_matrix,
@@ -222,6 +226,42 @@ def test_generate_link_capacity_df_hybrid_uses_minimum_hvdc_capacity(
 
     assert actual.shape == (8760, 60)
     assert actual.eq(expected[0], axis=0).all().all()
+
+
+@pytest.mark.parametrize("mode", ["direct", "indirect"])
+@pytest.mark.parametrize("first_month", [Month.JANUARY, Month.JULY])
+@pytest.mark.parametrize("zero_totals", [False, True])
+@pytest.mark.parametrize("uppercase", [False, True])
+@pytest.mark.parametrize("hvdc_requested,hvdc_other", [(0, 0), (0, 800), (800, 0), (0, None), (None, 800)])
+def test_generate_link_capacity_df_without_effective_hvdc(
+    link_data_example: dict[str, int],
+    mode: str,
+    first_month: Month,
+    zero_totals: bool,
+    uppercase: bool,
+    hvdc_requested: int | None,
+    hvdc_other: int | None,
+) -> None:
+    link_data = {key: 0 if zero_totals else value for key, value in link_data_example.items()}
+    expected = generate_link_capacity_df(
+        link_data, mode, seed_tsgen_link=1234, link_name="area1-area2", first_month=first_month
+    )
+    other_mode = "indirect" if mode == "direct" else "direct"
+    for direction, hvdc_mw in ((mode, hvdc_requested), (other_mode, hvdc_other)):
+        if hvdc_mw is not None:
+            link_data[f"hvdcMw{direction.capitalize()}"] = hvdc_mw
+    if uppercase:
+        link_data = {key.upper(): value for key, value in link_data.items()}
+        mode = mode.upper()
+
+    with patch("antares.datamanager.generator.generate_link_matrices._generate_hvdc_ts") as generate_hvdc:
+        actual = generate_link_capacity_df(
+            link_data, mode, seed_tsgen_link=1234, link_name="area1-area2", first_month=first_month
+        )
+
+    generate_hvdc.assert_not_called()
+    assert actual.shape == (8760, 1)
+    pd.testing.assert_frame_equal(actual, expected)
 
 
 def test_generate_link_capacity_df_case_insensitivity() -> None:
