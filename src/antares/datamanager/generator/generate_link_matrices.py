@@ -112,6 +112,8 @@ def generate_link_capacity_df(
     and high-consumption (HP - Heures Pleines) periods, to assign appropriate capacity values to
     each hour. Additionally, it supports handling HVDC (High Voltage Direct Current)
     links, either independently or in combination with HVAC (High Voltage Alternating Current).
+    A missing or zero HVDC capacity for the requested direction, or a zero shared
+    minimum HVDC capacity, produces only the single-column seasonal HVAC matrix.
 
     Parameters:
         link_data (dict[str, int]): A case-insensitive dictionary containing power
@@ -137,7 +139,6 @@ def generate_link_capacity_df(
         :param link_data:
         :param first_month:
     """
-    is_full_hvdc = False
     hvdc_ts = None
 
     season_manager = SeasonManager(first_month)
@@ -167,7 +168,8 @@ def generate_link_capacity_df(
     else:
         raise ValueError("Mode must be either 'direct' or 'indirect'")
 
-    if hvdc_mw is not None:
+    hvdc_capacity = _get_hvdc_capacity(link_data_lower, mode)
+    if hvdc_mw is not None and hvdc_mw != 0 and hvdc_capacity is not None and hvdc_capacity != 0:
         is_full_hvdc = (
             winter_hc_value == hvdc_mw
             and winter_hp_value == hvdc_mw
@@ -178,8 +180,6 @@ def generate_link_capacity_df(
             return _generate_hvdc_ts(link_data_lower, mode, seed_tsgen_link, link_name)
         else:
             hvdc_ts = _generate_hvdc_ts(link_data_lower, mode, seed_tsgen_link, link_name)
-            hvdc_capacity = _get_hvdc_capacity(link_data_lower, mode)
-            assert hvdc_capacity is not None
             winter_hc_value -= hvdc_capacity
             winter_hp_value -= hvdc_capacity
             summer_hc_value -= hvdc_capacity
@@ -198,10 +198,9 @@ def generate_link_capacity_df(
 
     hvac_ts = pd.DataFrame(capacity)
 
-    if hvdc_mw is not None and not is_full_hvdc:
+    if hvdc_ts is not None:
         # Sum hvac_ts (1 column) to each column of hvdc_ts (60 columns)
         # Using .values[0] or broadcasting
-        assert hvdc_ts is not None
         return hvdc_ts.add(hvac_ts.values, axis=0)
 
     return hvac_ts
