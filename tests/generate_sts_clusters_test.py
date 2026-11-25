@@ -9,6 +9,8 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # This file is part of the Antares project.
+import pytest
+
 from unittest.mock import MagicMock
 
 from antares.craft import STStorageProperties
@@ -54,3 +56,16 @@ def test_generate_sts_clusters_multiple_clusters():
     names = [call[0][0] for call in mock_area.create_st_storage.call_args_list]
     assert "c1" in names
     assert "c2" in names
+
+
+@pytest.mark.parametrize("allow_inflows", [True, False])
+def test_generate_sts_clusters_passes_allow_inflows_when_supported(monkeypatch, allow_inflows):
+    def supported_properties(group="other1", allow_inflows=None):
+        return {"group": group, "allow_inflows": allow_inflows}
+
+    monkeypatch.setattr("antares.datamanager.generator.generate_sts_clusters.STStorageProperties", supported_properties)
+    area = MagicMock()
+
+    generate_sts_clusters(area, {"cluster1": {"properties": {"group": "battery", "allow_inflows": allow_inflows}}})
+
+    area.create_st_storage.assert_called_once_with("cluster1", {"group": "battery", "allow_inflows": allow_inflows})

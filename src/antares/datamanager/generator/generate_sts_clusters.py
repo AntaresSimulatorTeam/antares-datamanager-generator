@@ -232,6 +232,11 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optio
             "Pmax_injection": storage.set_pmax_injection,
             "Pmax_soutirage": storage.set_pmax_withdrawal,
             "upper_curve": storage.set_upper_rule_curve,
+            "level_cost": storage.set_cost_level,
+        }
+        cost_setter_map = {
+            "cost": (storage.set_cost_injection, storage.set_cost_withdrawal),
+            "variation_cost": (storage.set_cost_variation_injection, storage.set_cost_variation_withdrawal),
         }
 
         base_dir = settings.sts_ts_directory
@@ -239,7 +244,8 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optio
         for filename in sts_series:
             prefix = filename.split(".")[0]
             setter = matrix_setter_map.get(prefix)
-            if not setter:
+            cost_setters = cost_setter_map.get(prefix)
+            if setter is None and cost_setters is None:
                 continue
 
             file_path = _resolve_sts_file_path(base_dir, filename, cluster_name, "matrix")
@@ -247,8 +253,17 @@ def generate_sts_clusters(area_obj: Area, sts: Dict[str, Any], used_files: Optio
                 used_files.add(file_path)
 
             df = pd.read_feather(file_path)
-            matrix = _extract_matrix(df)
-            setter(matrix)
+            if cost_setters is not None:
+                missing_columns = [column for column in ("stockage", "destockage") if column not in df.columns]
+                if missing_columns:
+                    raise ValueError(
+                        f"STS matrix file '{filename}' for cluster '{cluster_name}' is missing required columns: "
+                        f"{', '.join(missing_columns)}"
+                    )
+                cost_setters[0](df[["stockage"]])
+                cost_setters[1](df[["destockage"]])
+            elif setter is not None:
+                setter(_extract_matrix(df))
 
         _create_sts_additional_constraints(storage, values, base_dir, cluster_name, used_files=used_files)
 
