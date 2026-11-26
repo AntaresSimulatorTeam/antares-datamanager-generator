@@ -2,11 +2,12 @@ python-dateutil~=2.9.0
 fastapi==0.115.8
 uvicorn[standard]==0.34.0
 httpx==0.27.0
-antares-craft~=0.17.0
+sklearn-pmml-model==1.0.8
+antares-craft~=0.18.0
 dotenv~=0.9.9
 python-dotenv~=1.0.1
 annotated-types==0.7.0
-antares-study-version==1.0.20
+antares-study-version==1.0.21
 antares-timeseries-generation==0.1.9
 attrs==25.3.0
 babel==2.17.0
@@ -18,7 +19,7 @@ checksumdir==1.2.0
 click==8.1.8
 colorama==0.4.6
 configparser==5.0.2
-coverage==7.6.12
+coverage==7.13.5
 distlib==0.3.9
 filelock==3.18.0
 ghp-import==2.1.0
@@ -42,7 +43,7 @@ numpy==2.3.5
 packaging==25.0
 paginate==0.5.7
 pandas==2.3.3
-pandas-stubs==2.3.3.260113
+pandas-stubs==2.3.3.251201
 pathspec==0.12.1
 platformdirs==4.3.8
 pluggy==1.6.0
@@ -56,8 +57,8 @@ pydantic_core==2.41.5
 Pygments==2.19.1
 pymdown-extensions==10.15
 pyproject-api==1.9.1
-pytest==7.2.2
-pytest-cov==5.0.0
+pytest==9.0.3
+pytest-cov==7.0.0
 python-dateutil==2.9.0.post0
 pytz==2025.2
 PyYAML==6.0.2
@@ -68,7 +69,6 @@ requests-mock==1.12.1
 ruff==0.11.12
 setuptools-scm==8.1.0
 six==1.17.0
-sklearn-pmml-model==1.0.8
 tox==4.25.0
 tox-uv==1.25.0
 types-psutil==7.0.0.20250601
