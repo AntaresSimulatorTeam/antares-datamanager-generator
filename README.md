@@ -105,7 +105,7 @@ See [APP_INFO_ENDPOINT.md](APP_INFO_ENDPOINT.md) for detailed documentation.
 - Creation of links between areas with configurable capacities
 - Loading of area load data from feather files
 - Integration with Antares API for study creation
-
+- 
 ## Development
 
 ### Linting and Formatting
