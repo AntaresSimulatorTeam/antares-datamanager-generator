@@ -105,19 +105,7 @@ See [APP_INFO_ENDPOINT.md](APP_INFO_ENDPOINT.md) for detailed documentation.
 - Creation of links between areas with configurable capacities
 - Loading of area load data from feather files
 - Integration with Antares API for study creation
-
-### Short-term storage inputs
-
-Each STS cluster can provide a `properties` object and an optional `series` list, either directly or nested as
-`{"series": [...]}`. Series filenames are resolved in the configured STS time-series directory.
-
-The optional `level_cost` Arrow series supplies the storage level cost using the first data column after the date
-column, as with existing STS matrices. The optional `cost` and `variation_cost` Arrow series each require columns
-named `stockage` and `destockage`. These populate the injection and withdrawal cost matrices, respectively; the
-columns are selected by name regardless of their order.
-
-The `allow_inflows` property is passed to Antares Craft; omitting it preserves the Craft default.
-
+- 
 ## Development
 
 ### Linting and Formatting
